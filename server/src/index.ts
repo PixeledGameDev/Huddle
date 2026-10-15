@@ -3,7 +3,7 @@ import http from "http";
 import path from "path";
 import { ZodError } from "zod";
 import { authRouter, cleanupSessions, requireAuth } from "./auth";
-import { migrate } from "./db";
+import { migrate, q } from "./db";
 import { HttpError } from "./http";
 import { initRealtime } from "./realtime";
 import { api } from "./routes";
@@ -43,6 +43,7 @@ async function main() {
     if (err instanceof HttpError) return void res.status(err.status).json({ error: err.message, ...err.extra });
     if (err instanceof ZodError) return void res.status(400).json({ error: err.issues[0]?.message ?? "Invalid request." });
     if (err?.code === "22P02") return void res.status(404).json({ error: "Not found." }); // malformed uuid / id
+    if (err?.type === "entity.too.large") return void res.status(413).json({ error: "That file is too large. The limit is 8 MB." });
     if (err?.type === "entity.parse.failed") return void res.status(400).json({ error: "Invalid JSON." });
     console.error(err);
     res.status(500).json({ error: "Something went wrong on our end." });
@@ -51,6 +52,8 @@ async function main() {
   const server = http.createServer(app);
   initRealtime(server);
   startVoteSweeper();
+  // Uploads that never got attached to a message are removed after an hour.
+  setInterval(() => q(`delete from attachments where message_id is null and created_at < now() - interval '1 hour'`).catch(console.error), 10 * 60_000).unref();
   setInterval(() => cleanupSessions().catch(console.error), 6 * 3600_000).unref();
 
   const port = Number(process.env.PORT ?? 3000);

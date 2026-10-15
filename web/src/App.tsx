@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { io, type Socket } from "socket.io-client";
-import { api, ApiError } from "./api";
+import { api, ApiError, uploadFile } from "./api";
 import Auth from "./Auth";
 import Chat from "./Chat";
 import Members from "./Members";
 import { AddServerModal, SettingsModal } from "./Modals";
-import type { Member, Message, ServerDetail, ServerSummary, User, Vote } from "./types";
+import type { Member, Message, Reaction, ServerDetail, ServerSummary, User, Vote } from "./types";
 import { actionVerb, fmtDuration, hue } from "./util";
 import VoteBanner from "./VoteBanner";
 
@@ -81,6 +81,34 @@ function Main({ me, onLogout }: { me: User; onLogout: () => void }) {
     });
   }, []);
 
+  /** Applies one reaction add/remove. Idempotent, so an optimistic update and its socket echo don't double count. */
+  const applyReaction = useCallback((p: { channelId: string; messageId: string; emoji: string; userId: string; added: boolean }) => {
+    setMsgs((prev) => {
+      const cur = prev[p.channelId];
+      if (!cur) return prev;
+      let changed = false;
+      const items = cur.items.map((m) => {
+        if (m.id !== p.messageId) return m;
+        const existing = m.reactions.find((r) => r.emoji === p.emoji);
+        let reactions: Reaction[];
+        if (p.added) {
+          if (existing?.userIds.includes(p.userId)) return m;
+          reactions = existing
+            ? m.reactions.map((r) => (r.emoji === p.emoji ? { ...r, userIds: [...r.userIds, p.userId] } : r))
+            : [...m.reactions, { emoji: p.emoji, userIds: [p.userId] }];
+        } else {
+          if (!existing?.userIds.includes(p.userId)) return m;
+          reactions = m.reactions
+            .map((r) => (r.emoji === p.emoji ? { ...r, userIds: r.userIds.filter((u) => u !== p.userId) } : r))
+            .filter((r) => r.userIds.length > 0);
+        }
+        changed = true;
+        return { ...m, reactions };
+      });
+      return changed ? { ...prev, [p.channelId]: { ...cur, items } } : prev;
+    });
+  }, []);
+
   // Initial server list
   useEffect(() => {
     api<{ servers: ServerSummary[] }>("/servers").then((r) => {
@@ -115,6 +143,7 @@ function Main({ me, onLogout }: { me: User; onLogout: () => void }) {
       connectedBefore = true;
     });
     s.on("message.create", addMessage);
+    s.on("reaction.update", applyReaction);
     s.on("typing", (p: { channelId: string; userId: string; username: string }) => {
       setTyping((t) => ({ ...t, [p.channelId]: { ...t[p.channelId], [p.userId]: { name: p.username, until: Date.now() + 4000 } } }));
       setTimeout(() => setTyping((t) => ({ ...t })), 4100);
@@ -155,18 +184,30 @@ function Main({ me, onLogout }: { me: User; onLogout: () => void }) {
     return () => {
       s.disconnect();
     };
-  }, [addMessage, loadMessages, loadServer, push]);
+  }, [addMessage, applyReaction, loadMessages, loadServer, push]);
 
-  async function send(content: string) {
+  async function send(content: string, attachmentIds: string[]) {
     if (!channelId) return false;
     try {
-      const { message } = await api<{ message: Message }>(`/channels/${channelId}/messages`, "POST", { content });
+      const { message } = await api<{ message: Message }>(`/channels/${channelId}/messages`, "POST", { content, attachmentIds });
       addMessage(message);
       return true;
     } catch (e) {
       fail(e);
       if (e instanceof ApiError && e.data?.timeoutUntil && activeId) void loadServer(activeId);
       return false;
+    }
+  }
+
+  async function react(m: Message, emoji: string) {
+    const had = !!m.reactions.find((r) => r.emoji === emoji)?.userIds.includes(me.id);
+    const delta = { channelId: m.channelId, messageId: m.id, emoji, userId: me.id };
+    applyReaction({ ...delta, added: !had }); // optimistic
+    try {
+      await api(`/messages/${m.id}/reactions/${encodeURIComponent(emoji)}`, had ? "DELETE" : "PUT");
+    } catch (e) {
+      applyReaction({ ...delta, added: had }); // roll back
+      fail(e);
     }
   }
 
@@ -315,6 +356,9 @@ function Main({ me, onLogout }: { me: User; onLogout: () => void }) {
               typingNames={typingNames}
               timeoutUntil={detail?.myTimeoutUntil ?? null}
               onSend={send}
+              onUpload={(file) => uploadFile(channelId!, file)}
+              onReact={react}
+              nameOf={(id) => detail?.members.find((x) => x.id === id)?.username ?? "Someone"}
               onTyping={() => channelId && socketRef.current?.emit("typing", { channelId })}
               onLoadOlder={() => channelId && msgs[channelId]?.items[0] && void loadMessages(channelId, msgs[channelId].items[0].id)}
             />

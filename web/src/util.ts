@@ -23,3 +23,13 @@ export function hue(name: string) {
 }
 
 export const timeOf = (iso: string) => new Date(iso).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+
+export function fmtSize(bytes: number) {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
+  return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+}
+
+export const MAX_FILE_BYTES = 8 * 1024 * 1024;
+export const MAX_ATTACHMENTS = 4;
+export const QUICK_EMOJI = ["👍", "❤️", "😂", "😮", "😢", "🎉", "🔥", "👀", "🙏", "✅", "❌", "💯", "🤔", "😎", "👏", "😡"];

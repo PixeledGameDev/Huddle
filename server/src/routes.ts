@@ -1,5 +1,5 @@
 import crypto from "crypto";
-import { Router } from "express";
+import express, { Router } from "express";
 import { z } from "zod";
 import { one, q, tx } from "./db";
 import { HttpError, h, rateLimit } from "./http";
@@ -199,16 +199,50 @@ async function channelServer(channelId: string) {
   return ch.server_id;
 }
 
+const MAX_FILE_BYTES = 8 * 1024 * 1024;
+const MAX_ATTACHMENTS = 4;
+const MAX_DISTINCT_EMOJI = 20;
+const SERVER_QUOTA_BYTES = Number(process.env.SERVER_STORAGE_MB ?? 250) * 1024 * 1024;
+const EMOJI_RE = /^[\p{Extended_Pictographic}\p{Emoji_Modifier}\p{Regional_Indicator}\u200d\ufe0f]{1,16}$/u;
+
+interface AttachmentDto { id: string; name: string; mime: string; size: number }
+interface ReactionDto { emoji: string; userIds: string[] }
+
 const messageSelect = `select m.id::text as id, m.channel_id, m.author_id, u.username as author_name, m.content, m.created_at
   from messages m join users u on u.id = m.author_id`;
-const toMessage = (r: any) => ({ id: r.id, channelId: r.channel_id, authorId: r.author_id, authorName: r.author_name, content: r.content, createdAt: new Date(r.created_at).toISOString() });
+
+/** Attach files and reactions to a batch of message rows (two queries, regardless of batch size). */
+async function hydrate(rows: any[]) {
+  if (!rows.length) return [];
+  const ids = rows.map((r) => r.id);
+  const atts = await q<any>(
+    `select id, message_id::text as message_id, name, mime, size from attachments
+      where message_id = any($1::bigint[]) order by created_at, id`,
+    [ids]
+  );
+  const reacts = await q<any>(
+    `select message_id::text as message_id, emoji, array_agg(user_id order by created_at) as user_ids
+       from reactions where message_id = any($1::bigint[]) group by message_id, emoji order by min(created_at)`,
+    [ids]
+  );
+  return rows.map((r) => ({
+    id: r.id as string,
+    channelId: r.channel_id as string,
+    authorId: r.author_id as string,
+    authorName: r.author_name as string,
+    content: r.content as string,
+    createdAt: new Date(r.created_at).toISOString(),
+    attachments: atts.filter((a) => a.message_id === r.id).map((a): AttachmentDto => ({ id: a.id, name: a.name, mime: a.mime, size: a.size })),
+    reactions: reacts.filter((x) => x.message_id === r.id).map((x): ReactionDto => ({ emoji: x.emoji, userIds: x.user_ids })),
+  }));
+}
 
 api.get("/channels/:channelId/messages", h(async (req, res) => {
   const serverId = await channelServer(req.params.channelId);
   await requireMember(serverId, req.user!.id);
   const before = z.coerce.number().int().positive().optional().parse(req.query.before);
   const rows = await q(`${messageSelect} where m.channel_id = $1 and ($2::bigint is null or m.id < $2::bigint) order by m.id desc limit 50`, [req.params.channelId, before ?? null]);
-  res.json({ messages: rows.reverse().map(toMessage), hasMore: rows.length === 50 });
+  res.json({ messages: await hydrate(rows.reverse()), hasMore: rows.length === 50 });
 }));
 
 api.post("/channels/:channelId/messages", h(async (req, res) => {
@@ -216,11 +250,136 @@ api.post("/channels/:channelId/messages", h(async (req, res) => {
   const serverId = await channelServer(req.params.channelId);
   await requireMember(serverId, user.id);
   rateLimit(`msg:${user.id}`, 6, 5000);
-  const { content } = z.object({ content: z.string().trim().min(1).max(2000) }).parse(req.body);
+  const body = z
+    .object({
+      content: z.string().trim().max(2000).default(""),
+      attachmentIds: z.array(z.string().uuid()).max(MAX_ATTACHMENTS).default([]),
+    })
+    .parse(req.body);
+  const attachmentIds = [...new Set(body.attachmentIds)];
+  if (!body.content && !attachmentIds.length) throw new HttpError(400, "Write a message or attach a file.");
   const until = await timeoutUntil(serverId, user.id);
   if (until) throw new HttpError(403, "You're timed out in this server.", { timeoutUntil: until });
-  const row = await one<{ id: string }>(`insert into messages(channel_id, author_id, content) values ($1, $2, $3) returning id::text as id`, [req.params.channelId, user.id, content]);
-  const message = toMessage((await q(`${messageSelect} where m.id = $1::bigint`, [row!.id]))[0]);
+
+  const messageId = await tx(async (c) => {
+    const row = await one<{ id: string }>(`insert into messages(channel_id, author_id, content) values ($1, $2, $3) returning id::text as id`, [req.params.channelId, user.id, body.content], c);
+    if (attachmentIds.length) {
+      // Only your own, still-unsent uploads from this channel can be attached.
+      const linked = await q(
+        `update attachments set message_id = $1::bigint
+          where id = any($2::uuid[]) and uploader_id = $3 and channel_id = $4 and message_id is null returning id`,
+        [row!.id, attachmentIds, user.id, req.params.channelId],
+        c
+      );
+      if (linked.length !== attachmentIds.length) throw new HttpError(400, "One of the attached files is missing or was already sent.");
+    }
+    return row!.id;
+  });
+  const [message] = await hydrate(await q(`${messageSelect} where m.id = $1::bigint`, [messageId]));
   emitServer(serverId, "message.create", message);
   res.json({ message });
+}));
+
+// ---------- file uploads ----------
+// Files are stored in Postgres (bytea) so this works on Render's ephemeral disk with no extra service.
+// Upload is a separate raw-body request; the message then references the returned attachment ids.
+
+/** Identify safe raster images by magic bytes. Anything else is stored as an opaque download. */
+function sniffImage(b: Buffer): string | null {
+  if (b.length >= 8 && b.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) return "image/png";
+  if (b.length >= 3 && b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff) return "image/jpeg";
+  const head = b.subarray(0, 6).toString("latin1");
+  if (head === "GIF87a" || head === "GIF89a") return "image/gif";
+  if (b.length >= 12 && b.subarray(0, 4).toString("latin1") === "RIFF" && b.subarray(8, 12).toString("latin1") === "WEBP") return "image/webp";
+  return null;
+}
+const cleanName = (s: string) => s.replace(/[\\\/\u0000-\u001f"<>:*?|]+/g, "_").trim().slice(0, 120) || "file";
+
+api.post(
+  "/channels/:channelId/files",
+  (req, _res, next) => {
+    // Throttle before the body is read.
+    try { rateLimit(`upload:${req.user!.id}`, 10, 60_000); next(); } catch (e) { next(e); }
+  },
+  express.raw({ type: "application/octet-stream", limit: MAX_FILE_BYTES }),
+  h(async (req, res) => {
+    const user = req.user!;
+    const serverId = await channelServer(req.params.channelId);
+    await requireMember(serverId, user.id);
+    if (await timeoutUntil(serverId, user.id)) throw new HttpError(403, "You're timed out in this server.");
+    const data = req.body;
+    if (!Buffer.isBuffer(data) || data.length === 0) throw new HttpError(400, "That file is empty.");
+    const name = cleanName(typeof req.query.name === "string" ? req.query.name : "file");
+    const used = await one<{ n: string }>(
+      `select coalesce(sum(a.size), 0)::text as n from attachments a join channels c on c.id = a.channel_id where c.server_id = $1`,
+      [serverId]
+    );
+    if (Number(used!.n) + data.length > SERVER_QUOTA_BYTES)
+      throw new HttpError(413, "This server has used up its file storage.");
+    const attachment = await one<AttachmentDto>(
+      `insert into attachments(channel_id, uploader_id, name, mime, size, data) values ($1, $2, $3, $4, $5, $6) returning id, name, mime, size`,
+      [req.params.channelId, user.id, name, sniffImage(data) ?? "application/octet-stream", data.length, data]
+    );
+    res.json({ attachment });
+  })
+);
+
+api.get("/files/:fileId", h(async (req, res) => {
+  const f = await one<any>(
+    `select a.name, a.mime, a.size, a.data, c.server_id from attachments a join channels c on c.id = a.channel_id
+      where a.id = $1 and a.message_id is not null`,
+    [req.params.fileId]
+  );
+  if (!f) throw new HttpError(404, "File not found.");
+  await requireMember(f.server_id, req.user!.id);
+  const inline = f.mime.startsWith("image/");
+  const ascii = f.name.replace(/[^\x20-\x7e]/g, "_");
+  res.setHeader("Content-Type", f.mime);
+  res.setHeader("Content-Length", String(f.size));
+  res.setHeader("Content-Disposition", `${inline ? "inline" : "attachment"}; filename="${ascii}"; filename*=UTF-8''${encodeURIComponent(f.name)}`);
+  // Uploaded content never runs as a page, whatever it claims to be.
+  res.setHeader("Content-Security-Policy", "default-src 'none'; sandbox");
+  res.setHeader("Cache-Control", "private, max-age=31536000, immutable");
+  res.end(f.data);
+}));
+
+// ---------- reactions ----------
+async function reactionContext(messageId: string, userId: string) {
+  const m = await one<{ channel_id: string; server_id: string }>(
+    `select m.channel_id, c.server_id from messages m join channels c on c.id = m.channel_id where m.id = $1::bigint`,
+    [messageId]
+  );
+  if (!m) throw new HttpError(404, "Message not found.");
+  await requireMember(m.server_id, userId);
+  if (await timeoutUntil(m.server_id, userId)) throw new HttpError(403, "You're timed out in this server.");
+  return m;
+}
+const reactionParams = (p: Record<string, string>) => ({
+  messageId: z.string().regex(/^\d+$/, "Message not found.").parse(p.messageId),
+  emoji: z.string().regex(EMOJI_RE, "That isn't an emoji.").parse(p.emoji),
+});
+
+api.put("/messages/:messageId/reactions/:emoji", h(async (req, res) => {
+  const user = req.user!;
+  rateLimit(`react:${user.id}`, 30, 10_000);
+  const { messageId, emoji } = reactionParams(req.params);
+  const m = await reactionContext(messageId, user.id);
+  const stats = await one<{ n: number; has: boolean }>(
+    `select count(distinct emoji)::int as n, coalesce(bool_or(emoji = $2), false) as has from reactions where message_id = $1::bigint`,
+    [messageId, emoji]
+  );
+  if (!stats!.has && stats!.n >= MAX_DISTINCT_EMOJI) throw new HttpError(400, `A message can have at most ${MAX_DISTINCT_EMOJI} different reactions.`);
+  const added = await q(`insert into reactions(message_id, user_id, emoji) values ($1::bigint, $2, $3) on conflict do nothing returning 1`, [messageId, user.id, emoji]);
+  if (added.length) emitServer(m.server_id, "reaction.update", { serverId: m.server_id, channelId: m.channel_id, messageId, emoji, userId: user.id, added: true });
+  res.json({ ok: true });
+}));
+
+api.delete("/messages/:messageId/reactions/:emoji", h(async (req, res) => {
+  const user = req.user!;
+  rateLimit(`react:${user.id}`, 30, 10_000);
+  const { messageId, emoji } = reactionParams(req.params);
+  const m = await reactionContext(messageId, user.id);
+  const removed = await q(`delete from reactions where message_id = $1::bigint and user_id = $2 and emoji = $3 returning 1`, [messageId, user.id, emoji]);
+  if (removed.length) emitServer(m.server_id, "reaction.update", { serverId: m.server_id, channelId: m.channel_id, messageId, emoji, userId: user.id, added: false });
+  res.json({ ok: true });
 }));

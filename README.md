@@ -44,6 +44,17 @@ target, one ballot per person, and the outcome is applied transactionally exactl
 bans are stored separately from memberships, so leaving and rejoining doesn't clear them. Open votes
 are persisted and resolved by a sweeper, so a restart doesn't lose them.
 
+## Files and reactions
+
+- Attach up to 4 files per message (8 MB each) with the paperclip, by drag and drop, or by pasting an image.
+- Files are stored in Postgres, so no extra storage service is needed. Each server is capped at 250 MB
+  (change with the `SERVER_STORAGE_MB` env var). Watch the free Postgres 1 GB limit.
+- Only real PNG/JPEG/GIF/WebP images (checked by their bytes) display inline. Every other file is served as a
+  forced download with a sandboxing CSP, so an uploaded HTML or SVG file can never run on your site.
+- Only current server members can download files, so a kicked member loses access.
+- Reactions: any emoji, up to 20 different ones per message. Timed-out members can't upload or react.
+- Uploads that are never attached to a message are deleted after an hour.
+
 ## Layout
 
 ```
@@ -54,7 +65,7 @@ render.yaml  Render Blueprint
 
 ## Known v1 limits
 
-- No DMs, file uploads, reactions, or voice/video.
+- No DMs, message editing/deleting, or voice/video.
 - Single instance only: presence and rate limits are in memory. To scale out, add the Socket.IO Redis
   adapter and move the rate limiter to Redis.
 - Messages render as plain text (no Markdown) so output stays safely escaped.

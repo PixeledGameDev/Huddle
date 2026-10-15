@@ -109,4 +109,26 @@ create table if not exists audit_log (
   created_at timestamptz not null default now()
 );
 create index if not exists audit_server on audit_log(server_id, id desc);
+
+create table if not exists attachments (
+  id uuid primary key default gen_random_uuid(),
+  channel_id uuid not null references channels(id) on delete cascade,
+  message_id bigint references messages(id) on delete cascade,
+  uploader_id uuid not null references users(id),
+  name text not null,
+  mime text not null,
+  size int not null,
+  data bytea not null,
+  created_at timestamptz not null default now()
+);
+create index if not exists attachments_message on attachments(message_id);
+create index if not exists attachments_orphans on attachments(created_at) where message_id is null;
+
+create table if not exists reactions (
+  message_id bigint not null references messages(id) on delete cascade,
+  user_id uuid not null references users(id),
+  emoji text not null,
+  created_at timestamptz not null default now(),
+  primary key (message_id, user_id, emoji)
+);
 `;

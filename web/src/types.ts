@@ -53,6 +53,9 @@ export interface ServerDetail {
   votes: Vote[];
 }
 
+export interface Attachment { id: string; name: string; mime: string; size: number }
+export interface Reaction { emoji: string; userIds: string[] }
+
 export interface Message {
   id: string;
   channelId: string;
@@ -60,4 +63,6 @@ export interface Message {
   authorName: string;
   content: string;
   createdAt: string;
+  attachments: Attachment[];
+  reactions: Reaction[];
 }
