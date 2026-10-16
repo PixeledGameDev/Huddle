@@ -209,4 +209,22 @@ create table if not exists user_blocks (
   created_at timestamptz not null default now(),
   primary key (blocker, blocked)
 );
+
+-- v5: file storage can live in Cloudflare R2. Legacy rows keep their bytes in the data column until they are moved.
+alter table attachments add column if not exists storage_key text;
+alter table attachments alter column data drop not null;
+create table if not exists storage_deletions (
+  key text primary key,
+  created_at timestamptz not null default now()
+);
+create or replace function queue_storage_deletion() returns trigger language plpgsql as $$
+begin
+  if old.storage_key is not null then
+    insert into storage_deletions(key) values (old.storage_key) on conflict do nothing;
+  end if;
+  return old;
+end
+$$;
+drop trigger if exists attachments_queue_deletion on attachments;
+create trigger attachments_queue_deletion after delete on attachments for each row execute function queue_storage_deletion();
 `;

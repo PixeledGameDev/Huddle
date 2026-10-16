@@ -1,4 +1,6 @@
+import crypto from "crypto";
 import express, { Router } from "express";
+import { pipeline } from "stream";
 import { z } from "zod";
 import { one, q, tx } from "./db";
 import { cleanName, sniffImage } from "./fileutil";
@@ -7,6 +9,7 @@ import { getMessageDto, hydrate, messageSelect } from "./hydrate";
 import { HttpError, h, rateLimit } from "./http";
 import { assertCanWrite, channelServer, requireMember } from "./perms";
 import { emitServer } from "./realtime";
+import { deleteObject, getObject, putObject, r2Enabled, toNodeStream } from "./storage";
 
 export const messagesRouter = Router();
 
@@ -174,17 +177,39 @@ messagesRouter.post(
     const name = cleanName(typeof req.query.name === "string" ? req.query.name : "file");
     const used = await one<{ n: string }>(`select coalesce(sum(a.size), 0)::text as n from attachments a join channels c on c.id = a.channel_id where c.server_id = $1`, [serverId]);
     if (Number(used!.n) + data.length > SERVER_QUOTA_BYTES) throw new HttpError(413, "This server has used up its file storage.");
-    const attachment = await one(
-      `insert into attachments(channel_id, uploader_id, name, mime, size, data) values ($1, $2, $3, $4, $5, $6) returning id, name, mime, size`,
-      [req.params.channelId, user.id, name, sniffImage(data) ?? "application/octet-stream", data.length, data]
-    );
+    const mime = sniffImage(data) ?? "application/octet-stream";
+    let attachment;
+    if (r2Enabled) {
+      const id = crypto.randomUUID();
+      const key = `files/${id}`;
+      try {
+        await putObject(key, data, mime);
+      } catch (e) {
+        console.error(e);
+        throw new HttpError(502, "File storage is unavailable right now. Try again in a moment.");
+      }
+      try {
+        attachment = await one(
+          `insert into attachments(id, channel_id, uploader_id, name, mime, size, storage_key) values ($1, $2, $3, $4, $5, $6, $7) returning id, name, mime, size`,
+          [id, req.params.channelId, user.id, name, mime, data.length, key]
+        );
+      } catch (e) {
+        deleteObject(key).catch(() => {});
+        throw e;
+      }
+    } else {
+      attachment = await one(
+        `insert into attachments(channel_id, uploader_id, name, mime, size, data) values ($1, $2, $3, $4, $5, $6) returning id, name, mime, size`,
+        [req.params.channelId, user.id, name, mime, data.length, data]
+      );
+    }
     res.json({ attachment });
   })
 );
 
 messagesRouter.get("/files/:fileId", h(async (req, res) => {
   const f = await one<any>(
-    `select a.name, a.mime, a.size, a.data, c.server_id from attachments a join channels c on c.id = a.channel_id where a.id = $1 and a.message_id is not null`,
+    `select a.name, a.mime, a.size, a.data, a.storage_key, c.server_id from attachments a join channels c on c.id = a.channel_id where a.id = $1 and a.message_id is not null`,
     [req.params.fileId]
   );
   if (!f) throw new HttpError(404, "File not found.");
@@ -196,6 +221,19 @@ messagesRouter.get("/files/:fileId", h(async (req, res) => {
   res.setHeader("Content-Disposition", `${inline ? "inline" : "attachment"}; filename="${ascii}"; filename*=UTF-8''${encodeURIComponent(f.name)}`);
   res.setHeader("Content-Security-Policy", "default-src 'none'; sandbox");
   res.setHeader("Cache-Control", "private, max-age=31536000, immutable");
+  if (f.storage_key) {
+    if (!r2Enabled) throw new HttpError(503, "File storage isn't configured on this server.");
+    const upstream = await getObject(f.storage_key);
+    if (!upstream.ok || !upstream.body) {
+      console.error(`R2 download failed for ${f.storage_key}: ${upstream.status}`);
+      throw new HttpError(upstream.status === 404 ? 404 : 502, "That file can't be loaded right now.");
+    }
+    pipeline(toNodeStream(upstream.body), res, (err) => {
+      if (err) res.destroy();
+    });
+    return;
+  }
+  if (!f.data) throw new HttpError(404, "File not found.");
   res.end(f.data);
 }));
 

@@ -55,6 +55,32 @@ are persisted and resolved by a sweeper, so a restart doesn't lose them.
 - Reactions: any emoji, up to 20 different ones per message. Timed-out members can't upload or react.
 - Uploads that are never attached to a message are deleted after an hour.
 
+## File storage on Cloudflare R2
+
+Uploaded files can live in a Cloudflare R2 bucket instead of Postgres (R2's free tier includes 10 GB of storage with
+no egress fees). Set these four environment variables to turn it on:
+
+| Variable | Value |
+|---|---|
+| `R2_ACCOUNT_ID` | Your Cloudflare account ID (shown on the R2 overview page) |
+| `R2_ACCESS_KEY_ID` | From an R2 API token with Object Read & Write on the bucket |
+| `R2_SECRET_ACCESS_KEY` | The matching secret (shown once when you create the token) |
+| `R2_BUCKET` | The bucket name |
+
+With them unset, files stay in Postgres, so local development needs no extra setup.
+
+- **Existing files move automatically.** On startup the server copies any files still stored in Postgres into R2 and
+  clears their bytes from the database. It resumes where it left off if it's restarted mid-way. Watch the logs for
+  `Moved N existing file(s) from Postgres to R2`.
+- **Same access rules.** The bucket stays private. Downloads still go through the server, which checks that you're a
+  member and applies the same safe-download headers, so nothing about permissions changed.
+- **Cleanup is automatic.** Deleting a message, deleting a channel, or an abandoned upload removes the object from
+  R2 within about a minute (a database trigger queues it and a background sweeper deletes it).
+- **Errors are honest.** If R2 is unreachable, uploads fail with a clear message and leave nothing half-saved.
+- Profile pictures and server icons are tiny and stay in Postgres.
+- Postgres reclaims the space from moved files on its own schedule (autovacuum), so the database may take a while to
+  shrink.
+
 ## Messages, polls, and mentions
 
 - **Reply, edit, delete.** Authors can edit and delete their own messages. Owners and admins can delete anyone's.
@@ -102,7 +128,7 @@ entry. To announce a change, add an entry at the top of `web/src/changelog.ts`.
 ## Layout
 
 ```
-server/src   index.ts · auth.ts · routes.ts (servers) · messages.ts · polls.ts · profiles.ts · admin.ts · dms.ts
+server/src   index.ts · storage.ts · auth.ts · routes.ts (servers) · messages.ts · polls.ts · profiles.ts · admin.ts · dms.ts
              votes.ts · gifs.ts · hydrate.ts · perms.ts · realtime.ts · schema.ts · db.ts
 web/src      App.tsx · Chat.tsx · MessageRow.tsx · Composer.tsx · Members.tsx · Polls.tsx · GifPicker.tsx
              DmPanel.tsx · EmojiPicker.tsx · Rich.tsx · Avatar.tsx · Modals.tsx · ProfileModals.tsx · VoteBanner.tsx · Auth.tsx
@@ -112,6 +138,7 @@ render.yaml  Render Blueprint
 ## Known v1 limits
 
 - No group DMs or voice/video.
+- Downloads are proxied through the server (so permission checks stay in one place), which uses some of Render's bandwidth.
 - Single instance only: presence and rate limits are in memory. To scale out, add the Socket.IO Redis
   adapter and move the rate limiter to Redis.
 - Messages render as plain text (no Markdown) so output stays safely escaped.

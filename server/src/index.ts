@@ -7,6 +7,7 @@ import { migrate, q } from "./db";
 import { HttpError } from "./http";
 import { initRealtime } from "./realtime";
 import { api } from "./routes";
+import { checkR2, migrateLegacyFiles, r2Enabled, startStorageSweeper } from "./storage";
 import { startVoteSweeper } from "./votes";
 
 async function main() {
@@ -62,7 +63,16 @@ async function main() {
   setInterval(() => cleanupSessions().catch(console.error), 6 * 3600_000).unref();
 
   const port = Number(process.env.PORT ?? 3000);
-  server.listen(port, () => console.log(`Huddle listening on :${port}`));
+  server.listen(port, () => {
+    console.log(`Huddle listening on :${port}`);
+    if (r2Enabled) {
+      void checkR2();
+      void migrateLegacyFiles();
+      startStorageSweeper();
+    } else {
+      console.log("File storage: Postgres (set the R2_* variables to use Cloudflare R2)");
+    }
+  });
 }
 
 main().catch((e) => {

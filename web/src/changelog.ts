@@ -11,6 +11,15 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "2.3",
+    date: "2026-10-17",
+    title: "Bigger file storage",
+    changes: [
+      "Uploaded files now live in Cloudflare R2 instead of the database, so there's room for far more of them.",
+      "Files you uploaded earlier were moved over automatically. Nothing to re-upload.",
+    ],
+  },
+  {
     version: "2.2",
     date: "2026-10-16",
     title: "Update log",
