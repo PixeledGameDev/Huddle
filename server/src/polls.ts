@@ -3,7 +3,7 @@ import { z } from "zod";
 import { one, q, tx } from "./db";
 import { getMessageDto, pollDtos } from "./hydrate";
 import { HttpError, h, rateLimit } from "./http";
-import { assertNotTimedOut, channelServer, requireMember } from "./perms";
+import { assertCanWrite, channelServer, requireMember } from "./perms";
 import { emitServer } from "./realtime";
 
 export const pollsRouter = Router();
@@ -21,7 +21,7 @@ pollsRouter.post("/channels/:channelId/polls", h(async (req, res) => {
   const { channelId } = req.params;
   const serverId = await channelServer(channelId);
   await requireMember(serverId, user.id);
-  await assertNotTimedOut(serverId, user.id);
+  await assertCanWrite(serverId, user.id);
   rateLimit(`poll:${user.id}`, 5, 60_000);
   const body = createSchema.parse(req.body);
   if (new Set(body.options.map((o) => o.toLowerCase())).size !== body.options.length) throw new HttpError(400, "Poll options must be different from each other.");
@@ -62,7 +62,7 @@ pollsRouter.put("/polls/:pollId/vote", h(async (req, res) => {
   rateLimit(`pollvote:${user.id}`, 30, 10_000);
   const p = await pollContext(req.params.pollId);
   await requireMember(p.server_id, user.id);
-  await assertNotTimedOut(p.server_id, user.id);
+  await assertCanWrite(p.server_id, user.id);
   if (isClosed(p)) throw new HttpError(409, "This poll is closed.");
   const { optionIds } = z.object({ optionIds: z.array(z.string().uuid()).max(10) }).parse(req.body);
   const chosen = [...new Set(optionIds)];

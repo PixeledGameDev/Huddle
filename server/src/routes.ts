@@ -6,14 +6,15 @@ import { HttpError, h, rateLimit } from "./http";
 import { adminRouter } from "./admin";
 import { gifsRouter } from "./gifs";
 import { messagesRouter } from "./messages";
-import { assertNotTimedOut, membership, requireAdmin, requireMember, timeoutUntil, type Role } from "./perms";
+import { assertNotDm, membership, requireAdmin, requireMember, timeoutUntil, type Role } from "./perms";
+import { dmsRouter } from "./dms";
 import { pollsRouter } from "./polls";
 import { profilesRouter } from "./profiles";
 import { emitServer, isOnline, joinServerRooms, leaveServerRooms } from "./realtime";
 import { listOpenVotes, voteRouter } from "./votes";
 
 export const api = Router();
-api.use(voteRouter, messagesRouter, pollsRouter, profilesRouter, adminRouter, gifsRouter);
+api.use(voteRouter, messagesRouter, pollsRouter, profilesRouter, adminRouter, gifsRouter, dmsRouter);
 
 const settingsColumns = {
   voteEnabled: "vote_enabled",
@@ -60,6 +61,7 @@ async function serverDetail(serverId: string, userId: string) {
     id: s.id,
     name: s.name,
     iconVersion: s.icon_version as number,
+    isDm: s.is_dm as boolean,
     ownerId: s.owner_id,
     myRole: me.role,
     myTimeoutUntil: await timeoutUntil(serverId, userId),
@@ -72,7 +74,7 @@ async function serverDetail(serverId: string, userId: string) {
 
 api.get("/servers", h(async (req, res) => {
   res.json({
-    servers: await q(`select s.id, s.name, s.icon_version as "iconVersion" from servers s join memberships m on m.server_id = s.id where m.user_id = $1 order by s.created_at`, [req.user!.id]),
+    servers: await q(`select s.id, s.name, s.icon_version as "iconVersion" from servers s join memberships m on m.server_id = s.id where m.user_id = $1 and not s.is_dm order by s.created_at`, [req.user!.id]),
   });
 }));
 
@@ -125,6 +127,7 @@ api.post("/servers/:serverId/invites", h(async (req, res) => {
   const { serverId } = req.params;
   const user = req.user!;
   await requireMember(serverId, user.id);
+  await assertNotDm(serverId);
   rateLimit(`invite:${user.id}`, 20, 3600_000);
   const code = crypto.randomBytes(6).toString("base64url");
   await q(`insert into invites(code, server_id, created_by) values ($1, $2, $3)`, [code, serverId, user.id]);
@@ -149,6 +152,7 @@ api.post("/servers/:serverId/leave", h(async (req, res) => {
   const { serverId } = req.params;
   const user = req.user!;
   const m = await requireMember(serverId, user.id);
+  await assertNotDm(serverId);
   if (m.role === "owner") throw new HttpError(400, "Owners can't leave their server.");
   await q(`delete from memberships where server_id = $1 and user_id = $2`, [serverId, user.id]);
   leaveServerRooms(user.id, serverId);

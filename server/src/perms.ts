@@ -29,3 +29,21 @@ export async function channelServer(channelId: string) {
   if (!ch) throw new HttpError(404, "Channel not found.");
   return ch.server_id;
 }
+
+/** Timed-out members, and either side of a blocked DM, can't send, upload, react, or vote. */
+export async function assertCanWrite(serverId: string, userId: string) {
+  await assertNotTimedOut(serverId, userId);
+  const blocked = await one(
+    `select 1 from servers s
+       join memberships o on o.server_id = s.id and o.user_id <> $2
+       join user_blocks b on (b.blocker = o.user_id and b.blocked = $2) or (b.blocker = $2 and b.blocked = o.user_id)
+      where s.id = $1 and s.is_dm limit 1`,
+    [serverId, userId]
+  );
+  if (blocked) throw new HttpError(403, "You can't message this person.");
+}
+
+export async function assertNotDm(serverId: string) {
+  const s = await one<{ is_dm: boolean }>(`select is_dm from servers where id = $1`, [serverId]);
+  if (s?.is_dm) throw new HttpError(400, "That isn't available in direct messages.");
+}

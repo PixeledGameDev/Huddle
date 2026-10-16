@@ -81,19 +81,32 @@ from **Moderate** in the member list. Owners can moderate admins; admins can onl
 can be lifted in **Settings > Bans**. Admins can also rename and delete channels (hover a channel). Everything is
 recorded in **Settings > Activity**.
 
+## Direct messages
+
+One-on-one conversations, opened from someone's profile or the **Message** button next to a member (the 💬 button
+at the top of the server rail lists them). You can only start a DM with someone you share a server with, and the
+conversation survives if one of you later leaves that server. Replies, edits, deleting, files, reactions, polls,
+GIFs, and emoji all work in DMs.
+
+- **Blocking.** Block someone from their profile. While blocked, neither of you can send, upload, or react in
+  that DM (history stays readable), they can't reopen it, and they aren't told why. Blocks don't affect shared servers.
+- **Privacy.** DMs have no admins, so nobody can read them but the two people in them. Messages you delete from a
+  DM are removed outright (no archive). Messages from the other person count as unread notifications.
+- Under the hood a DM is a hidden two-person space with one channel, which is why every message feature carries over.
+
 ## Layout
 
 ```
-server/src   index.ts · auth.ts · routes.ts (servers) · messages.ts · polls.ts · profiles.ts · admin.ts
+server/src   index.ts · auth.ts · routes.ts (servers) · messages.ts · polls.ts · profiles.ts · admin.ts · dms.ts
              votes.ts · gifs.ts · hydrate.ts · perms.ts · realtime.ts · schema.ts · db.ts
 web/src      App.tsx · Chat.tsx · MessageRow.tsx · Composer.tsx · Members.tsx · Polls.tsx · GifPicker.tsx
-             EmojiPicker.tsx · Rich.tsx · Avatar.tsx · Modals.tsx · ProfileModals.tsx · VoteBanner.tsx · Auth.tsx
+             DmPanel.tsx · EmojiPicker.tsx · Rich.tsx · Avatar.tsx · Modals.tsx · ProfileModals.tsx · VoteBanner.tsx · Auth.tsx
 render.yaml  Render Blueprint
 ```
 
 ## Known v1 limits
 
-- No DMs or voice/video.
+- No group DMs or voice/video.
 - Single instance only: presence and rate limits are in memory. To scale out, add the Socket.IO Redis
   adapter and move the rate limiter to Redis.
 - Messages render as plain text (no Markdown) so output stays safely escaped.

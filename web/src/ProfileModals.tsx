@@ -6,12 +6,25 @@ import { loadPrefs, savePrefs, type Prefs } from "./prefs";
 import type { Member, ServerDetail, User } from "./types";
 import { hue, nameOfUser, squareImage } from "./util";
 
-export function ProfileCard({ userId, serverId, meId, onClose, onEdit }: { userId: string; serverId: string; meId: string; onClose: () => void; onEdit: () => void }) {
-  const [data, setData] = useState<{ profile: User; server: { role: string; joinedAt: string } | null } | null>(null);
+export function ProfileCard({ userId, serverId, meId, onClose, onEdit, onMessage, onChanged }: { userId: string; serverId: string; meId: string; onClose: () => void; onEdit: () => void; onMessage: (userId: string) => void; onChanged: () => void }) {
+  const [data, setData] = useState<{ profile: User; server: { role: string; joinedAt: string } | null; blockedByMe: boolean } | null>(null);
   const [error, setError] = useState("");
   useEffect(() => {
-    api<{ profile: User; server: { role: string; joinedAt: string } | null }>(`/users/${userId}/profile?serverId=${serverId}`).then(setData, (e) => setError(e.message));
+    api<{ profile: User; server: { role: string; joinedAt: string } | null; blockedByMe: boolean }>(`/users/${userId}/profile?serverId=${serverId}`).then(setData, (e) => setError(e.message));
   }, [userId, serverId]);
+
+  async function toggleBlock() {
+    if (!data) return;
+    const name = nameOfUser(data.profile);
+    if (!data.blockedByMe && !window.confirm(`Block ${name}? Neither of you will be able to send direct messages until you unblock them.`)) return;
+    try {
+      await api(`/users/${userId}/block`, data.blockedByMe ? "DELETE" : "PUT");
+      setData({ ...data, blockedByMe: !data.blockedByMe });
+      onChanged();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Something went wrong.");
+    }
+  }
 
   const p = data?.profile;
   const name = p ? nameOfUser(p) : "";
@@ -30,7 +43,14 @@ export function ProfileCard({ userId, serverId, meId, onClose, onEdit }: { userI
             {p.createdAt && (<><dt>On Huddle since</dt><dd>{new Date(p.createdAt).toLocaleDateString([], { year: "numeric", month: "short", day: "numeric" })}</dd></>)}
             {data?.server && (<><dt>Joined this server</dt><dd>{new Date(data.server.joinedAt).toLocaleDateString([], { year: "numeric", month: "short", day: "numeric" })}</dd></>)}
           </dl>
-          {p.id === meId && <button className="primary" onClick={onEdit}>Edit profile</button>}
+          {p.id === meId ? (
+            <button className="primary" onClick={onEdit}>Edit profile</button>
+          ) : (
+            <div className="profile-actions">
+              {!data?.blockedByMe && <button className="primary" onClick={() => onMessage(p.id)}>Message</button>}
+              <button className="danger" onClick={() => void toggleBlock()}>{data?.blockedByMe ? "Unblock" : "Block"}</button>
+            </div>
+          )}
         </div>
       )}
     </Modal>

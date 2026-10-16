@@ -4,11 +4,12 @@ import { api, ApiError, uploadFile } from "./api";
 import { Avatar } from "./Avatar";
 import Auth from "./Auth";
 import Chat from "./Chat";
+import DmPanel from "./DmPanel";
 import Members from "./Members";
 import { AddServerModal, SettingsModal } from "./Modals";
 import { PollModal } from "./Polls";
 import { ModerateModal, MyProfileModal, ProfileCard } from "./ProfileModals";
-import type { Channel, Member, Message, Poll, Reaction, ServerDetail, ServerSummary, User, Vote } from "./types";
+import type { Channel, DmSummary, Member, Message, Poll, Reaction, ServerDetail, ServerSummary, User, Vote } from "./types";
 import { actionVerb, fmtDuration, hue, nameOfUser } from "./util";
 import VoteBanner from "./VoteBanner";
 
@@ -43,16 +44,20 @@ function Main({ me, onUser, onLogout }: { me: User; onUser: (u: User) => void; o
   const [replyTo, setReplyTo] = useState<Message | null>(null);
   const [unread, setUnread] = useState<Unread>({ channels: {}, servers: {} });
   const [gifsEnabled, setGifsEnabled] = useState(false);
+  const [dms, setDms] = useState<DmSummary[]>([]);
+  const [sideMode, setSideMode] = useState<"server" | "dms">("server");
 
   const socketRef = useRef<Socket | null>(null);
   const meRef = useRef(me);
   const activeIdRef = useRef<string | null>(null);
   const channelIdRef = useRef<string | null>(null);
   const serversRef = useRef<ServerSummary[]>([]);
+  const dmsRef = useRef<DmSummary[]>([]);
   meRef.current = me;
   activeIdRef.current = activeId;
   channelIdRef.current = channelId;
   serversRef.current = servers;
+  dmsRef.current = dms;
 
   const push = useCallback((text: string, error = false) => {
     const id = Date.now() + Math.random();
@@ -60,6 +65,10 @@ function Main({ me, onUser, onLogout }: { me: User; onUser: (u: User) => void; o
     setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), 5000);
   }, []);
   const fail = useCallback((e: unknown) => push(e instanceof Error ? e.message : "Something went wrong.", true), [push]);
+
+  const refreshDms = useCallback(() => {
+    api<{ dms: DmSummary[] }>("/dms").then((r) => setDms(r.dms), () => {});
+  }, []);
 
   const loadServer = useCallback(async (id: string) => {
     try {
@@ -145,7 +154,8 @@ function Main({ me, onUser, onLogout }: { me: User; onUser: (u: User) => void; o
       setActiveId((cur) => cur ?? r.servers[0]?.id ?? null);
     }, fail);
     api<{ gifs: boolean }>("/config").then((r) => setGifsEnabled(r.gifs), () => {});
-  }, [fail]);
+    refreshDms();
+  }, [fail, refreshDms]);
 
   useEffect(() => {
     setDetail(null);
@@ -193,13 +203,15 @@ function Main({ me, onUser, onLogout }: { me: User; onUser: (u: User) => void; o
     s.on("message.create", (m: Message) => {
       addMessage(m);
       const meId = meRef.current.id;
-      if (m.authorId === meId || !(m.mentions.includes(meId) || m.mentionsEveryone)) return;
+      const isDm = dmsRef.current.some((d) => d.id === m.serverId);
+      if (isDm) setDms((prev) => prev.map((d) => (d.id === m.serverId ? { ...d, lastAt: m.createdAt } : d)).sort((a, b) => b.lastAt.localeCompare(a.lastAt)));
+      if (m.authorId === meId || !(isDm || m.mentions.includes(meId) || m.mentionsEveryone)) return;
       if (document.visibilityState === "visible" && m.channelId === channelIdRef.current) return;
       setUnread((u) => ({
         channels: { ...u.channels, [m.channelId]: (u.channels[m.channelId] ?? 0) + 1 },
         servers: { ...u.servers, [m.serverId]: (u.servers[m.serverId] ?? 0) + 1 },
       }));
-      push(`${m.authorName} mentioned you`);
+      push(isDm ? `${m.authorName} sent you a message` : `${m.authorName} mentioned you`);
     });
     s.on("message.update", (m: Message) => patchMessage(m.channelId, m.id, (old) => ({ ...m, poll: old.poll })));
     s.on("message.delete", (p: { channelId: string; messageId: string }) => removeMessage(p.channelId, p.messageId));
@@ -211,7 +223,9 @@ function Main({ me, onUser, onLogout }: { me: User; onUser: (u: User) => void; o
       setTyping((t) => ({ ...t, [p.channelId]: { ...t[p.channelId], [p.userId]: { name: p.username, until: Date.now() + 4000 } } }));
       setTimeout(() => setTyping((t) => ({ ...t })), 4100);
     });
+    s.on("dm.new", (d: DmSummary) => setDms((prev) => (prev.some((x) => x.id === d.id) ? prev : [d, ...prev])));
     s.on("presence", (p: { serverId: string; userId: string; online: boolean }) => {
+      setDms((prev) => prev.map((d) => (d.id === p.serverId && d.user.id === p.userId ? { ...d, online: p.online } : d)));
       setDetail((d) =>
         d && d.id === p.serverId
           ? { ...d, members: d.members.map((m) => (m.id === p.userId ? { ...m, online: p.online } : m)).sort((a, b) => Number(b.online) - Number(a.online) || a.username.localeCompare(b.username)) }
@@ -224,6 +238,7 @@ function Main({ me, onUser, onLogout }: { me: User; onUser: (u: User) => void; o
     for (const ev of ["member.join", "member.leave", "member.update", "channel.create", "channel.update", "channel.delete", "server.update"]) s.on(ev, refresh);
     s.on("profile.update", (p: { serverId: string; userId: string }) => {
       refresh(p);
+      refreshDms();
       if (p.userId === meRef.current.id) api<{ user: User }>("/auth/me").then((r) => onUser(r.user), () => {});
     });
 
@@ -252,7 +267,7 @@ function Main({ me, onUser, onLogout }: { me: User; onUser: (u: User) => void; o
     return () => {
       s.disconnect();
     };
-  }, [addMessage, applyReaction, loadMessages, loadServer, onUser, patchMessage, push, removeMessage]);
+  }, [addMessage, applyReaction, loadMessages, loadServer, onUser, patchMessage, push, refreshDms, removeMessage]);
 
   // ---- actions
   async function send(content: string, attachmentIds: string[], extra: { replyTo?: string; gifUrl?: string }) {
@@ -412,6 +427,23 @@ function Main({ me, onUser, onLogout }: { me: User; onUser: (u: User) => void; o
     }
   }
 
+  async function startDm(userId: string) {
+    try {
+      const { dm } = await api<{ dm: DmSummary }>("/dms", "POST", { userId });
+      setDms((prev) => (prev.some((x) => x.id === dm.id) ? prev.map((x) => (x.id === dm.id ? dm : x)) : [dm, ...prev]));
+      setProfileId(null);
+      setSideMode("dms");
+      setActiveId(dm.id);
+    } catch (e) {
+      fail(e);
+    }
+  }
+
+  function openDms() {
+    setSideMode("dms");
+    if (!dms.some((d) => d.id === activeId)) setActiveId(dms[0]?.id ?? null);
+  }
+
   async function logout() {
     await api("/auth/logout", "POST").catch(() => {});
     socketRef.current?.disconnect();
@@ -428,10 +460,17 @@ function Main({ me, onUser, onLogout }: { me: User; onUser: (u: User) => void; o
     : [];
   const isAdmin = detail?.myRole === "owner" || detail?.myRole === "admin";
   const myName = nameOfUser(me);
+  const inDm = sideMode === "dms";
+  const activeDm = inDm ? dms.find((d) => d.id === activeId) : undefined;
+  const dmUnread = dms.reduce((n, d) => n + (unread.servers[d.id] ?? 0), 0);
 
   return (
     <div className="app">
       <nav className="rail" aria-label="Servers">
+        <button className={inDm ? "srv dm-btn active" : "srv dm-btn"} aria-label="Direct messages" title="Direct messages" onClick={openDms}>
+          💬{dmUnread > 0 && <span className="badge" aria-label={`${dmUnread} unread`}>{dmUnread}</span>}
+        </button>
+        <span className="rail-sep" />
         {servers.map((s) => (
           <button
             key={s.id}
@@ -440,7 +479,7 @@ function Main({ me, onUser, onLogout }: { me: User; onUser: (u: User) => void; o
             aria-label={s.name}
             aria-current={s.id === activeId}
             style={s.iconVersion > 0 ? undefined : { background: `hsl(${hue(s.name)} 38% 40%)` }}
-            onClick={() => setActiveId(s.id)}
+            onClick={() => { setSideMode("server"); setActiveId(s.id); }}
           >
             {s.iconVersion > 0 ? <img src={`/api/servers/${s.id}/icon?v=${s.iconVersion}`} alt="" /> : s.name[0].toUpperCase()}
             {(unread.servers[s.id] ?? 0) > 0 && <span className="badge" aria-label={`${unread.servers[s.id]} mentions`}>{unread.servers[s.id]}</span>}
@@ -450,7 +489,24 @@ function Main({ me, onUser, onLogout }: { me: User; onUser: (u: User) => void; o
       </nav>
 
       <aside className="side">
-        {detail ? (
+        {inDm ? (
+          <>
+            <header className="side-head"><strong>Direct messages</strong></header>
+            <div className="channels">
+              {dms.length === 0 && <p className="side-empty">No conversations yet. Open someone's profile or hit Message next to a member to start one.</p>}
+              {dms.map((d) => (
+                <button key={d.id} className={d.id === activeId ? "chan dm-item active" : "chan dm-item"} onClick={() => setActiveId(d.id)}>
+                  <span className="dm-avatar">
+                    <Avatar id={d.user.id} name={nameOfUser(d.user)} version={d.user.avatarVersion} accent={d.user.accent} size={28} />
+                    <span className={d.online ? "dot on" : "dot"} />
+                  </span>
+                  <span className="chan-name">{nameOfUser(d.user)}</span>
+                  {(unread.servers[d.id] ?? 0) > 0 && <span className="badge inline" aria-label={`${unread.servers[d.id]} unread`}>{unread.servers[d.id]}</span>}
+                </button>
+              ))}
+            </div>
+          </>
+        ) : detail ? (
           <>
             <header className="side-head">
               <strong title={detail.name}>{detail.name}</strong>
@@ -488,13 +544,18 @@ function Main({ me, onUser, onLogout }: { me: User; onUser: (u: User) => void; o
             <Avatar id={me.id} name={myName} version={me.avatarVersion} accent={me.accent} size={28} />
             <span className="me-name">{myName}</span>
           </button>
-          {detail && detail.myRole !== "owner" && <button className="icon" onClick={leave}>Leave</button>}
+          {!inDm && detail && detail.myRole !== "owner" && <button className="icon" onClick={leave}>Leave</button>}
           <button className="icon" onClick={logout}>Sign out</button>
         </footer>
       </aside>
 
       <main className="main">
-        {!activeId && servers.length === 0 ? (
+        {inDm && !activeDm ? (
+          <div className="welcome">
+            <h2>Direct messages</h2>
+            <p className="muted">{dms.length ? "Pick a conversation on the left." : "Open someone's profile in a server and choose Message to start a conversation."}</p>
+          </div>
+        ) : !inDm && !activeId && servers.length === 0 ? (
           <div className="welcome">
             <h2>Welcome, {myName}</h2>
             <p className="muted">Create a server for your friends, or join one with an invite code.</p>
@@ -502,9 +563,10 @@ function Main({ me, onUser, onLogout }: { me: User; onUser: (u: User) => void; o
           </div>
         ) : (
           <>
-            <VoteBanner votes={votes} me={me} onBallot={ballot} />
+            {!activeDm && <VoteBanner votes={votes} me={me} onBallot={ballot} />}
             <Chat
               channel={channel}
+              dm={activeDm}
               me={me}
               members={members}
               isAdmin={isAdmin}
@@ -531,7 +593,11 @@ function Main({ me, onUser, onLogout }: { me: User; onUser: (u: User) => void; o
         )}
       </main>
 
-      {detail && <Members server={detail} me={me} votes={votes} onStartVote={startVote} onRole={setRole} onOpenProfile={setProfileId} onModerate={setModerating} />}
+      {activeDm ? (
+        <DmPanel dm={activeDm} onChanged={refreshDms} onError={fail} />
+      ) : (
+        !inDm && detail && <Members server={detail} me={me} votes={votes} onStartVote={startVote} onRole={setRole} onOpenProfile={setProfileId} onModerate={setModerating} onMessage={startDm} />
+      )}
 
       {modal === "add" && (
         <AddServerModal
@@ -539,6 +605,7 @@ function Main({ me, onUser, onLogout }: { me: User; onUser: (u: User) => void; o
           onError={fail}
           onDone={(s) => {
             setServers((prev) => (prev.some((x) => x.id === s.id) ? prev : [...prev, s]));
+            setSideMode("server");
             setActiveId(s.id);
             setModal(null);
           }}
@@ -548,7 +615,7 @@ function Main({ me, onUser, onLogout }: { me: User; onUser: (u: User) => void; o
       {modal === "poll" && channel && <PollModal channelName={channel.name} onClose={() => setModal(null)} onCreate={createPoll} />}
       {modal === "myprofile" && <MyProfileModal me={me} onClose={() => setModal(null)} onUser={onUser} onError={fail} />}
       {profileId && detail && (
-        <ProfileCard userId={profileId} serverId={detail.id} meId={me.id} onClose={() => setProfileId(null)} onEdit={() => { setProfileId(null); setModal("myprofile"); }} />
+        <ProfileCard userId={profileId} serverId={detail.id} meId={me.id} onClose={() => setProfileId(null)} onEdit={() => { setProfileId(null); setModal("myprofile"); }} onMessage={startDm} onChanged={refreshDms} />
       )}
       {moderating && detail && (
         <ModerateModal

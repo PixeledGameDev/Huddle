@@ -46,7 +46,8 @@ profilesRouter.get("/users/:userId/profile", h(async (req, res) => {
     );
     if (m) server = { role: m.role, joinedAt: new Date(m.joined_at).toISOString() };
   }
-  res.json({ profile, server });
+  const blockedByMe = !!(await one(`select 1 from user_blocks where blocker = $1 and blocked = $2`, [me, userId]));
+  res.json({ profile, server, blockedByMe });
 }));
 
 const profileSchema = z

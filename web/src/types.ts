@@ -58,6 +58,7 @@ export interface ServerDetail {
   id: string;
   name: string;
   iconVersion: number;
+  isDm: boolean;
   ownerId: string;
   myRole: Role;
   myTimeoutUntil: string | null;
@@ -120,3 +121,11 @@ export interface DeletedMessage {
 }
 
 export interface BanEntry { userId: string; username: string; name: string; permanent: boolean; until: string | null }
+
+export interface DmSummary {
+  id: string; // the DM's conversation id (used like a server id)
+  lastAt: string;
+  online: boolean;
+  blockedByMe: boolean;
+  user: { id: string; username: string; displayName: string | null; avatarVersion: number; accent: string | null; statusText: string };
+}

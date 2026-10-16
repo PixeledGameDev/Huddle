@@ -10,9 +10,10 @@ interface Props {
   onRole: (m: Member, role: "admin" | "member") => void;
   onOpenProfile: (userId: string) => void;
   onModerate: (m: Member) => void;
+  onMessage: (userId: string) => void;
 }
 
-export default function Members({ server, me, votes, onStartVote, onRole, onOpenProfile, onModerate }: Props) {
+export default function Members({ server, me, votes, onStartVote, onRole, onOpenProfile, onModerate, onMessage }: Props) {
   const online = server.members.filter((m) => m.online);
   const offline = server.members.filter((m) => !m.online);
   const voteOpenOn = (id: string) => votes.some((v) => v.status === "open" && v.targetId === id);
@@ -36,6 +37,7 @@ export default function Members({ server, me, votes, onStartVote, onRole, onOpen
           </span>
         </button>
         <span className="member-actions">
+          {m.id !== me.id && <button onClick={() => onMessage(m.id)}>Message</button>}
           {server.settings.voteEnabled && m.role === "member" && m.id !== me.id && (
             voteOpenOn(m.id) ? <small>Vote open</small> : <button onClick={() => onStartVote(m)}>Vote to {actionVerb(server.settings.voteAction)}</button>
           )}

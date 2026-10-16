@@ -198,4 +198,15 @@ create table if not exists deleted_messages (
   deleted_at timestamptz not null default now()
 );
 create index if not exists deleted_messages_server on deleted_messages(server_id, deleted_at desc);
+
+-- v4: direct messages. A DM is a hidden two-person "server" with a single channel, so every message feature just works.
+alter table servers add column if not exists is_dm boolean not null default false;
+alter table servers add column if not exists dm_key text;
+create unique index if not exists servers_dm_key on servers(dm_key) where dm_key is not null;
+create table if not exists user_blocks (
+  blocker uuid not null references users(id) on delete cascade,
+  blocked uuid not null references users(id) on delete cascade,
+  created_at timestamptz not null default now(),
+  primary key (blocker, blocked)
+);
 `;

@@ -1,11 +1,13 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import Composer, { type ComposerHandle } from "./Composer";
 import MessageRow from "./MessageRow";
-import type { Attachment, Channel, Member, Message, User } from "./types";
+import { Avatar } from "./Avatar";
+import type { Attachment, Channel, DmSummary, Member, Message, User } from "./types";
 import { nameOfUser } from "./util";
 
 interface Props {
   channel: Channel | undefined;
+  dm?: DmSummary;
   me: User;
   members: Member[];
   isAdmin: boolean;
@@ -99,8 +101,18 @@ export default function Chat(p: Props) {
         composerRef.current?.addFiles(e.dataTransfer.files);
       }}
     >
-      <header className="chat-head"><span className="hash">#</span>{channel.name}</header>
-      {dragging && <div className="drop-hint">Drop files to attach them to #{channel.name}</div>}
+      <header className="chat-head">
+        {p.dm ? (
+          <span className="dm-head">
+            <Avatar id={p.dm.user.id} name={nameOfUser(p.dm.user)} version={p.dm.user.avatarVersion} accent={p.dm.user.accent} size={26} />
+            {nameOfUser(p.dm.user)}
+            <span className={p.dm.online ? "dot on" : "dot"} title={p.dm.online ? "Online" : "Offline"} />
+          </span>
+        ) : (
+          <><span className="hash">#</span>{channel.name}</>
+        )}
+      </header>
+      {dragging && <div className="drop-hint">Drop files to attach them to {p.dm ? nameOfUser(p.dm.user) : `#${channel.name}`}</div>}
       <div
         className="messages"
         ref={listRef}
@@ -110,7 +122,7 @@ export default function Chat(p: Props) {
         }}
       >
         {p.hasMore && <button className="link center-btn" onClick={p.onLoadOlder}>Load earlier messages</button>}
-        {items.length === 0 && <p className="muted pad">No messages in #{channel.name} yet. Say hello.</p>}
+        {items.length === 0 && <p className="muted pad">{p.dm ? `This is the start of your conversation with ${nameOfUser(p.dm.user)}.` : `No messages in #${channel.name} yet. Say hello.`}</p>}
         {items.map((m, i) => {
           const prev = items[i - 1];
           const grouped = !!prev && !m.replyTo && prev.authorId === m.authorId && new Date(m.createdAt).getTime() - new Date(prev.createdAt).getTime() < 5 * 60_000;
@@ -159,6 +171,7 @@ export default function Chat(p: Props) {
         onUpload={p.onUpload}
         onTyping={p.onTyping}
         onOpenPoll={p.onOpenPoll}
+        placeholder={p.dm ? `Message ${nameOfUser(p.dm.user)}` : undefined}
       />
     </section>
   );

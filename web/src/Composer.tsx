@@ -20,13 +20,14 @@ interface Props {
   onUpload: (file: File) => Promise<Attachment>;
   onTyping: () => void;
   onOpenPoll: () => void;
+  placeholder?: string;
 }
 
 interface Pending { key: string; name: string; size: number; status: "uploading" | "ready" | "error"; error?: string; attachment?: Attachment }
 interface Suggestion { key: string; username: string; label: string }
 
 const Composer = forwardRef<ComposerHandle, Props>(function Composer(props, ref) {
-  const { channel, me, members, isAdmin, timedOut, timeoutUntil, replyTo, gifsEnabled, onCancelReply, onSend, onUpload, onTyping, onOpenPoll } = props;
+  const { channel, me, members, isAdmin, timedOut, timeoutUntil, replyTo, gifsEnabled, onCancelReply, onSend, onUpload, onTyping, onOpenPoll, placeholder } = props;
   const [text, setText] = useState("");
   const [caret, setCaret] = useState(0);
   const [sel, setSel] = useState(0);
@@ -185,7 +186,7 @@ const Composer = forwardRef<ComposerHandle, Props>(function Composer(props, ref)
             rows={1}
             value={text}
             maxLength={2000}
-            placeholder={`Message #${channel.name}`}
+            placeholder={placeholder ?? `Message #${channel.name}`}
             onChange={(e) => onChange(e.currentTarget)}
             onSelect={(e) => setCaret(e.currentTarget.selectionStart)}
             onPaste={(e) => {

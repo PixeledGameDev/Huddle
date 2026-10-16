@@ -5,7 +5,7 @@ import { cleanName, sniffImage } from "./fileutil";
 import { isAllowedGif } from "./gifs";
 import { getMessageDto, hydrate, messageSelect } from "./hydrate";
 import { HttpError, h, rateLimit } from "./http";
-import { assertNotTimedOut, channelServer, requireMember } from "./perms";
+import { assertCanWrite, channelServer, requireMember } from "./perms";
 import { emitServer } from "./realtime";
 
 export const messagesRouter = Router();
@@ -55,7 +55,7 @@ messagesRouter.post("/channels/:channelId/messages", h(async (req, res) => {
   const gifUrl = body.gifUrl ?? null;
   if (gifUrl && !isAllowedGif(gifUrl)) throw new HttpError(400, "That GIF source isn't supported.");
   if (!body.content && !attachmentIds.length && !gifUrl) throw new HttpError(400, "Write a message, attach a file, or pick a GIF.");
-  await assertNotTimedOut(serverId, user.id);
+  await assertCanWrite(serverId, user.id);
 
   let replyAuthor: string | null = null;
   if (body.replyTo) {
@@ -94,10 +94,10 @@ const messageParam = (p: Record<string, string>) => z.string().regex(/^\d+$/, "M
 
 async function messageContext(messageId: string) {
   const m = await one<any>(
-    `select m.id::text as id, m.author_id, m.channel_id, m.content, m.gif_url, m.reply_to, c.server_id,
+    `select m.id::text as id, m.author_id, m.channel_id, m.content, m.gif_url, m.reply_to, c.server_id, s.is_dm,
             (select count(*) from attachments a where a.message_id = m.id)::int as files,
             exists(select 1 from polls p where p.message_id = m.id) as is_poll
-       from messages m join channels c on c.id = m.channel_id where m.id = $1::bigint`,
+       from messages m join channels c on c.id = m.channel_id join servers s on s.id = c.server_id where m.id = $1::bigint`,
     [messageId]
   );
   if (!m) throw new HttpError(404, "Message not found.");
@@ -112,7 +112,7 @@ messagesRouter.patch("/messages/:messageId", h(async (req, res) => {
   const me = await requireMember(m.server_id, user.id);
   if (m.author_id !== user.id) throw new HttpError(403, "You can only edit your own messages.");
   if (m.is_poll) throw new HttpError(400, "Polls can't be edited.");
-  await assertNotTimedOut(m.server_id, user.id);
+  await assertCanWrite(m.server_id, user.id);
   const { content } = z.object({ content: z.string().trim().max(2000) }).parse(req.body);
   if (!content && !m.files && !m.gif_url) throw new HttpError(400, "A message can't be empty. Delete it instead.");
   if (content !== m.content) {
@@ -135,8 +135,9 @@ messagesRouter.delete("/messages/:messageId", h(async (req, res) => {
   const isAdmin = me.role !== "member";
   if (m.author_id !== user.id && !isAdmin) throw new HttpError(403, "You can only delete your own messages.");
   await tx(async (c) => {
-    // Archive for admins, then remove the real row so nobody else sees any trace of it.
-    await q(
+    // Archive for admins, then remove the real row so nobody else sees any trace of it. DMs have no admins, so nothing is kept.
+    if (!m.is_dm)
+      await q(
       `insert into deleted_messages(id, server_id, channel_id, channel_name, author_id, content, gif_url, created_at, attachments, meta, deleted_by)
        select m.id, c.server_id, m.channel_id, c.name, m.author_id, m.content, m.gif_url, m.created_at,
               (select coalesce(jsonb_agg(jsonb_build_object('name', a.name, 'mime', a.mime, 'size', a.size)), '[]'::jsonb) from attachments a where a.message_id = m.id),
@@ -167,7 +168,7 @@ messagesRouter.post(
     const user = req.user!;
     const serverId = await channelServer(req.params.channelId);
     await requireMember(serverId, user.id);
-    await assertNotTimedOut(serverId, user.id);
+    await assertCanWrite(serverId, user.id);
     const data = req.body;
     if (!Buffer.isBuffer(data) || data.length === 0) throw new HttpError(400, "That file is empty.");
     const name = cleanName(typeof req.query.name === "string" ? req.query.name : "file");
@@ -206,7 +207,7 @@ async function reactionContext(messageId: string, userId: string) {
   );
   if (!m) throw new HttpError(404, "Message not found.");
   await requireMember(m.server_id, userId);
-  await assertNotTimedOut(m.server_id, userId);
+  await assertCanWrite(m.server_id, userId);
   return m;
 }
 const reactionParams = (p: Record<string, string>) => ({
