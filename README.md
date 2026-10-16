@@ -55,18 +55,47 @@ are persisted and resolved by a sweeper, so a restart doesn't lose them.
 - Reactions: any emoji, up to 20 different ones per message. Timed-out members can't upload or react.
 - Uploads that are never attached to a message are deleted after an hour.
 
+## Messages, polls, and mentions
+
+- **Reply, edit, delete.** Authors can edit and delete their own messages. Owners and admins can delete anyone's.
+  A deleted message disappears for everyone (replies to it just lose their quote), but owners and admins can still
+  read it under **Settings > Deleted messages**. Uploaded file contents are removed; only their names are kept.
+- **@mentions.** `@username` (autocomplete in the composer) notifies that member; admins can use `@everyone`.
+  Replying also notifies the original author. Mention badges show on channels and servers and in the tab title.
+- **Polls.** 2 to 10 options, single or multiple choice, optional anonymous voting, optional end time. The author
+  or an admin can close one early.
+- **GIFs.** Search is proxied through your server so the API key stays secret. It uses GIPHY (Tenor's API shut down
+  on June 30, 2026). Set `GIPHY_API_KEY` to turn the GIF button on; without it the button is hidden.
+- **Twemoji.** Emoji render as Twemoji images served by your own server (no CDN). Emoji newer than the bundled set
+  fall back to the device's own glyph. Twemoji graphics are CC-BY 4.0 (credited in the profile dialog).
+
+## Profiles and customization
+
+Display name, profile picture, status, bio, and profile color per person (people are still mentioned by their
+`@username`), a server icon, a light/dark/system theme, and cozy/compact message spacing.
+
+## Admin controls
+
+Owners and admins can time out, kick, or ban (timed or permanent) anyone below them instantly, with a reason,
+from **Moderate** in the member list. Owners can moderate admins; admins can only moderate regular members. Bans
+can be lifted in **Settings > Bans**. Admins can also rename and delete channels (hover a channel). Everything is
+recorded in **Settings > Activity**.
+
 ## Layout
 
 ```
-server/src   index.ts (app) · auth.ts · routes.ts · votes.ts · realtime.ts · schema.ts · db.ts
-web/src      App.tsx · Chat.tsx · Members.tsx · VoteBanner.tsx · Modals.tsx · Auth.tsx
+server/src   index.ts · auth.ts · routes.ts (servers) · messages.ts · polls.ts · profiles.ts · admin.ts
+             votes.ts · gifs.ts · hydrate.ts · perms.ts · realtime.ts · schema.ts · db.ts
+web/src      App.tsx · Chat.tsx · MessageRow.tsx · Composer.tsx · Members.tsx · Polls.tsx · GifPicker.tsx
+             EmojiPicker.tsx · Rich.tsx · Avatar.tsx · Modals.tsx · ProfileModals.tsx · VoteBanner.tsx · Auth.tsx
 render.yaml  Render Blueprint
 ```
 
 ## Known v1 limits
 
-- No DMs, message editing/deleting, or voice/video.
+- No DMs or voice/video.
 - Single instance only: presence and rate limits are in memory. To scale out, add the Socket.IO Redis
   adapter and move the rate limiter to Redis.
 - Messages render as plain text (no Markdown) so output stays safely escaped.
+- Mention badges reset on reload. The deleted-message archive isn't pruned automatically.
 - No email, password reset, or account deletion yet.
