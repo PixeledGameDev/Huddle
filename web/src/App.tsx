@@ -3,6 +3,8 @@ import { io, type Socket } from "socket.io-client";
 import { api, ApiError, uploadFile } from "./api";
 import { Avatar } from "./Avatar";
 import Auth from "./Auth";
+import Changelog from "./Changelog";
+import { hasUnseenUpdates, markUpdatesSeen } from "./changelog";
 import Chat from "./Chat";
 import DmPanel from "./DmPanel";
 import Members from "./Members";
@@ -27,7 +29,7 @@ interface Toast { id: number; text: string; error?: boolean }
 type MsgState = Record<string, { items: Message[]; hasMore: boolean }>;
 type TypingState = Record<string, Record<string, { name: string; until: number }>>;
 type Unread = { channels: Record<string, number>; servers: Record<string, number> };
-type Modal = "add" | "settings" | "poll" | "myprofile" | null;
+type Modal = "add" | "settings" | "poll" | "myprofile" | "changelog" | null;
 
 function Main({ me, onUser, onLogout }: { me: User; onUser: (u: User) => void; onLogout: () => void }) {
   const [servers, setServers] = useState<ServerSummary[]>([]);
@@ -45,6 +47,7 @@ function Main({ me, onUser, onLogout }: { me: User; onUser: (u: User) => void; o
   const [unread, setUnread] = useState<Unread>({ channels: {}, servers: {} });
   const [gifsEnabled, setGifsEnabled] = useState(false);
   const [dms, setDms] = useState<DmSummary[]>([]);
+  const [unseenUpdates, setUnseenUpdates] = useState(hasUnseenUpdates);
   const [sideMode, setSideMode] = useState<"server" | "dms">("server");
 
   const socketRef = useRef<Socket | null>(null);
@@ -544,6 +547,9 @@ function Main({ me, onUser, onLogout }: { me: User; onUser: (u: User) => void; o
             <Avatar id={me.id} name={myName} version={me.avatarVersion} accent={me.accent} size={28} />
             <span className="me-name">{myName}</span>
           </button>
+          <button className="icon whatsnew" aria-label={unseenUpdates ? "What's new (new updates)" : "What's new"} title="What's new" onClick={() => { markUpdatesSeen(); setUnseenUpdates(false); setModal("changelog"); }}>
+            ✨{unseenUpdates && <span className="new-dot" />}
+          </button>
           {!inDm && detail && detail.myRole !== "owner" && <button className="icon" onClick={leave}>Leave</button>}
           <button className="icon" onClick={logout}>Sign out</button>
         </footer>
@@ -613,6 +619,7 @@ function Main({ me, onUser, onLogout }: { me: User; onUser: (u: User) => void; o
       )}
       {modal === "settings" && detail && <SettingsModal server={detail} onClose={() => setModal(null)} onError={fail} onSaved={() => { setModal(null); push("Settings saved."); }} />}
       {modal === "poll" && channel && <PollModal channelName={channel.name} onClose={() => setModal(null)} onCreate={createPoll} />}
+      {modal === "changelog" && <Changelog onClose={() => setModal(null)} />}
       {modal === "myprofile" && <MyProfileModal me={me} onClose={() => setModal(null)} onUser={onUser} onError={fail} />}
       {profileId && detail && (
         <ProfileCard userId={profileId} serverId={detail.id} meId={me.id} onClose={() => setProfileId(null)} onEdit={() => { setProfileId(null); setModal("myprofile"); }} onMessage={startDm} onChanged={refreshDms} />

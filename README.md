@@ -94,6 +94,11 @@ GIFs, and emoji all work in DMs.
   DM are removed outright (no archive). Messages from the other person count as unread notifications.
 - Under the hood a DM is a hidden two-person space with one channel, which is why every message feature carries over.
 
+## Update log
+
+The ✨ button at the bottom left opens an in-app update log, with a red dot until each person has seen the latest
+entry. To announce a change, add an entry at the top of `web/src/changelog.ts`.
+
 ## Layout
 
 ```
