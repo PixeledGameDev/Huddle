@@ -5,6 +5,7 @@ import { parse } from "cookie";
 import { z } from "zod";
 import { one, q } from "./db";
 import { HttpError, h, rateLimit } from "./http";
+import { getProfile } from "./profiles";
 
 export interface AuthUser {
   id: string;
@@ -59,7 +60,10 @@ export async function cleanupSessions() {
 }
 
 const creds = z.object({
-  username: z.string().regex(/^[a-zA-Z0-9_]{3,20}$/, "Usernames are 3–20 letters, numbers, or underscores."),
+  username: z
+    .string()
+    .regex(/^[a-zA-Z0-9_]{3,20}$/, "Usernames are 3–20 letters, numbers, or underscores.")
+    .refine((u) => !["everyone", "here"].includes(u.toLowerCase()), "That username is reserved."),
   password: z.string().min(8, "Passwords need at least 8 characters.").max(128),
 });
 
@@ -76,7 +80,7 @@ authRouter.post(
         [username, await hash(password)]
       );
       await startSession(res, user!.id);
-      res.json({ user });
+      res.json({ user: await getProfile(user!.id) });
     } catch (e: any) {
       if (e.code === "23505") throw new HttpError(409, "That username is taken.");
       throw e;
@@ -96,7 +100,7 @@ authRouter.post(
     const ok = row ? await verify(row.password_hash, password).catch(() => false) : false;
     if (!row || !ok) throw new HttpError(401, "Wrong username or password.");
     await startSession(res, row.id);
-    res.json({ user: { id: row.id, username: row.username } });
+    res.json({ user: await getProfile(row.id) });
   })
 );
 
@@ -115,6 +119,6 @@ authRouter.get(
   h(async (req, res) => {
     const user = await userFromCookie(req.headers.cookie);
     if (!user) throw new HttpError(401, "Not signed in.");
-    res.json({ user });
+    res.json({ user: await getProfile(user.id) });
   })
 );

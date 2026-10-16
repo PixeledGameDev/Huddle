@@ -30,3 +30,11 @@ export async function uploadFile(channelId: string, file: File): Promise<Attachm
   if (!res.ok) throw new ApiError(data.error ?? "Upload failed.", res.status, data);
   return data.attachment as Attachment;
 }
+
+/** Raw-body upload (images). Throws ApiError with a readable message on failure. */
+export async function uploadRaw<T = any>(path: string, body: Blob, method = "PUT"): Promise<T> {
+  const res = await fetch("/api" + path, { method, headers: { "Content-Type": "application/octet-stream" }, body, credentials: "same-origin" });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new ApiError(data.error ?? "Upload failed.", res.status, data);
+  return data as T;
+}

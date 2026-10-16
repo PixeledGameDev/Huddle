@@ -26,7 +26,7 @@ export interface VoteDto {
 /** viewerId = null produces the broadcast shape (no myVote). */
 export async function fetchVote(id: string, viewerId: string | null = null): Promise<VoteDto | null> {
   const r = await one<any>(
-    `select v.id, v.server_id, v.target_id, t.username as target_name, v.initiator_id, i.username as initiator_name,
+    `select v.id, v.server_id, v.target_id, coalesce(t.display_name, t.username) as target_name, v.initiator_id, coalesce(i.display_name, i.username) as initiator_name,
             v.action, v.duration_seconds, v.required_votes, v.eligible_count, v.status, v.expires_at,
             (select count(*) from vote_ballots b where b.vote_id = v.id and b.choice)::int as yes,
             (select count(*) from vote_ballots b where b.vote_id = v.id and not b.choice)::int as no,

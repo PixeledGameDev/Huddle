@@ -2,10 +2,7 @@ import type { Vote, VoteAction } from "./types";
 
 export function fmtDuration(seconds: number) {
   if (seconds < 3600) return `${Math.round(seconds / 60)} min`;
-  if (seconds < 86400) {
-    const h = Math.round(seconds / 3600);
-    return `${h} hr`;
-  }
+  if (seconds < 86400) return `${Math.round(seconds / 3600)} hr`;
   const d = Math.round(seconds / 86400);
   return `${d} ${d === 1 ? "day" : "days"}`;
 }
@@ -23,6 +20,7 @@ export function hue(name: string) {
 }
 
 export const timeOf = (iso: string) => new Date(iso).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+export const dateTimeOf = (iso: string) => new Date(iso).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
 
 export function fmtSize(bytes: number) {
   if (bytes < 1024) return `${bytes} B`;
@@ -30,6 +28,32 @@ export function fmtSize(bytes: number) {
   return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
 }
 
+export function fmtRemaining(ms: number) {
+  const s = Math.max(0, Math.ceil(ms / 1000));
+  if (s < 60) return `${s}s`;
+  if (s < 3600) return `${Math.floor(s / 60)}m ${s % 60}s`;
+  if (s < 86400) return `${Math.floor(s / 3600)}h ${Math.floor((s % 3600) / 60)}m`;
+  return `${Math.floor(s / 86400)}d ${Math.floor((s % 86400) / 3600)}h`;
+}
+
+export const nameOfUser = (u: { displayName?: string | null; username: string }) => u.displayName || u.username;
+
 export const MAX_FILE_BYTES = 8 * 1024 * 1024;
 export const MAX_ATTACHMENTS = 4;
-export const QUICK_EMOJI = ["👍", "❤️", "😂", "😮", "😢", "🎉", "🔥", "👀", "🙏", "✅", "❌", "💯", "🤔", "😎", "👏", "😡"];
+
+export const EMOJI_GROUPS: { label: string; emojis: string[] }[] = [
+  { label: "Smileys", emojis: ["😀", "😃", "😄", "😁", "😆", "😅", "😂", "🤣", "😊", "😇", "🙂", "😉", "😍", "🥰", "😘", "😋", "😛", "😜", "🤪", "🤔", "🤨", "😐", "🙄", "😏", "😒", "😞", "😔", "😕", "🙁", "😖", "😩", "🥺", "😢", "😭", "😤", "😠", "😡", "🤯", "😳", "🥵", "🥶", "😱", "😨", "😰", "🤗", "🤫", "🥱", "😴", "😎", "🤓", "🥳"] },
+  { label: "Gestures", emojis: ["👍", "👎", "👌", "✌️", "🤞", "🤟", "🤘", "👏", "🙌", "🙏", "💪", "👋", "🤝", "✋", "👀"] },
+  { label: "Symbols", emojis: ["❤️", "🧡", "💛", "💚", "💙", "💜", "🖤", "💔", "💯", "🔥", "✨", "⭐", "🎉", "🎊", "🏆", "✅", "❌", "⚠️", "❓", "❗", "💡"] },
+  { label: "Things", emojis: ["🎮", "🎧", "🎵", "📷", "💻", "📱", "☕", "🍕", "🍔", "🍟", "🍺", "🎂", "🌈", "☀️", "🌙", "⚡", "🐶", "🐱", "🐸", "🦄"] },
+];
+
+/** Center-crop an image to a square and downscale it, so avatars and icons stay small. */
+export async function squareImage(file: File, size = 256): Promise<Blob> {
+  const bmp = await createImageBitmap(file);
+  const s = Math.min(bmp.width, bmp.height);
+  const canvas = document.createElement("canvas");
+  canvas.width = canvas.height = size;
+  canvas.getContext("2d")!.drawImage(bmp, (bmp.width - s) / 2, (bmp.height - s) / 2, s, s, 0, 0, size, size);
+  return new Promise((res, rej) => canvas.toBlob((b) => (b ? res(b) : rej(new Error("Couldn't process that image."))), "image/webp", 0.9));
+}

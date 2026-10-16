@@ -131,4 +131,71 @@ create table if not exists reactions (
   created_at timestamptz not null default now(),
   primary key (message_id, user_id, emoji)
 );
+
+-- v3: profiles, replies, edits, mentions, GIFs, polls, deleted-message archive
+alter table users add column if not exists display_name text;
+alter table users add column if not exists bio text not null default '';
+alter table users add column if not exists accent text;
+alter table users add column if not exists status_text text not null default '';
+alter table users add column if not exists avatar_version int not null default 0;
+create table if not exists user_avatars (
+  user_id uuid primary key references users(id) on delete cascade,
+  mime text not null,
+  data bytea not null
+);
+alter table servers add column if not exists icon_version int not null default 0;
+create table if not exists server_icons (
+  server_id uuid primary key references servers(id) on delete cascade,
+  mime text not null,
+  data bytea not null
+);
+
+alter table messages add column if not exists edited_at timestamptz;
+alter table messages add column if not exists reply_to bigint references messages(id) on delete set null;
+alter table messages add column if not exists mentions uuid[] not null default '{}';
+alter table messages add column if not exists mentions_everyone boolean not null default false;
+alter table messages add column if not exists gif_url text;
+
+create table if not exists polls (
+  id uuid primary key default gen_random_uuid(),
+  message_id bigint not null unique references messages(id) on delete cascade,
+  question text not null,
+  multi boolean not null default false,
+  anonymous boolean not null default false,
+  ends_at timestamptz,
+  closed_at timestamptz,
+  created_at timestamptz not null default now()
+);
+create table if not exists poll_options (
+  id uuid primary key default gen_random_uuid(),
+  poll_id uuid not null references polls(id) on delete cascade,
+  text text not null,
+  position int not null
+);
+create index if not exists poll_options_poll on poll_options(poll_id);
+create table if not exists poll_votes (
+  poll_id uuid not null references polls(id) on delete cascade,
+  option_id uuid not null references poll_options(id) on delete cascade,
+  user_id uuid not null references users(id),
+  created_at timestamptz not null default now(),
+  primary key (option_id, user_id)
+);
+create index if not exists poll_votes_poll on poll_votes(poll_id, user_id);
+
+-- Deleted messages vanish for everyone, but admins can still read them here.
+create table if not exists deleted_messages (
+  id bigint primary key,
+  server_id uuid not null references servers(id) on delete cascade,
+  channel_id uuid not null,
+  channel_name text not null,
+  author_id uuid not null references users(id),
+  content text not null,
+  gif_url text,
+  created_at timestamptz not null,
+  attachments jsonb not null default '[]',
+  meta jsonb not null default '{}',
+  deleted_by uuid not null references users(id),
+  deleted_at timestamptz not null default now()
+);
+create index if not exists deleted_messages_server on deleted_messages(server_id, deleted_at desc);
 `;

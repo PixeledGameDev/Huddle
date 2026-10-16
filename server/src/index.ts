@@ -21,7 +21,7 @@ async function main() {
     res.setHeader("Referrer-Policy", "same-origin");
     res.setHeader(
       "Content-Security-Policy",
-      "default-src 'self'; connect-src 'self' ws: wss:; style-src 'self' 'unsafe-inline'; img-src 'self' data:; frame-ancestors 'none'"
+      "default-src 'self'; connect-src 'self' ws: wss:; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://*.giphy.com; frame-ancestors 'none'"
     );
     next();
   });
@@ -31,6 +31,11 @@ async function main() {
   app.use("/api/auth", authRouter);
   app.use("/api", requireAuth, api);
   app.use("/api", (_req, res) => void res.status(404).json({ error: "Not found." }));
+
+  // Twemoji graphics are served from the installed package, so no third-party CDN is involved.
+  const twemojiDir = path.dirname(require.resolve("@twemoji/svg/package.json"));
+  app.use("/twemoji", express.static(twemojiDir, { maxAge: "30d", immutable: true, index: false, extensions: [] }));
+  app.use("/twemoji", (_req, res) => void res.sendStatus(404));
 
   const webDist = path.join(__dirname, "../../web/dist");
   app.use(express.static(webDist));
@@ -43,7 +48,7 @@ async function main() {
     if (err instanceof HttpError) return void res.status(err.status).json({ error: err.message, ...err.extra });
     if (err instanceof ZodError) return void res.status(400).json({ error: err.issues[0]?.message ?? "Invalid request." });
     if (err?.code === "22P02") return void res.status(404).json({ error: "Not found." }); // malformed uuid / id
-    if (err?.type === "entity.too.large") return void res.status(413).json({ error: "That file is too large. The limit is 8 MB." });
+    if (err?.type === "entity.too.large") return void res.status(413).json({ error: "That file is too large." });
     if (err?.type === "entity.parse.failed") return void res.status(400).json({ error: "Invalid JSON." });
     console.error(err);
     res.status(500).json({ error: "Something went wrong on our end." });

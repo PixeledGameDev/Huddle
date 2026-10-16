@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
-import { api } from "./api";
-import type { ServerDetail, ServerSummary, Settings } from "./types";
+import { api, uploadRaw } from "./api";
+import type { BanEntry, DeletedMessage, ServerDetail, ServerSummary, Settings } from "./types";
+import { dateTimeOf, fmtDuration, fmtSize, hue, squareImage } from "./util";
 
-function Modal({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
+export function Modal({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
     window.addEventListener("keydown", onKey);
@@ -69,72 +70,145 @@ function Select({ label, value, options, onChange, hint }: { label: string; valu
   );
 }
 
+const durationText = (d: any) => (d?.durationSeconds ? ` for ${fmtDuration(d.durationSeconds)}` : "");
+const reasonText = (d: any) => (d?.reason ? ` (${d.reason})` : "");
 const AUDIT_TEXT: Record<string, (e: any) => string> = {
   "vote.start": (e) => `${e.actor} started a vote on ${e.target}`,
   "vote.passed": (e) => `Vote on ${e.target} passed (${e.detail?.action})`,
   "vote.failed": (e) => `Vote on ${e.target} failed`,
   "settings.update": (e) => `${e.actor} changed server settings`,
   "role.update": (e) => `${e.actor} set ${e.target} to ${e.detail?.role}`,
+  "mod.kick": (e) => `${e.actor} kicked ${e.target}${reasonText(e.detail)}`,
+  "mod.ban": (e) => `${e.actor} banned ${e.target}${e.detail?.durationSeconds ? durationText(e.detail) : " permanently"}${reasonText(e.detail)}`,
+  "mod.unban": (e) => `${e.actor} unbanned ${e.target}`,
+  "mod.timeout": (e) => `${e.actor} timed out ${e.target}${durationText(e.detail)}${reasonText(e.detail)}`,
+  "mod.untimeout": (e) => `${e.actor} removed ${e.target}'s timeout`,
+  "channel.delete": (e) => `${e.actor} deleted #${e.detail?.name}`,
+  "message.delete": (e) => `${e.actor} deleted a message by ${e.target}`,
 };
 
+type Tab = "general" | "bans" | "deleted" | "activity";
+
 export function SettingsModal({ server, onClose, onSaved, onError }: { server: ServerDetail; onClose: () => void; onSaved: () => void; onError: (e: unknown) => void }) {
+  const [tab, setTab] = useState<Tab>("general");
   const [s, setS] = useState<Settings>(server.settings);
   const [audit, setAudit] = useState<any[]>([]);
+  const [bans, setBans] = useState<BanEntry[]>([]);
+  const [deleted, setDeleted] = useState<DeletedMessage[]>([]);
   const set = <K extends keyof Settings>(k: K, v: Settings[K]) => setS((p) => ({ ...p, [k]: v }));
 
+  const loadBans = () => api<{ bans: BanEntry[] }>(`/servers/${server.id}/bans`).then((r) => setBans(r.bans), onError);
   useEffect(() => {
-    api<{ entries: any[] }>(`/servers/${server.id}/audit`).then((r) => setAudit(r.entries)).catch(onError);
-  }, [server.id]);
+    if (tab === "activity") api<{ entries: any[] }>(`/servers/${server.id}/audit`).then((r) => setAudit(r.entries), onError);
+    if (tab === "bans") void loadBans();
+    if (tab === "deleted") api<{ messages: DeletedMessage[] }>(`/servers/${server.id}/deleted`).then((r) => setDeleted(r.messages), onError);
+  }, [tab, server.id]);
 
+  async function setIcon(file: File) {
+    try {
+      await uploadRaw(`/servers/${server.id}/icon`, await squareImage(file, 128));
+    } catch (err) { onError(err); }
+  }
+
+  const tabs: [Tab, string][] = [["general", "General"], ["bans", "Bans"], ["deleted", "Deleted messages"], ["activity", "Activity"]];
   return (
     <Modal title={`${server.name} settings`} onClose={onClose}>
-      <form
-        className="stack"
-        onSubmit={async (e) => {
-          e.preventDefault();
-          try {
-            await api(`/servers/${server.id}/settings`, "PATCH", s);
-            onSaved();
-          } catch (err) { onError(err); }
-        }}
-      >
-        <h3>Vote moderation</h3>
-        <label className="check">
-          <input type="checkbox" checked={s.voteEnabled} onChange={(e) => set("voteEnabled", e.target.checked)} />
-          Let members vote to remove disruptive people
-        </label>
-        <fieldset disabled={!s.voteEnabled} className="grid">
-          <label>
-            When a vote passes
-            <select value={s.voteAction} onChange={(e) => set("voteAction", e.target.value as Settings["voteAction"])}>
-              <option value="timeout">Time the member out</option>
-              <option value="kick">Kick the member</option>
-              <option value="ban">Ban the member temporarily</option>
-            </select>
-          </label>
-          {s.voteAction !== "kick" && (
-            <Select label={s.voteAction === "ban" ? "Ban length" : "Timeout length"} value={s.voteDurationSeconds} options={DURATIONS} onChange={(n) => set("voteDurationSeconds", n)} />
-          )}
-          <Select label="Share of online voters needed" value={s.voteThresholdPct} options={THRESHOLDS} onChange={(n) => set("voteThresholdPct", n)} />
-          <Select label="Minimum yes votes" value={s.voteMinVotes} options={MIN_VOTES} onChange={(n) => set("voteMinVotes", n)} hint="A vote can't start without this many eligible members online." />
-          <Select label="Voting time" value={s.voteWindowSeconds} options={WINDOWS} onChange={(n) => set("voteWindowSeconds", n)} />
-          <Select label="Cooldown between votes" value={s.voteCooldownSeconds} options={COOLDOWNS} onChange={(n) => set("voteCooldownSeconds", n)} />
-          <Select label="Who can vote" value={s.voteMinMemberAgeSeconds} options={MIN_AGE} onChange={(n) => set("voteMinMemberAgeSeconds", n)} hint="Minimum time in the server. Owners and admins always can." />
-        </fieldset>
-        <p className="muted">Owners and admins can't be voted on.</p>
-        <button className="primary">Save changes</button>
-      </form>
-      <hr />
-      <h3>Recent activity</h3>
-      <ul className="audit">
-        {audit.length === 0 && <li className="muted">Nothing yet.</li>}
-        {audit.map((e) => (
-          <li key={e.id}>
-            <time>{new Date(e.createdAt).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}</time>
-            {(AUDIT_TEXT[e.action] ?? (() => e.action))(e)}
-          </li>
-        ))}
-      </ul>
+      <div className="tabs" role="tablist">
+        {tabs.map(([id, label]) => <button key={id} role="tab" aria-selected={tab === id} className={tab === id ? "tab on" : "tab"} onClick={() => setTab(id)}>{label}</button>)}
+      </div>
+
+      {tab === "general" && (
+        <>
+          <div className="avatar-edit">
+            {server.iconVersion > 0
+              ? <img className="srv-preview" src={`/api/servers/${server.id}/icon?v=${server.iconVersion}`} alt="" />
+              : <span className="srv-preview" style={{ background: `hsl(${hue(server.name)} 38% 40%)` }}>{server.name[0].toUpperCase()}</span>}
+            <div className="stack tight">
+              <label className="file-btn">Upload server icon<input type="file" accept="image/png,image/jpeg,image/gif,image/webp" hidden onChange={(e) => { const f = e.target.files?.[0]; if (f) void setIcon(f); e.target.value = ""; }} /></label>
+              {server.iconVersion > 0 && <button type="button" className="link left" onClick={() => api(`/servers/${server.id}/icon`, "DELETE").catch(onError)}>Remove icon</button>}
+            </div>
+          </div>
+          <hr />
+          <form
+            className="stack"
+            onSubmit={async (e) => {
+              e.preventDefault();
+              try {
+                await api(`/servers/${server.id}/settings`, "PATCH", s);
+                onSaved();
+              } catch (err) { onError(err); }
+            }}
+          >
+            <h3>Vote moderation</h3>
+            <label className="check">
+              <input type="checkbox" checked={s.voteEnabled} onChange={(e) => set("voteEnabled", e.target.checked)} />
+              Let members vote to remove disruptive people
+            </label>
+            <fieldset disabled={!s.voteEnabled} className="grid">
+              <label>
+                When a vote passes
+                <select value={s.voteAction} onChange={(e) => set("voteAction", e.target.value as Settings["voteAction"])}>
+                  <option value="timeout">Time the member out</option>
+                  <option value="kick">Kick the member</option>
+                  <option value="ban">Ban the member temporarily</option>
+                </select>
+              </label>
+              {s.voteAction !== "kick" && (
+                <Select label={s.voteAction === "ban" ? "Ban length" : "Timeout length"} value={s.voteDurationSeconds} options={DURATIONS} onChange={(n) => set("voteDurationSeconds", n)} />
+              )}
+              <Select label="Share of online voters needed" value={s.voteThresholdPct} options={THRESHOLDS} onChange={(n) => set("voteThresholdPct", n)} />
+              <Select label="Minimum yes votes" value={s.voteMinVotes} options={MIN_VOTES} onChange={(n) => set("voteMinVotes", n)} hint="A vote can't start without this many eligible members online." />
+              <Select label="Voting time" value={s.voteWindowSeconds} options={WINDOWS} onChange={(n) => set("voteWindowSeconds", n)} />
+              <Select label="Cooldown between votes" value={s.voteCooldownSeconds} options={COOLDOWNS} onChange={(n) => set("voteCooldownSeconds", n)} />
+              <Select label="Who can vote" value={s.voteMinMemberAgeSeconds} options={MIN_AGE} onChange={(n) => set("voteMinMemberAgeSeconds", n)} hint="Minimum time in the server. Owners and admins always can." />
+            </fieldset>
+            <p className="muted">Owners and admins can't be voted on. Admins can still moderate anyone below them instantly from the member list.</p>
+            <button className="primary">Save changes</button>
+          </form>
+        </>
+      )}
+
+      {tab === "bans" && (
+        <ul className="rows">
+          {bans.length === 0 && <li className="muted">Nobody is banned.</li>}
+          {bans.map((b) => (
+            <li key={b.userId}>
+              <span><strong>{b.name}</strong> <small className="muted">@{b.username} · {b.permanent ? "Permanent" : `until ${dateTimeOf(b.until!)}`}</small></span>
+              <button onClick={async () => { try { await api(`/servers/${server.id}/moderation`, "POST", { targetId: b.userId, action: "unban" }); await loadBans(); } catch (err) { onError(err); } }}>Unban</button>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {tab === "deleted" && (
+        <>
+          <p className="muted">Deleted messages disappear for everyone else. Only owners and admins can see them here. File contents are removed; only their names are kept.</p>
+          <ul className="rows deleted">
+            {deleted.length === 0 && <li className="muted">No deleted messages.</li>}
+            {deleted.map((d) => (
+              <li key={d.id}>
+                <div className="del-meta"><strong>{d.authorName}</strong> in #{d.channelName} <span className="muted">· sent {dateTimeOf(d.createdAt)} · deleted {dateTimeOf(d.deletedAt)} by {d.deletedById === d.authorId ? "the author" : d.deletedByName}</span></div>
+                {d.content && <p className="del-text">{d.content}</p>}
+                {d.gif && <small className="muted">GIF: {d.gif}</small>}
+                {d.attachments.map((a, i) => <small key={i} className="muted">File: {a.name} ({fmtSize(a.size)})</small>)}
+                {d.poll && <small className="muted">Poll: {d.poll.question} ({d.poll.options.join(", ")})</small>}
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+
+      {tab === "activity" && (
+        <ul className="audit">
+          {audit.length === 0 && <li className="muted">Nothing yet.</li>}
+          {audit.map((e) => (
+            <li key={e.id}>
+              <time>{dateTimeOf(e.createdAt)}</time>
+              {(AUDIT_TEXT[e.action] ?? (() => e.action))(e)}
+            </li>
+          ))}
+        </ul>
+      )}
     </Modal>
   );
 }

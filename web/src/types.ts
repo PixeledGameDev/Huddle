@@ -1,5 +1,14 @@
-export interface User { id: string; username: string }
-export interface ServerSummary { id: string; name: string }
+export interface User {
+  id: string;
+  username: string;
+  displayName: string | null;
+  bio: string;
+  accent: string | null;
+  statusText: string;
+  avatarVersion: number;
+  createdAt?: string;
+}
+export interface ServerSummary { id: string; name: string; iconVersion: number }
 export interface Channel { id: string; name: string }
 export type Role = "owner" | "admin" | "member";
 export type VoteAction = "kick" | "timeout" | "ban";
@@ -7,6 +16,10 @@ export type VoteAction = "kick" | "timeout" | "ban";
 export interface Member {
   id: string;
   username: string;
+  displayName: string | null;
+  avatarVersion: number;
+  accent: string | null;
+  statusText: string;
   role: Role;
   online: boolean;
   timeoutUntil: string | null;
@@ -44,6 +57,7 @@ export interface Vote {
 export interface ServerDetail {
   id: string;
   name: string;
+  iconVersion: number;
   ownerId: string;
   myRole: Role;
   myTimeoutUntil: string | null;
@@ -55,14 +69,54 @@ export interface ServerDetail {
 
 export interface Attachment { id: string; name: string; mime: string; size: number }
 export interface Reaction { emoji: string; userIds: string[] }
+export interface PollOption { id: string; text: string; count: number; voterIds: string[] }
+export interface Poll {
+  id: string;
+  question: string;
+  multi: boolean;
+  anonymous: boolean;
+  endsAt: string | null;
+  closed: boolean;
+  options: PollOption[];
+  myVotes: string[];
+  totalVoters: number;
+}
+export interface ReplyRef { id: string; authorId: string; authorName: string; snippet: string; hasExtra: boolean }
 
 export interface Message {
   id: string;
   channelId: string;
+  serverId: string;
   authorId: string;
   authorName: string;
+  authorAvatar: number;
   content: string;
   createdAt: string;
+  editedAt: string | null;
+  mentions: string[];
+  mentionsEveryone: boolean;
+  gif: string | null;
+  replyTo: ReplyRef | null;
   attachments: Attachment[];
   reactions: Reaction[];
+  poll: Poll | null;
 }
+
+export interface GifResult { id: string; title: string; url: string; preview: string; width: number; height: number }
+
+export interface DeletedMessage {
+  id: string;
+  channelName: string;
+  content: string;
+  gif: string | null;
+  createdAt: string;
+  deletedAt: string;
+  attachments: { name: string; mime: string; size: number }[];
+  poll: { question: string; options: string[] } | null;
+  authorId: string;
+  authorName: string;
+  deletedById: string;
+  deletedByName: string;
+}
+
+export interface BanEntry { userId: string; username: string; name: string; permanent: boolean; until: string | null }
