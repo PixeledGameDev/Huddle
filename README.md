@@ -81,6 +81,24 @@ With them unset, files stay in Postgres, so local development needs no extra set
 - Postgres reclaims the space from moved files on its own schedule (autovacuum), so the database may take a while to
   shrink.
 
+## Invite links
+
+The **Invite** button copies a link like `https://your-app/invite/<code>`.
+
+- Pasted in chat, the link becomes a card showing the server's icon, name, online count, and member count, with a
+  **Join** button (or **Open** if you're already in).
+- Opening the link shows the same card on its own page. If you're not signed in, the sign-in form appears under it,
+  and you're taken straight into the server afterwards.
+- Pasting the link into other apps shows a link preview (the server's name, icon, and member count) in apps that
+  support it. Anyone holding the link can see those basics, which is what makes the card work before signing in.
+- The "Join a server" box accepts either a link or a bare code.
+
+## Message formatting
+
+`**bold**`, `*italic*`, `***both***`, and `||spoiler||`. Formatting nests, and unpaired symbols stay as typed.
+Put a backslash before a symbol (`\*`) to type it literally. Underscores aren't formatting, since usernames contain
+them. Spoilers stay hidden until clicked (or activated with Enter or Space), including in reply previews.
+
 ## Messages, polls, and mentions
 
 - **Reply, edit, delete.** Authors can edit and delete their own messages. Owners and admins can delete anyone's.

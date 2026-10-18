@@ -6,6 +6,7 @@ import Auth from "./Auth";
 import Changelog from "./Changelog";
 import { hasUnseenUpdates, markUpdatesSeen } from "./changelog";
 import Chat from "./Chat";
+import { InvitePage } from "./Invites";
 import DmPanel from "./DmPanel";
 import Members from "./Members";
 import { AddServerModal, SettingsModal } from "./Modals";
@@ -17,12 +18,28 @@ import VoteBanner from "./VoteBanner";
 
 export default function App() {
   const [me, setMe] = useState<User | null | undefined>(undefined);
+  const [inviteCode, setInviteCode] = useState<string | null>(() => /^\/invite\/([A-Za-z0-9_-]{6,32})\/?$/.exec(window.location.pathname)?.[1] ?? null);
+  const [openServerId, setOpenServerId] = useState<string | undefined>();
   useEffect(() => {
     api<{ user: User }>("/auth/me").then((r) => setMe(r.user), () => setMe(null));
   }, []);
   if (me === undefined) return <div className="boot">Loading…</div>;
+  if (inviteCode) {
+    return (
+      <InvitePage
+        code={inviteCode}
+        me={me}
+        onAuth={setMe}
+        onDone={(serverId) => {
+          window.history.replaceState(null, "", "/");
+          setOpenServerId(serverId);
+          setInviteCode(null);
+        }}
+      />
+    );
+  }
   if (!me) return <Auth onAuth={setMe} />;
-  return <Main me={me} onUser={setMe} onLogout={() => setMe(null)} />;
+  return <Main me={me} initialServerId={openServerId} onUser={setMe} onLogout={() => setMe(null)} />;
 }
 
 interface Toast { id: number; text: string; error?: boolean }
@@ -31,7 +48,7 @@ type TypingState = Record<string, Record<string, { name: string; until: number }
 type Unread = { channels: Record<string, number>; servers: Record<string, number> };
 type Modal = "add" | "settings" | "poll" | "myprofile" | "changelog" | null;
 
-function Main({ me, onUser, onLogout }: { me: User; onUser: (u: User) => void; onLogout: () => void }) {
+function Main({ me, initialServerId, onUser, onLogout }: { me: User; initialServerId?: string; onUser: (u: User) => void; onLogout: () => void }) {
   const [servers, setServers] = useState<ServerSummary[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [detail, setDetail] = useState<ServerDetail | null>(null);
@@ -154,7 +171,7 @@ function Main({ me, onUser, onLogout }: { me: User; onUser: (u: User) => void; o
   useEffect(() => {
     api<{ servers: ServerSummary[] }>("/servers").then((r) => {
       setServers(r.servers);
-      setActiveId((cur) => cur ?? r.servers[0]?.id ?? null);
+      setActiveId((cur) => cur ?? (r.servers.some((s) => s.id === initialServerId) ? initialServerId! : null) ?? r.servers[0]?.id ?? null);
     }, fail);
     api<{ gifs: boolean }>("/config").then((r) => setGifsEnabled(r.gifs), () => {});
     refreshDms();
@@ -369,6 +386,24 @@ function Main({ me, onUser, onLogout }: { me: User; onUser: (u: User) => void; o
     }
   }
 
+  /** Joins from an invite embed in chat. Returns the server so the embed can flip to "Open". */
+  async function joinInvite(code: string): Promise<ServerSummary | null> {
+    try {
+      const { server } = await api<{ server: ServerSummary }>("/join", "POST", { code });
+      setServers((prev) => (prev.some((x) => x.id === server.id) ? prev : [...prev, server]));
+      push(`Joined ${server.name}`);
+      return server;
+    } catch (e) {
+      fail(e);
+      return null;
+    }
+  }
+
+  function openServer(id: string) {
+    setSideMode("server");
+    setActiveId(id);
+  }
+
   async function setRole(m: Member, role: "admin" | "member") {
     if (!detail) return;
     try {
@@ -382,8 +417,9 @@ function Main({ me, onUser, onLogout }: { me: User; onUser: (u: User) => void; o
     if (!detail) return;
     try {
       const { code } = await api<{ code: string }>(`/servers/${detail.id}/invites`, "POST");
-      await navigator.clipboard?.writeText(code).catch(() => {});
-      push(`Invite code ${code} (copied). Share it so others can join.`);
+      const link = `${window.location.origin}/invite/${code}`;
+      await navigator.clipboard?.writeText(link).catch(() => {});
+      push(`Invite link copied: ${link}`);
     } catch (e) {
       fail(e);
     }
@@ -593,6 +629,8 @@ function Main({ me, onUser, onLogout }: { me: User; onUser: (u: User) => void; o
               onOpenPoll={() => setModal("poll")}
               onOpenProfile={setProfileId}
               onTyping={() => channelId && socketRef.current?.emit("typing", { channelId })}
+              onJoinInvite={joinInvite}
+              onOpenServer={openServer}
               onLoadOlder={() => channelId && msgs[channelId]?.items[0] && void loadMessages(channelId, msgs[channelId].items[0].id)}
             />
           </>

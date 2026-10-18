@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import Composer, { type ComposerHandle } from "./Composer";
 import MessageRow from "./MessageRow";
 import { Avatar } from "./Avatar";
-import type { Attachment, Channel, DmSummary, Member, Message, User } from "./types";
+import type { Attachment, Channel, DmSummary, Member, Message, ServerSummary, User } from "./types";
 import { nameOfUser } from "./util";
 
 interface Props {
@@ -29,6 +29,8 @@ interface Props {
   onOpenProfile: (userId: string) => void;
   onTyping: () => void;
   onLoadOlder: () => void;
+  onJoinInvite: (code: string) => Promise<ServerSummary | null>;
+  onOpenServer: (serverId: string) => void;
 }
 
 export default function Chat(p: Props) {
@@ -151,6 +153,8 @@ export default function Chat(p: Props) {
               onOpenProfile={p.onOpenProfile}
               onJumpTo={jumpTo}
               onImageLoad={scrollIfStuck}
+              onJoinInvite={p.onJoinInvite}
+              onOpenServer={p.onOpenServer}
             />
           );
         })}

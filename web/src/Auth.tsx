@@ -2,7 +2,7 @@ import { useState } from "react";
 import { api } from "./api";
 import type { User } from "./types";
 
-export default function Auth({ onAuth }: { onAuth: (u: User) => void }) {
+export default function Auth({ onAuth, intro }: { onAuth: (u: User) => void; intro?: React.ReactNode }) {
   const [mode, setMode] = useState<"login" | "register">("login");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
@@ -26,6 +26,7 @@ export default function Auth({ onAuth }: { onAuth: (u: User) => void }) {
   return (
     <main className="auth">
       <form className="auth-card" onSubmit={submit}>
+        {intro}
         <h1>Huddle</h1>
         <p className="muted">{mode === "login" ? "Sign in to pick up where you left off." : "Create an account to start chatting."}</p>
         <label>

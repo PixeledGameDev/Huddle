@@ -2,6 +2,7 @@ import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState }
 import EmojiPicker from "./EmojiPicker";
 import GifPicker from "./GifPicker";
 import type { Attachment, Channel, Member, Message, User } from "./types";
+import { plainPreview } from "./format";
 import { fmtSize, MAX_ATTACHMENTS, MAX_FILE_BYTES, nameOfUser, timeOf } from "./util";
 
 export interface ComposerHandle { addFiles: (files: FileList | File[]) => void }
@@ -153,7 +154,7 @@ const Composer = forwardRef<ComposerHandle, Props>(function Composer(props, ref)
       {replyTo && (
         <div className="reply-bar">
           <span>Replying to <strong>{replyTo.authorName}</strong></span>
-          <span className="reply-snippet">{replyTo.content.replace(/\s+/g, " ").slice(0, 80) || "an attachment"}</span>
+          <span className="reply-snippet">{plainPreview(replyTo.content).slice(0, 80) || "an attachment"}</span>
           <button className="icon" aria-label="Cancel reply" onClick={onCancelReply}>✕</button>
         </div>
       )}

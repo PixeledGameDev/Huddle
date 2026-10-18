@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { api, uploadRaw } from "./api";
 import type { BanEntry, DeletedMessage, ServerDetail, ServerSummary, Settings } from "./types";
-import { dateTimeOf, fmtDuration, fmtSize, hue, squareImage } from "./util";
+import { dateTimeOf, extractInviteCode, fmtDuration, fmtSize, hue, squareImage } from "./util";
 
 export function Modal({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
   useEffect(() => {
@@ -39,10 +39,10 @@ export function AddServerModal({ onClose, onDone, onError }: { onClose: () => vo
         className="stack"
         onSubmit={async (e) => {
           e.preventDefault();
-          try { onDone((await api<{ server: ServerSummary }>("/join", "POST", { code })).server); } catch (err) { onError(err); }
+          try { onDone((await api<{ server: ServerSummary }>("/join", "POST", { code: extractInviteCode(code) })).server); } catch (err) { onError(err); }
         }}
       >
-        <label>Join with an invite code<input value={code} onChange={(e) => setCode(e.target.value)} placeholder="Paste the code" required /></label>
+        <label>Join with an invite link or code<input value={code} onChange={(e) => setCode(e.target.value)} placeholder="Paste the link or code" required /></label>
         <button className="primary">Join server</button>
       </form>
     </Modal>

@@ -11,6 +11,15 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "2.4",
+    date: "2026-10-17",
+    title: "Invite links and text formatting",
+    changes: [
+      "Invite is now a link you can paste anywhere. In chat it turns into a card with the server's icon and member count and a Join button, and the link works even before you've signed in.",
+      "Format your messages: **bold**, *italic*, ***both***, and ||spoilers|| that stay hidden until clicked. Put a backslash in front of a symbol to type it literally.",
+    ],
+  },
+  {
     version: "2.3",
     date: "2026-10-17",
     title: "Bigger file storage",

@@ -82,7 +82,7 @@ function readImage(body: unknown) {
   if (!mime) throw new HttpError(400, "Use a PNG, JPEG, GIF, or WebP image.");
   return { mime, data: body };
 }
-function sendImage(res: Response, img: { mime: string; data: Buffer } | null) {
+export function sendImage(res: Response, img: { mime: string; data: Buffer } | null) {
   if (!img) throw new HttpError(404, "No image.");
   res.setHeader("Content-Type", img.mime);
   res.setHeader("Content-Length", String(img.data.length));

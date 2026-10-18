@@ -1,10 +1,12 @@
 import { useState } from "react";
 import { Avatar } from "./Avatar";
+import { plainPreview } from "./format";
+import { InviteEmbed } from "./Invites";
 import EmojiPicker from "./EmojiPicker";
 import { PollCard } from "./Polls";
 import { Emoji, RichText } from "./Rich";
-import type { Member, Message, User } from "./types";
-import { fmtSize, nameOfUser, timeOf } from "./util";
+import type { Member, Message, ServerSummary, User } from "./types";
+import { fmtSize, inviteCodesIn, nameOfUser, timeOf } from "./util";
 
 interface Props {
   m: Message;
@@ -29,6 +31,8 @@ interface Props {
   onOpenProfile: (userId: string) => void;
   onJumpTo: (id: string) => void;
   onImageLoad: () => void;
+  onJoinInvite: (code: string) => Promise<ServerSummary | null>;
+  onOpenServer: (serverId: string) => void;
 }
 
 const extOf = (name: string) => (name.includes(".") ? name.split(".").pop()!.slice(0, 4).toUpperCase() : "FILE");
@@ -76,7 +80,7 @@ export default function MessageRow(p: Props) {
         <button className="reply-ref" onClick={() => p.onJumpTo(m.replyTo!.id)} title="Jump to the original message">
           <span className="reply-arrow">↪</span>
           <strong>{replyAuthor ? nameOfUser(replyAuthor) : m.replyTo.authorName}</strong>
-          <span className="reply-snippet">{m.replyTo.snippet.replace(/\s+/g, " ") || (m.replyTo.hasExtra ? "Attachment" : "")}</span>
+          <span className="reply-snippet">{plainPreview(m.replyTo.snippet) || (m.replyTo.hasExtra ? "Attachment" : "")}</span>
         </button>
       )}
       <div className="msg-main">
@@ -104,6 +108,7 @@ export default function MessageRow(p: Props) {
               </p>
             )
           )}
+          {inviteCodesIn(m.content).map((code) => <InviteEmbed key={code} code={code} onJoin={p.onJoinInvite} onOpen={p.onOpenServer} />)}
           {m.gif && <img className="gif" src={m.gif} alt="GIF" loading="lazy" onLoad={p.onImageLoad} />}
           {m.attachments.length > 0 && (
             <div className="atts">

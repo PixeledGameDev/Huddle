@@ -57,3 +57,29 @@ export async function squareImage(file: File, size = 256): Promise<Blob> {
   canvas.getContext("2d")!.drawImage(bmp, (bmp.width - s) / 2, (bmp.height - s) / 2, s, s, 0, 0, size, size);
   return new Promise((res, rej) => canvas.toBlob((b) => (b ? res(b) : rej(new Error("Couldn't process that image."))), "image/webp", 0.9));
 }
+
+/** Invite links look like https://<this app>/invite/<code>. */
+export const INVITE_URL_RE = /https?:\/\/[^\s/]+\/invite\/([A-Za-z0-9_-]{6,32})(?![A-Za-z0-9_-])/g;
+
+export function isOwnInviteUrl(url: string, host = typeof window !== "undefined" ? window.location.host : "") {
+  try {
+    return new URL(url).host === host;
+  } catch {
+    return false;
+  }
+}
+
+/** Distinct invite codes for links in a message that point at this app (at most 3). */
+export function inviteCodesIn(text: string): string[] {
+  const codes: string[] = [];
+  for (const m of text.matchAll(new RegExp(INVITE_URL_RE))) {
+    if (isOwnInviteUrl(m[0]) && !codes.includes(m[1])) codes.push(m[1]);
+  }
+  return codes.slice(0, 3);
+}
+
+/** Accepts a pasted invite link or a bare code. */
+export function extractInviteCode(input: string): string {
+  const t = input.trim();
+  return /\/invite\/([A-Za-z0-9_-]{6,32})/.exec(t)?.[1] ?? t;
+}

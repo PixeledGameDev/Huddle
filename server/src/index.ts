@@ -1,9 +1,11 @@
 import express, { type NextFunction, type Request, type Response } from "express";
 import http from "http";
+import fs from "fs";
 import path from "path";
 import { ZodError } from "zod";
 import { authRouter, cleanupSessions, requireAuth } from "./auth";
 import { migrate, q } from "./db";
+import { inviteMeta, invitesRouter } from "./invites";
 import { HttpError } from "./http";
 import { initRealtime } from "./realtime";
 import { api } from "./routes";
@@ -30,6 +32,7 @@ async function main() {
 
   app.get("/healthz", (_req, res) => void res.send("ok"));
   app.use("/api/auth", authRouter);
+  app.use("/api", invitesRouter); // public: invite cards work before signing in
   app.use("/api", requireAuth, api);
   app.use("/api", (_req, res) => void res.status(404).json({ error: "Not found." }));
 
@@ -40,9 +43,31 @@ async function main() {
 
   const webDist = path.join(__dirname, "../../web/dist");
   app.use(express.static(webDist));
+  // Invite links get link-preview tags (so pasting one into other apps shows a card); every other page is the app shell.
+  const esc = (s: string) => s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
+  let shell: string | null = null;
   app.use((req, res, next) => {
     if (req.method !== "GET") return next();
-    res.sendFile(path.join(webDist, "index.html"), (err) => err && next());
+    const invite = /^\/invite\/([A-Za-z0-9_-]{6,32})\/?$/.exec(req.path);
+    if (!invite) return void res.sendFile(path.join(webDist, "index.html"), (err) => err && next());
+    (async () => {
+      shell ??= fs.readFileSync(path.join(webDist, "index.html"), "utf8");
+      const meta = await inviteMeta(invite[1]);
+      if (!meta) return void res.type("html").send(shell);
+      const origin = `${req.protocol}://${req.get("host")}`;
+      const title = esc(`Join ${meta.name} on Huddle`);
+      const tags = [
+        `<meta property="og:site_name" content="Huddle" />`,
+        `<meta property="og:type" content="website" />`,
+        `<meta property="og:title" content="${title}" />`,
+        `<meta property="og:description" content="${meta.memberCount} ${meta.memberCount === 1 ? "member" : "members"}. You've been invited to join this server." />`,
+        `<meta property="og:url" content="${esc(origin + req.path)}" />`,
+        ...(meta.iconVersion > 0
+          ? [`<meta property="og:image" content="${esc(`${origin}/api/invites/${invite[1]}/icon?v=${meta.iconVersion}`)}" />`, `<meta name="twitter:card" content="summary" />`]
+          : []),
+      ].join("\n    ");
+      res.type("html").send(shell.replace("<title>Huddle</title>", `<title>${title}</title>`).replace("</head>", `    ${tags}\n  </head>`));
+    })().catch(next);
   });
 
   app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
