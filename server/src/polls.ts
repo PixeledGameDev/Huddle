@@ -83,7 +83,7 @@ pollsRouter.post("/polls/:pollId/close", h(async (req, res) => {
   const user = req.user!;
   const p = await pollContext(req.params.pollId);
   const me = await requireMember(p.server_id, user.id);
-  if (p.author_id !== user.id && me.role === "member") throw new HttpError(403, "Only the poll's author or an admin can close it.");
+  if (p.author_id !== user.id && !me.perms.has("manage_messages")) throw new HttpError(403, "Only the poll's author or someone who can manage messages can close it.");
   if (isClosed(p)) throw new HttpError(409, "This poll is already closed.");
   await q(`update polls set closed_at = now() where id = $1`, [p.id]);
   await broadcast(p);

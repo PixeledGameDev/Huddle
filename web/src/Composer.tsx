@@ -13,7 +13,7 @@ interface Props {
   channel: Channel;
   me: User;
   members: Member[];
-  isAdmin: boolean;
+  canEveryone: boolean;
   timedOut: boolean;
   timeoutUntil: string | null;
   replyTo: Message | null;
@@ -30,7 +30,7 @@ interface Pending { key: string; name: string; size: number; status: "uploading"
 interface Suggestion { key: string; username: string; label: string; emoji?: string }
 
 const Composer = forwardRef<ComposerHandle, Props>(function Composer(props, ref) {
-  const { channel, me, members, isAdmin, timedOut, timeoutUntil, replyTo, gifsEnabled, onCancelReply, onSend, onUpload, onTyping, onOpenPoll, placeholder } = props;
+  const { channel, me, members, canEveryone, timedOut, timeoutUntil, replyTo, gifsEnabled, onCancelReply, onSend, onUpload, onTyping, onOpenPoll, placeholder } = props;
   const [text, setText] = useState("");
   const [caret, setCaret] = useState(0);
   const [sel, setSel] = useState(0);
@@ -98,14 +98,14 @@ const Composer = forwardRef<ComposerHandle, Props>(function Composer(props, ref)
         .filter((m) => m.id !== me.id && (m.username.toLowerCase().startsWith(q) || (m.displayName ?? "").toLowerCase().startsWith(q)))
         .slice(0, 6)
         .map((m) => ({ key: m.id, username: m.username, label: nameOfUser(m) }));
-      if (isAdmin && "everyone".startsWith(q)) list.push({ key: "everyone", username: "everyone", label: "Notify everyone" });
+      if (canEveryone && "everyone".startsWith(q)) list.push({ key: "everyone", username: "everyone", label: "Notify everyone" });
       return list;
     }
     if (emojiQuery && dismissed !== `:${emojiQuery.start}:${emojiQuery.query}`) {
       return searchShortcodes(emojiQuery.query).map((e) => ({ key: `emoji:${e.name}`, username: "", label: `:${e.name}:`, emoji: e.glyph }));
     }
     return [];
-  }, [mentionQuery, emojiQuery, dismissed, members, me.id, isAdmin]);
+  }, [mentionQuery, emojiQuery, dismissed, members, me.id, canEveryone]);
 
   useEffect(() => setSel(0), [mentionQuery?.query, emojiQuery?.query]);
 

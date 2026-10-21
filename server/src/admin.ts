@@ -3,7 +3,7 @@ import { z } from "zod";
 import { one, q, tx } from "./db";
 import { channelSlug } from "./fileutil";
 import { HttpError, h } from "./http";
-import { isHuddleAdmin, membership, requireAdmin } from "./perms";
+import { isHuddleAdmin, membership, requireMember, requirePerm, type Permission } from "./perms";
 import { emitServer, emitUser, leaveServerRooms } from "./realtime";
 
 export const adminRouter = Router();
@@ -15,12 +15,14 @@ const modSchema = z.object({
   reason: z.string().trim().max(200).optional(),
 });
 
-/** Instant moderation without a vote. Owners can act on anyone but themselves; admins only on regular members. */
+/** Instant moderation without a vote. Needs the matching permission, and only works on people ranked below you (the owner outranks everyone). */
 adminRouter.post("/servers/:serverId/moderation", h(async (req, res) => {
   const { serverId } = req.params;
   const user = req.user!;
-  const actor = await requireAdmin(serverId, user.id);
+  const actor = await requireMember(serverId, user.id);
   const { targetId, action, durationSeconds, reason } = modSchema.parse(req.body);
+  const needed: Permission = action === "kick" ? "kick_members" : action === "timeout" || action === "untimeout" ? "timeout_members" : "ban_members";
+  if (!actor.perms.has(needed)) throw new HttpError(403, "You don't have permission to do that.");
   if (targetId === user.id) throw new HttpError(400, "You can't moderate yourself.");
   const detail = JSON.stringify({ reason: reason || undefined, durationSeconds: durationSeconds ?? undefined });
   const audit = (c: any, name: string) =>
@@ -37,7 +39,7 @@ adminRouter.post("/servers/:serverId/moderation", h(async (req, res) => {
   if (!target) throw new HttpError(404, "That person isn't in this server.");
   if (target.role === "owner") throw new HttpError(403, "The owner can't be moderated.");
   if (await isHuddleAdmin(targetId)) throw new HttpError(403, "You can't moderate this person.");
-  if (target.role === "admin" && actor.role !== "owner") throw new HttpError(403, "Only the owner can moderate admins.");
+  if (target.top >= actor.top) throw new HttpError(403, "You can only moderate people whose roles are ranked below yours.");
 
   if (action === "timeout") {
     if (!durationSeconds || durationSeconds > 28 * 86400) throw new HttpError(400, "Pick a timeout length of up to 28 days.");
@@ -76,7 +78,7 @@ adminRouter.post("/servers/:serverId/moderation", h(async (req, res) => {
 }));
 
 adminRouter.get("/servers/:serverId/bans", h(async (req, res) => {
-  await requireAdmin(req.params.serverId, req.user!.id);
+  await requirePerm(req.params.serverId, req.user!.id, "ban_members");
   const rows = await q<any>(
     `select b.user_id, u.username, coalesce(u.display_name, u.username) as name, (b.until = 'infinity') as permanent,
             case when b.until = 'infinity' then null else b.until end as until
@@ -89,7 +91,7 @@ adminRouter.get("/servers/:serverId/bans", h(async (req, res) => {
 // ---------- channels ----------
 adminRouter.delete("/servers/:serverId/channels/:channelId", h(async (req, res) => {
   const { serverId, channelId } = req.params;
-  await requireAdmin(serverId, req.user!.id);
+  await requirePerm(serverId, req.user!.id, "manage_channels");
   const count = await one<{ n: number }>(`select count(*)::int as n from channels where server_id = $1`, [serverId]);
   if (count!.n <= 1) throw new HttpError(400, "A server needs at least one channel.");
   const ch = await one<{ name: string }>(`delete from channels where id = $1 and server_id = $2 returning name`, [channelId, serverId]);
@@ -101,7 +103,7 @@ adminRouter.delete("/servers/:serverId/channels/:channelId", h(async (req, res) 
 
 adminRouter.patch("/servers/:serverId/channels/:channelId", h(async (req, res) => {
   const { serverId, channelId } = req.params;
-  await requireAdmin(serverId, req.user!.id);
+  await requirePerm(serverId, req.user!.id, "manage_channels");
   const name = channelSlug(z.object({ name: z.string().trim().min(1).max(30) }).parse(req.body).name);
   if (!name) throw new HttpError(400, "Channel names need letters or numbers.");
   const ch = await one(`update channels set name = $3 where id = $1 and server_id = $2 returning id, name`, [channelId, serverId, name]);
@@ -110,9 +112,9 @@ adminRouter.patch("/servers/:serverId/channels/:channelId", h(async (req, res) =
   res.json({ channel: ch });
 }));
 
-// ---------- deleted messages (admins only) ----------
+// ---------- deleted messages (needs manage messages) ----------
 adminRouter.get("/servers/:serverId/deleted", h(async (req, res) => {
-  await requireAdmin(req.params.serverId, req.user!.id);
+  await requirePerm(req.params.serverId, req.user!.id, "manage_messages");
   const rows = await q<any>(
     `select d.id::text as id, d.channel_name, d.content, d.gif_url, d.created_at, d.attachments, d.meta, d.deleted_at, d.author_id, d.deleted_by,
             coalesce(a.display_name, a.username) as author_name, coalesce(b.display_name, b.username) as deleted_by_name

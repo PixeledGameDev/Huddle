@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
 import { api, uploadRaw } from "./api";
+import { can, isOwner } from "./permissions";
+import { RolesTab } from "./Roles";
 import type { BanEntry, DeletedMessage, ServerDetail, ServerSummary, Settings } from "./types";
 import { dateTimeOf, extractInviteCode, fmtDuration, fmtSize, hue, squareImage } from "./util";
 
@@ -77,7 +79,13 @@ const AUDIT_TEXT: Record<string, (e: any) => string> = {
   "vote.passed": (e) => `Vote on ${e.target} passed (${e.detail?.action})`,
   "vote.failed": (e) => `Vote on ${e.target} failed`,
   "settings.update": (e) => `${e.actor} changed server settings`,
-  "role.update": (e) => `${e.actor} set ${e.target} to ${e.detail?.role}`,
+  "role.create": (e) => `${e.actor} created the role ${e.detail?.name}`,
+  "role.update": (e) => `${e.actor} edited the role ${e.detail?.name}`,
+  "role.delete": (e) => `${e.actor} deleted the role ${e.detail?.name}`,
+  "role.reorder": (e) => `${e.actor} moved the role ${e.detail?.name} ${e.detail?.direction}`,
+  "role.assign": (e) => `${e.actor} gave ${e.target} the role ${e.detail?.name}`,
+  "role.unassign": (e) => `${e.actor} took the role ${e.detail?.name} from ${e.target}`,
+  "role.legacy": (e) => (e.detail?.mode === "role" ? `${e.actor} turned ${e.detail?.count} admin(s) into the role ${e.detail?.name}` : `${e.actor} removed the admin rank from ${e.detail?.count} member(s)`),
   "mod.kick": (e) => `${e.actor} kicked ${e.target}${reasonText(e.detail)}`,
   "mod.ban": (e) => `${e.actor} banned ${e.target}${e.detail?.durationSeconds ? durationText(e.detail) : " permanently"}${reasonText(e.detail)}`,
   "mod.unban": (e) => `${e.actor} unbanned ${e.target}`,
@@ -87,10 +95,17 @@ const AUDIT_TEXT: Record<string, (e: any) => string> = {
   "message.delete": (e) => `${e.actor} deleted a message by ${e.target}`,
 };
 
-type Tab = "general" | "bans" | "deleted" | "activity" | "danger";
+type Tab = "general" | "roles" | "bans" | "deleted" | "activity" | "danger";
 
 export function SettingsModal({ server, onClose, onSaved, onDeleted, onError }: { server: ServerDetail; onClose: () => void; onSaved: () => void; onDeleted: () => void; onError: (e: unknown) => void }) {
-  const [tab, setTab] = useState<Tab>("general");
+  const tabs: [Tab, string][] = [];
+  if (can(server, "manage_server")) tabs.push(["general", "General"]);
+  if (can(server, "manage_roles") || server.roles.length > 0) tabs.push(["roles", "Roles"]);
+  if (can(server, "ban_members")) tabs.push(["bans", "Bans"]);
+  if (can(server, "manage_messages")) tabs.push(["deleted", "Deleted messages"]);
+  if (can(server, "view_audit_log")) tabs.push(["activity", "Activity"]);
+  if (isOwner(server)) tabs.push(["danger", "Danger zone"]);
+  const [tab, setTab] = useState<Tab>(tabs[0]?.[0] ?? "general");
   const [s, setS] = useState<Settings>(server.settings);
   const [audit, setAudit] = useState<any[]>([]);
   const [bans, setBans] = useState<BanEntry[]>([]);
@@ -111,7 +126,6 @@ export function SettingsModal({ server, onClose, onSaved, onDeleted, onError }: 
     } catch (err) { onError(err); }
   }
 
-  const tabs: [Tab, string][] = [["general", "General"], ["bans", "Bans"], ["deleted", "Deleted messages"], ["activity", "Activity"], ...(server.myRole === "owner" ? ([["danger", "Danger zone"]] as [Tab, string][]) : [])];
   return (
     <Modal title={`${server.name} settings`} onClose={onClose}>
       <div className="tabs" role="tablist">
@@ -161,13 +175,15 @@ export function SettingsModal({ server, onClose, onSaved, onDeleted, onError }: 
               <Select label="Minimum yes votes" value={s.voteMinVotes} options={MIN_VOTES} onChange={(n) => set("voteMinVotes", n)} hint="A vote can't start without this many eligible members online." />
               <Select label="Voting time" value={s.voteWindowSeconds} options={WINDOWS} onChange={(n) => set("voteWindowSeconds", n)} />
               <Select label="Cooldown between votes" value={s.voteCooldownSeconds} options={COOLDOWNS} onChange={(n) => set("voteCooldownSeconds", n)} />
-              <Select label="Who can vote" value={s.voteMinMemberAgeSeconds} options={MIN_AGE} onChange={(n) => set("voteMinMemberAgeSeconds", n)} hint="Minimum time in the server. Owners and admins always can." />
+              <Select label="Who can vote" value={s.voteMinMemberAgeSeconds} options={MIN_AGE} onChange={(n) => set("voteMinMemberAgeSeconds", n)} hint="Minimum time in the server. The owner always can." />
             </fieldset>
-            <p className="muted">Owners and admins can't be voted on. Admins can still moderate anyone below them instantly from the member list.</p>
+            <p className="muted">The owner and anyone with a moderation permission can't be voted on. People with those permissions can still moderate anyone ranked below them instantly from the member list.</p>
             <button className="primary">Save changes</button>
           </form>
         </>
       )}
+
+      {tab === "roles" && <RolesTab server={server} onError={onError} />}
 
       {tab === "bans" && (
         <ul className="rows">
@@ -183,7 +199,7 @@ export function SettingsModal({ server, onClose, onSaved, onDeleted, onError }: 
 
       {tab === "deleted" && (
         <>
-          <p className="muted">Deleted messages disappear for everyone else. Only owners and admins can see them here. File contents are removed; only their names are kept.</p>
+          <p className="muted">Deleted messages disappear for everyone else. Only people who can manage messages can see them here. File contents are removed; only their names are kept.</p>
           <ul className="rows deleted">
             {deleted.length === 0 && <li className="muted">No deleted messages.</li>}
             {deleted.map((d) => (
@@ -199,7 +215,7 @@ export function SettingsModal({ server, onClose, onSaved, onDeleted, onError }: 
         </>
       )}
 
-      {tab === "danger" && server.myRole === "owner" && (
+      {tab === "danger" && isOwner(server) && (
         <form
           className="stack danger-zone"
           onSubmit={async (e) => {

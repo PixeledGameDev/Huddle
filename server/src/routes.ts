@@ -10,16 +10,17 @@ import { huddleAdminRouter } from "./huddleAdmin";
 import { securityRouter } from "./security";
 import { suggestionsRouter } from "./suggestions";
 import { messagesRouter } from "./messages";
-import { assertNotDm, membership, requireAdmin, requireMember, timeoutUntil, type Role } from "./perms";
+import { ADMIN_TOP, OWNER_TOP, assertNotDm, requireMember, requirePerm, timeoutUntil, type Role } from "./perms";
 import { deletionRouter } from "./deletion";
 import { dmsRouter } from "./dms";
 import { pollsRouter } from "./polls";
+import { rolesRouter } from "./roles";
 import { profilesRouter } from "./profiles";
 import { emitServer, isOnline, joinHuddleAdmins, joinServerRooms, leaveServerRooms } from "./realtime";
 import { listOpenVotes, voteRouter } from "./votes";
 
 export const api = Router();
-api.use(voteRouter, messagesRouter, pollsRouter, profilesRouter, adminRouter, gifsRouter, embedsRouter, dmsRouter, huddleAdminRouter, deletionRouter, securityRouter, suggestionsRouter);
+api.use(voteRouter, messagesRouter, pollsRouter, profilesRouter, adminRouter, gifsRouter, embedsRouter, dmsRouter, huddleAdminRouter, deletionRouter, securityRouter, suggestionsRouter, rolesRouter);
 
 const settingsColumns = {
   voteEnabled: "vote_enabled",
@@ -50,6 +51,15 @@ async function serverDetail(serverId: string, userId: string) {
   if (!s) throw new HttpError(404, "Server not found.");
   const me = await requireMember(serverId, userId);
   const channels = await q(`select id, name from channels where server_id = $1 order by created_at`, [serverId]);
+  const roles = await q<any>(
+    `select r.id, r.name, r.color, r.permissions, r.position, (select count(*)::int from member_roles mr where mr.role_id = r.id) as member_count
+       from server_roles r where r.server_id = $1 order by r.position desc`,
+    [serverId]
+  );
+  const assigned = await q<{ user_id: string; role_id: string }>(`select user_id, role_id from member_roles where server_id = $1`, [serverId]);
+  const positionOf = new Map<string, number>(roles.map((r) => [r.id as string, r.position as number]));
+  const roleIdsOf = (userId: string) => assigned.filter((a) => a.user_id === userId).map((a) => a.role_id).sort((a, b) => (positionOf.get(b) ?? 0) - (positionOf.get(a) ?? 0));
+  const legacyAdminCount = me.role === "owner" ? (await one<{ n: number }>(`select count(*)::int as n from memberships where server_id = $1 and role = 'admin'`, [serverId]))!.n : 0;
   const members = (
     await q<any>(
       `select u.id, u.username, u.display_name, u.avatar_version, u.accent, u.status_text, m.role, t.until as timeout_until
@@ -59,7 +69,11 @@ async function serverDetail(serverId: string, userId: string) {
       [serverId]
     )
   )
-    .map((r) => ({ id: r.id, username: r.username, displayName: r.display_name ?? null, avatarVersion: r.avatar_version as number, accent: r.accent ?? null, statusText: r.status_text as string, role: r.role as Role, online: isOnline(r.id), timeoutUntil: r.timeout_until ? new Date(r.timeout_until).toISOString() : null }))
+    .map((r) => {
+      const roleIds = roleIdsOf(r.id);
+      const top = r.role === "owner" ? OWNER_TOP : r.role === "admin" ? ADMIN_TOP : roleIds.length ? positionOf.get(roleIds[0]) ?? 0 : 0;
+      return { id: r.id, username: r.username, displayName: r.display_name ?? null, avatarVersion: r.avatar_version as number, accent: r.accent ?? null, statusText: r.status_text as string, role: r.role as Role, roleIds, top, online: isOnline(r.id), timeoutUntil: r.timeout_until ? new Date(r.timeout_until).toISOString() : null };
+    })
     .sort((a, b) => Number(b.online) - Number(a.online) || a.username.localeCompare(b.username));
   const settings = Object.fromEntries(Object.entries(settingsColumns).map(([k, col]) => [k, s[col]]));
   return {
@@ -69,6 +83,10 @@ async function serverDetail(serverId: string, userId: string) {
     isDm: s.is_dm as boolean,
     ownerId: s.owner_id,
     myRole: me.role,
+    myPermissions: [...me.perms],
+    myTop: me.top,
+    legacyAdminCount,
+    roles: roles.map((r) => ({ id: r.id as string, name: r.name as string, color: (r.color ?? null) as string | null, permissions: r.permissions as string[], position: r.position as number, memberCount: r.member_count as number })),
     myTimeoutUntil: await timeoutUntil(serverId, userId),
     channels,
     members,
@@ -110,7 +128,7 @@ api.get("/servers/:serverId", h(async (req, res) => {
 
 api.post("/servers/:serverId/channels", h(async (req, res) => {
   const { serverId } = req.params;
-  await requireAdmin(serverId, req.user!.id);
+  await requirePerm(serverId, req.user!.id, "manage_channels");
   const raw = z.object({ name: z.string().trim().min(1).max(30) }).parse(req.body).name;
   const name = raw.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
   if (!name) throw new HttpError(400, "Channel names need letters or numbers.");
@@ -124,7 +142,7 @@ api.post("/servers/:serverId/channels", h(async (req, res) => {
 api.patch("/servers/:serverId/settings", h(async (req, res) => {
   const { serverId } = req.params;
   const user = req.user!;
-  await requireAdmin(serverId, user.id);
+  await requirePerm(serverId, user.id, "manage_server");
   const patch = settingsSchema.parse(req.body);
   const entries = Object.entries(patch).filter(([, v]) => v !== undefined) as [keyof typeof settingsColumns, unknown][];
   if (!entries.length) throw new HttpError(400, "Nothing to update.");
@@ -174,21 +192,8 @@ api.post("/servers/:serverId/leave", h(async (req, res) => {
   res.json({ ok: true });
 }));
 
-api.post("/servers/:serverId/members/:userId/role", h(async (req, res) => {
-  const { serverId, userId } = req.params;
-  const me = await requireMember(serverId, req.user!.id);
-  if (me.role !== "owner") throw new HttpError(403, "Only the owner can change roles.");
-  const { role } = z.object({ role: z.enum(["admin", "member"]) }).parse(req.body);
-  const target = await requireMember(serverId, userId);
-  if (target.role === "owner") throw new HttpError(400, "The owner's role can't change.");
-  await q(`update memberships set role = $3 where server_id = $1 and user_id = $2`, [serverId, userId, role]);
-  await q(`insert into audit_log(server_id, actor_id, target_id, action, detail) values ($1, $2, $3, 'role.update', $4)`, [serverId, req.user!.id, userId, JSON.stringify({ role })]);
-  emitServer(serverId, "member.update", { serverId, userId });
-  res.json({ ok: true });
-}));
-
 api.get("/servers/:serverId/audit", h(async (req, res) => {
-  await requireAdmin(req.params.serverId, req.user!.id);
+  await requirePerm(req.params.serverId, req.user!.id, "view_audit_log");
   const rows = await q<any>(
     `select a.id, a.action, a.detail, a.created_at, actor.username as actor, target.username as target
        from audit_log a left join users actor on actor.id = a.actor_id left join users target on target.id = a.target_id

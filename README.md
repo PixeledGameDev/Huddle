@@ -25,9 +25,30 @@ The schema is created automatically on startup.
 3. Check the `plan` values in `render.yaml` against Render's current pricing. Free web instances spin
    down when idle, which drops WebSocket connections, so use a paid instance for real use.
 
+## Roles and permissions
+
+Servers have **roles** (Settings → Roles). A member can hold several; they get the combined permissions of all of them, and the
+server owner always has every permission.
+
+| Permission | Lets someone |
+|---|---|
+| Manage server | Change settings, the icon and vote moderation |
+| Manage channels | Create, rename and delete channels |
+| Manage roles | Create and edit roles below their own, and give them to people |
+| Manage messages | Delete other people's messages, close polls, see deleted messages |
+| Kick / Ban / Time out members | Moderate instantly, without a vote |
+| Mention @everyone | Notify every member |
+| View activity log | See the server's moderation and settings history |
+
+Roles are ranked (top of the list is highest). You can only edit roles, give roles, or moderate people ranked **below your
+highest role**, and you can only grant permissions you hold yourself. Leaving, being kicked or banned drops a member's roles.
+
+**Servers from before roles existed:** the old single *admin* rank keeps working (everything except managing roles) until the
+owner is prompted to turn those admins into a real role, or remove the rank. Nobody can be made a legacy admin any more.
+
 ## Vote moderation
 
-Owners and admins configure it under **Settings** (off by default):
+People with the **Manage server** permission configure it under **Settings** (off by default):
 
 | Setting | Meaning |
 |---|---|
@@ -39,7 +60,7 @@ Owners and admins configure it under **Settings** (off by default):
 | Cooldown | Minimum gap between votes involving the same initiator or target |
 | Who can vote | Minimum time in the server (owners and admins always can) |
 
-Enforced on the server: owners and admins are immune, you can't vote on yourself, one open vote per
+Enforced on the server: the owner and anyone with a moderation permission are immune, you can't vote on yourself, one open vote per
 target, one ballot per person, and the outcome is applied transactionally exactly once. Timeouts and
 bans are stored separately from memberships, so leaving and rejoining doesn't clear them. Open votes
 are persisted and resolved by a sweeper, so a restart doesn't lose them.

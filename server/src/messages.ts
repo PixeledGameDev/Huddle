@@ -22,11 +22,11 @@ const MAX_DISTINCT_EMOJI = 20;
 const SERVER_QUOTA_BYTES = Number(process.env.SERVER_STORAGE_MB ?? 250) * 1024 * 1024;
 const EMOJI_RE = /^[\p{Extended_Pictographic}\p{Emoji_Modifier}\p{Regional_Indicator}\u200d\ufe0f]{1,16}$/u;
 
-/** @username mentions resolve only to current members. @everyone needs an owner/admin. */
-async function resolveMentions(serverId: string, content: string, isAdmin: boolean) {
+/** @username mentions resolve only to current members. @everyone needs the Mention everyone permission. */
+async function resolveMentions(serverId: string, content: string, canEveryone: boolean) {
   const names = new Set<string>();
   for (const m of content.matchAll(/(?<![\w@])@([A-Za-z0-9_]{3,20})(?!\w)/g)) names.add(m[1].toLowerCase());
-  const everyone = names.delete("everyone") && isAdmin;
+  const everyone = names.delete("everyone") && canEveryone;
   if (!names.size) return { ids: [] as string[], everyone };
   const rows = await q<{ id: string }>(
     `select u.id from memberships m join users u on u.id = m.user_id where m.server_id = $1 and lower(u.username) = any($2::text[]) limit 20`,
@@ -69,7 +69,7 @@ messagesRouter.post("/channels/:channelId/messages", h(async (req, res) => {
     if (!r) throw new HttpError(400, "The message you're replying to no longer exists.");
     replyAuthor = r.author_id;
   }
-  const { ids, everyone } = await resolveMentions(serverId, body.content, me.role !== "member");
+  const { ids, everyone } = await resolveMentions(serverId, body.content, me.perms.has("mention_everyone"));
   const notify = [...new Set([...ids, ...(replyAuthor ? [replyAuthor] : [])])].filter((id) => id !== user.id);
 
   const messageId = await tx(async (c) => {
@@ -122,7 +122,7 @@ messagesRouter.patch("/messages/:messageId", h(async (req, res) => {
   const { content } = z.object({ content: z.string().trim().max(2000) }).parse(req.body);
   if (!content && !m.files && !m.gif_url) throw new HttpError(400, "A message can't be empty. Delete it instead.");
   if (content !== m.content) {
-    const { ids, everyone } = await resolveMentions(m.server_id, content, me.role !== "member");
+    const { ids, everyone } = await resolveMentions(m.server_id, content, me.perms.has("mention_everyone"));
     let replyAuthor: string | null = null;
     if (m.reply_to) replyAuthor = (await one<{ author_id: string }>(`select author_id from messages where id = $1::bigint`, [m.reply_to]))?.author_id ?? null;
     const notify = [...new Set([...ids, ...(replyAuthor ? [replyAuthor] : [])])].filter((id) => id !== user.id);
@@ -138,8 +138,8 @@ messagesRouter.delete("/messages/:messageId", h(async (req, res) => {
   const messageId = messageParam(req.params);
   const m = await messageContext(messageId);
   const me = await requireMember(m.server_id, user.id);
-  const isAdmin = me.role !== "member";
-  if (m.author_id !== user.id && !isAdmin) throw new HttpError(403, "You can only delete your own messages.");
+  const canManage = me.perms.has("manage_messages");
+  if (m.author_id !== user.id && !canManage) throw new HttpError(403, "You can only delete your own messages.");
   await tx(async (c) => {
     // Archive for admins, then remove the real row so nobody else sees any trace of it. DMs have no admins, so nothing is kept.
     if (!m.is_dm)

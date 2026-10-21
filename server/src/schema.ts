@@ -287,4 +287,31 @@ create table if not exists huddle_admin_log (
   detail jsonb not null default '{}',
   created_at timestamptz not null default now()
 );
+-- v19: roles with separate permissions. memberships.role stays as owner/member; the old 'admin' value survives only until the owner converts it.
+create table if not exists server_roles (
+  id uuid primary key default gen_random_uuid(),
+  server_id uuid not null references servers(id) on delete cascade,
+  name text not null,
+  color text,
+  permissions text[] not null default '{}',
+  position int not null default 1,
+  created_at timestamptz not null default now()
+);
+create index if not exists server_roles_server on server_roles(server_id, position desc);
+create table if not exists member_roles (
+  server_id uuid not null references servers(id) on delete cascade,
+  user_id uuid not null references users(id) on delete cascade,
+  role_id uuid not null references server_roles(id) on delete cascade,
+  primary key (user_id, role_id)
+);
+create index if not exists member_roles_server on member_roles(server_id, user_id);
+-- Leaving, being kicked or banned drops a member's roles.
+create or replace function drop_member_roles() returns trigger language plpgsql as $$
+begin
+  delete from member_roles where server_id = old.server_id and user_id = old.user_id;
+  return old;
+end
+$$;
+drop trigger if exists memberships_drop_roles on memberships;
+create trigger memberships_drop_roles after delete on memberships for each row execute function drop_member_roles();
 `;

@@ -12,7 +12,10 @@ export interface User {
 }
 export interface ServerSummary { id: string; name: string; iconVersion: number }
 export interface Channel { id: string; name: string }
+/** The base membership role. "admin" only exists on servers that haven't converted their old admins to a role yet. */
 export type Role = "owner" | "admin" | "member";
+export type Permission = "manage_server" | "manage_channels" | "manage_roles" | "manage_messages" | "kick_members" | "ban_members" | "timeout_members" | "mention_everyone" | "view_audit_log";
+export interface ServerRole { id: string; name: string; color: string | null; permissions: Permission[]; position: number; memberCount: number }
 export type VoteAction = "kick" | "timeout" | "ban";
 
 export interface Member {
@@ -23,6 +26,10 @@ export interface Member {
   accent: string | null;
   statusText: string;
   role: Role;
+  /** Role ids, highest ranked first. */
+  roleIds: string[];
+  /** Rank: higher outranks lower. You can only moderate people ranked below you. */
+  top: number;
   online: boolean;
   timeoutUntil: string | null;
 }
@@ -63,6 +70,11 @@ export interface ServerDetail {
   isDm: boolean;
   ownerId: string;
   myRole: Role;
+  myPermissions: Permission[];
+  myTop: number;
+  /** Only sent to the owner: how many people still have the old admin rank. */
+  legacyAdminCount: number;
+  roles: ServerRole[];
   myTimeoutUntil: string | null;
   channels: Channel[];
   members: Member[];

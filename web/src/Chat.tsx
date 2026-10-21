@@ -10,7 +10,8 @@ interface Props {
   dm?: DmSummary;
   me: User;
   members: Member[];
-  isAdmin: boolean;
+  canManageMessages: boolean;
+  canEveryone: boolean;
   items: Message[];
   hasMore: boolean;
   typingNames: string[];
@@ -134,7 +135,7 @@ export default function Chat(p: Props) {
               m={m}
               grouped={grouped}
               me={me}
-              isAdmin={p.isAdmin}
+              canManage={p.canManageMessages}
               timedOut={timedOut}
               byName={byName}
               byId={byId}
@@ -165,7 +166,7 @@ export default function Chat(p: Props) {
         channel={channel}
         me={me}
         members={members}
-        isAdmin={p.isAdmin}
+        canEveryone={p.canEveryone}
         timedOut={timedOut}
         timeoutUntil={p.timeoutUntil}
         replyTo={p.replyTo}

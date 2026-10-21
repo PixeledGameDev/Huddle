@@ -9,10 +9,10 @@ import type { Member, ServerDetail, User } from "./types";
 import { hue, nameOfUser, squareImage } from "./util";
 
 export function ProfileCard({ userId, serverId, meId, onClose, onEdit, onMessage, onChanged }: { userId: string; serverId: string; meId: string; onClose: () => void; onEdit: () => void; onMessage: (userId: string) => void; onChanged: () => void }) {
-  const [data, setData] = useState<{ profile: User; server: { role: string; joinedAt: string } | null; blockedByMe: boolean } | null>(null);
+  const [data, setData] = useState<{ profile: User; server: { role: string; joinedAt: string; roles: { id: string; name: string; color: string | null }[] } | null; blockedByMe: boolean } | null>(null);
   const [error, setError] = useState("");
   useEffect(() => {
-    api<{ profile: User; server: { role: string; joinedAt: string } | null; blockedByMe: boolean }>(`/users/${userId}/profile?serverId=${serverId}`).then(setData, (e) => setError(e.message));
+    api<{ profile: User; server: { role: string; joinedAt: string; roles: { id: string; name: string; color: string | null }[] } | null; blockedByMe: boolean }>(`/users/${userId}/profile?serverId=${serverId}`).then(setData, (e) => setError(e.message));
   }, [userId, serverId]);
 
   async function toggleBlock() {
@@ -39,6 +39,9 @@ export function ProfileCard({ userId, serverId, meId, onClose, onEdit, onMessage
           <div className="profile-avatar"><Avatar id={p.id} name={name} version={p.avatarVersion} accent={p.accent} size={84} /></div>
           <h3>{name}</h3>
           <p className="muted">@{p.username}{data?.server && data.server.role !== "member" && <em className="tag">{data.server.role}</em>}</p>
+          {data?.server && data.server.roles.length > 0 && (
+            <p className="profile-roles">{data.server.roles.map((r) => <em key={r.id} className="tag role-tag"><i className="role-dot" style={{ background: r.color ?? "var(--dim)" }} />{r.name}</em>)}</p>
+          )}
           {p.statusText && <p className="profile-status">{p.statusText}</p>}
           {p.bio && <p className="profile-bio">{p.bio}</p>}
           <dl className="profile-meta">

@@ -1,4 +1,5 @@
 import { Avatar } from "./Avatar";
+import { can, canModerateMember, memberColor } from "./permissions";
 import type { Member, ServerDetail, User, Vote } from "./types";
 import { actionVerb, nameOfUser } from "./util";
 
@@ -7,30 +8,36 @@ interface Props {
   me: User;
   votes: Vote[];
   onStartVote: (m: Member) => void;
-  onRole: (m: Member, role: "admin" | "member") => void;
+  onRoles: (m: Member) => void;
   onOpenProfile: (userId: string) => void;
   onModerate: (m: Member) => void;
   onMessage: (userId: string) => void;
 }
 
-export default function Members({ server, me, votes, onStartVote, onRole, onOpenProfile, onModerate, onMessage }: Props) {
+export default function Members({ server, me, votes, onStartVote, onRoles, onOpenProfile, onModerate, onMessage }: Props) {
   const online = server.members.filter((m) => m.online);
   const offline = server.members.filter((m) => !m.online);
   const voteOpenOn = (id: string) => votes.some((v) => v.status === "open" && v.targetId === id);
-  const canModerate = (m: Member) =>
-    m.id !== me.id && (server.myRole === "owner" ? m.role !== "owner" : server.myRole === "admin" ? m.role === "member" : false);
+  const staff = (m: Member) => m.role !== "member" || m.roleIds.some((id) => server.roles.find((r) => r.id === id)?.permissions.some((p) => p !== "mention_everyone" && p !== "view_audit_log"));
+  const canGiveRoles = (m: Member) => can(server, "manage_roles") && m.role !== "owner" && server.roles.length > 0 && (m.id === me.id || server.myTop > m.top);
 
   const row = (m: Member) => {
     const timedOut = m.timeoutUntil && new Date(m.timeoutUntil) > new Date();
     const name = nameOfUser(m);
+    const color = memberColor(server, m);
+    const roles = m.roleIds.map((id) => server.roles.find((r) => r.id === id)).filter((r) => !!r);
     return (
       <li key={m.id} className={m.online ? "member" : "member off"}>
         <button className="member-id" onClick={() => onOpenProfile(m.id)} title={`View ${name}'s profile`}>
           <Avatar id={m.id} name={name} version={m.avatarVersion} accent={m.accent} size={28} />
           <span className="member-name">
             <span className="member-line">
-              {name}
+              <span style={color ? { color } : undefined}>{name}</span>
               {m.role !== "member" && <em className="tag">{m.role}</em>}
+              {roles.slice(0, 2).map((r) => (
+                <em key={r!.id} className="tag role-tag"><i className="role-dot" style={{ background: r!.color ?? "var(--dim)" }} />{r!.name}</em>
+              ))}
+              {roles.length > 2 && <em className="tag">+{roles.length - 2}</em>}
               {timedOut && <em className="tag warn">timed out</em>}
             </span>
             {m.statusText && <small className="member-status">{m.statusText}</small>}
@@ -38,13 +45,11 @@ export default function Members({ server, me, votes, onStartVote, onRole, onOpen
         </button>
         <span className="member-actions">
           {m.id !== me.id && <button onClick={() => onMessage(m.id)}>Message</button>}
-          {server.settings.voteEnabled && m.role === "member" && m.id !== me.id && (
+          {server.settings.voteEnabled && !staff(m) && m.id !== me.id && (
             voteOpenOn(m.id) ? <small>Vote open</small> : <button onClick={() => onStartVote(m)}>Vote to {actionVerb(server.settings.voteAction)}</button>
           )}
-          {canModerate(m) && <button className="danger" onClick={() => onModerate(m)}>Moderate</button>}
-          {server.myRole === "owner" && m.role !== "owner" && (
-            <button onClick={() => onRole(m, m.role === "admin" ? "member" : "admin")}>{m.role === "admin" ? "Remove admin" : "Make admin"}</button>
-          )}
+          {canModerateMember(server, me.id, m) && <button className="danger" onClick={() => onModerate(m)}>Moderate</button>}
+          {canGiveRoles(m) && <button onClick={() => onRoles(m)}>Roles</button>}
         </span>
       </li>
     );

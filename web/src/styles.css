@@ -474,3 +474,29 @@ a.srv.util { color: var(--text); }
 .srv.download { background: var(--accent); color: #fff; }
 a.srv.download { color: #fff; }
 @media (max-width: 600px) { .srv.download { display: none; } } /* the desktop app is for computers */
+
+/* ---- roles ---- */
+.tag.role-tag { display: inline-flex; align-items: center; gap: 4px; font-style: normal; }
+.role-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; flex: none; }
+.role-dot.big { width: 12px; height: 12px; margin-right: 8px; }
+.profile-roles { display: flex; flex-wrap: wrap; gap: 4px; justify-content: center; margin: 0 0 8px; }
+.notice-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 16px; background: var(--warn-bg); color: var(--warn-ink); border-bottom: 1px solid var(--warn-line); font-size: 14px; }
+.notice-bar button { flex: none; }
+.roles-list .role-item { display: block; }
+.role-line { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.role-name { display: inline-flex; align-items: center; font-weight: 600; }
+.role-tools { display: flex; gap: 6px; align-items: center; }
+.role-tools button:disabled { opacity: .4; cursor: default; }
+.perm-summary { margin: 4px 0 0; font-size: 13px; color: var(--dim); }
+.role-form { margin-top: 10px; padding: 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface2); }
+.perm-list { border: 0; padding: 0; margin: 0; display: grid; gap: 8px; }
+.check.perm { align-items: flex-start; }
+.check.perm span { display: grid; }
+.check.perm input { width: auto; margin-top: 4px; }
+.swatches { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.swatch { width: 24px; height: 24px; padding: 0; border-radius: 50%; border: 2px solid transparent; }
+.swatch.on { border-color: var(--text); }
+.swatch.none { background: var(--panel); border: 1px solid var(--line); line-height: 1; color: var(--dim); }
+.swatch.none.on { border-color: var(--text); }
+.swatch-input { width: 32px; height: 28px; padding: 0; border: 0; background: none; }
+.row-actions { display: flex; gap: 8px; }

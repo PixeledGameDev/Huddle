@@ -15,6 +15,8 @@ import Members from "./Members";
 import { AddServerModal, SettingsModal } from "./Modals";
 import { PollModal } from "./Polls";
 import { ModerateModal, MyProfileModal, ProfileCard } from "./ProfileModals";
+import { can, canAny, isOwner } from "./permissions";
+import { LegacyAdminsModal, MemberRolesModal } from "./Roles";
 import type { Channel, DmSummary, Member, Message, Poll, Reaction, ServerDetail, ServerSummary, User, Vote } from "./types";
 import { actionVerb, fmtDuration, hue, nameOfUser } from "./util";
 import VoteBanner from "./VoteBanner";
@@ -49,7 +51,7 @@ interface Toast { id: number; text: string; error?: boolean }
 type MsgState = Record<string, { items: Message[]; hasMore: boolean }>;
 type TypingState = Record<string, Record<string, { name: string; until: number }>>;
 type Unread = { channels: Record<string, number>; servers: Record<string, number> };
-type Modal = "add" | "settings" | "poll" | "myprofile" | "changelog" | "huddle" | "suggestions" | null;
+type Modal = "add" | "settings" | "legacy" | "poll" | "myprofile" | "changelog" | "huddle" | "suggestions" | null;
 
 function Main({ me, initialServerId, onUser, onLogout }: { me: User; initialServerId?: string; onUser: (u: User) => void; onLogout: () => void }) {
   const [servers, setServers] = useState<ServerSummary[]>([]);
@@ -64,6 +66,8 @@ function Main({ me, initialServerId, onUser, onLogout }: { me: User; initialServ
   const [modal, setModal] = useState<Modal>(() => (window.location.pathname === "/suggestions" ? "suggestions" : null));
   const [profileId, setProfileId] = useState<string | null>(null);
   const [moderating, setModerating] = useState<Member | null>(null);
+  const [roleMember, setRoleMember] = useState<Member | null>(null);
+  const legacyPromptedRef = useRef<Set<string>>(new Set());
   const [replyTo, setReplyTo] = useState<Message | null>(null);
   const [unread, setUnread] = useState<Unread>({ channels: {}, servers: {} });
   const [gifsEnabled, setGifsEnabled] = useState(false);
@@ -207,6 +211,15 @@ function Main({ me, initialServerId, onUser, onLogout }: { me: User; initialServ
     setReplyTo(null);
     if (activeId) void loadServer(activeId);
   }, [activeId, loadServer]);
+
+  // Owners of servers that still have the old single admin rank are asked to turn those admins into a role.
+  const legacyCount = detail?.legacyAdminCount ?? 0;
+  const detailId = detail?.id;
+  useEffect(() => {
+    if (!detailId || legacyCount <= 0 || legacyPromptedRef.current.has(detailId)) return;
+    legacyPromptedRef.current.add(detailId);
+    setModal("legacy");
+  }, [detailId, legacyCount]);
 
   useEffect(() => {
     setReplyTo(null);
@@ -457,15 +470,6 @@ function Main({ me, initialServerId, onUser, onLogout }: { me: User; initialServ
     setActiveId(id);
   }
 
-  async function setRole(m: Member, role: "admin" | "member") {
-    if (!detail) return;
-    try {
-      await api(`/servers/${detail.id}/members/${m.id}/role`, "POST", { role });
-    } catch (e) {
-      fail(e);
-    }
-  }
-
   async function invite() {
     if (!detail) return;
     try {
@@ -550,7 +554,10 @@ function Main({ me, initialServerId, onUser, onLogout }: { me: User; initialServ
         .filter(([id, t]) => id !== me.id && t.until > now)
         .map(([id, t]) => { const m = members.find((x) => x.id === id); return m ? nameOfUser(m) : t.name; })
     : [];
-  const isAdmin = detail?.myRole === "owner" || detail?.myRole === "admin";
+  const canChannels = can(detail, "manage_channels");
+  const canManageMessages = can(detail, "manage_messages");
+  const canEveryone = can(detail, "mention_everyone");
+  const hasSettings = canAny(detail, ["manage_server", "manage_roles", "ban_members", "manage_messages", "view_audit_log"]) || isOwner(detail);
   const myName = nameOfUser(me);
   const inDm = sideMode === "dms";
   const activeDm = inDm ? dms.find((d) => d.id === activeId) : undefined;
@@ -611,13 +618,13 @@ function Main({ me, initialServerId, onUser, onLogout }: { me: User; initialServ
               <strong title={detail.name}>{detail.name}</strong>
               <span>
                 <button className="icon" title="Copy an invite code" onClick={invite}>Invite</button>
-                {isAdmin && <button className="icon" title="Server settings" onClick={() => setModal("settings")}>Settings</button>}
+                {hasSettings && <button className="icon" title="Server settings" onClick={() => setModal("settings")}>Settings</button>}
               </span>
             </header>
             <div className="channels">
               <div className="side-label">
                 Channels
-                {isAdmin && <button className="icon" aria-label="New channel" onClick={addChannel}>+</button>}
+                {canChannels && <button className="icon" aria-label="New channel" onClick={addChannel}>+</button>}
               </div>
               {detail.channels.map((c) => (
                 <div key={c.id} className="chan-row">
@@ -625,7 +632,7 @@ function Main({ me, initialServerId, onUser, onLogout }: { me: User; initialServ
                     <span className="hash">#</span><span className="chan-name">{c.name}</span>
                     {(unread.channels[c.id] ?? 0) > 0 && <span className="badge inline" aria-label={`${unread.channels[c.id]} mentions`}>{unread.channels[c.id]}</span>}
                   </button>
-                  {isAdmin && (
+                  {canChannels && (
                     <span className="chan-tools">
                       <button className="icon" aria-label={`Rename #${c.name}`} title="Rename channel" onClick={() => renameChannel(c)}>✎</button>
                       <button className="icon" aria-label={`Delete #${c.name}`} title="Delete channel" onClick={() => deleteChannel(c)}>✕</button>
@@ -666,13 +673,20 @@ function Main({ me, initialServerId, onUser, onLogout }: { me: User; initialServ
           </div>
         ) : (
           <>
+            {!activeDm && detail && detail.legacyAdminCount > 0 && (
+              <div className="notice-bar">
+                <span>{detail.legacyAdminCount} {detail.legacyAdminCount === 1 ? "person here still has" : "people here still have"} the old admin rank. Give them a role so you choose what they can do.</span>
+                <button className="primary" onClick={() => setModal("legacy")}>Set up roles</button>
+              </div>
+            )}
             {!activeDm && <VoteBanner votes={votes} me={me} onBallot={ballot} />}
             <Chat
               channel={channel}
               dm={activeDm}
               me={me}
               members={members}
-              isAdmin={isAdmin}
+              canManageMessages={canManageMessages}
+              canEveryone={canEveryone}
               items={channelId ? msgs[channelId]?.items ?? [] : []}
               hasMore={channelId ? msgs[channelId]?.hasMore ?? false : false}
               typingNames={typingNames}
@@ -701,7 +715,7 @@ function Main({ me, initialServerId, onUser, onLogout }: { me: User; initialServ
       {activeDm ? (
         <DmPanel dm={activeDm} onChanged={refreshDms} onError={fail} />
       ) : (
-        !inDm && detail && <Members server={detail} me={me} votes={votes} onStartVote={startVote} onRole={setRole} onOpenProfile={setProfileId} onModerate={setModerating} onMessage={startDm} />
+        !inDm && detail && <Members server={detail} me={me} votes={votes} onStartVote={startVote} onRoles={setRoleMember} onOpenProfile={setProfileId} onModerate={setModerating} onMessage={startDm} />
       )}
 
       {modal === "add" && (
@@ -717,6 +731,10 @@ function Main({ me, initialServerId, onUser, onLogout }: { me: User; initialServ
         />
       )}
       {modal === "settings" && detail && <SettingsModal server={detail} onClose={() => setModal(null)} onError={fail} onSaved={() => { setModal(null); push("Settings saved."); }} onDeleted={() => setModal(null)} />}
+      {modal === "legacy" && detail && detail.legacyAdminCount > 0 && (
+        <LegacyAdminsModal server={detail} onClose={() => setModal(null)} onError={fail} onDone={() => { setModal(null); push("Done. Your admins now have a role."); void loadServer(detail.id); }} />
+      )}
+      {roleMember && detail && <MemberRolesModal server={detail} member={roleMember} onClose={() => setRoleMember(null)} onError={fail} />}
       {modal === "poll" && channel && <PollModal channelName={channel.name} onClose={() => setModal(null)} onCreate={createPoll} />}
       {modal === "changelog" && <Changelog onClose={() => setModal(null)} />}
       {modal === "suggestions" && (

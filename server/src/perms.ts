@@ -3,13 +3,46 @@ import { HttpError } from "./http";
 
 export type Role = "owner" | "admin" | "member";
 
+/** Every permission a server role can grant. The owner always has all of them. */
+export const PERMISSIONS = [
+  "manage_server",
+  "manage_channels",
+  "manage_roles",
+  "manage_messages",
+  "kick_members",
+  "ban_members",
+  "timeout_members",
+  "mention_everyone",
+  "view_audit_log",
+] as const;
+export type Permission = (typeof PERMISSIONS)[number];
+const isPermission = (p: string): p is Permission => (PERMISSIONS as readonly string[]).includes(p);
+/** Anyone holding one of these counts as staff: they can't be voted on. */
+export const STAFF_PERMISSIONS: Permission[] = PERMISSIONS.filter((p) => p !== "mention_everyone" && p !== "view_audit_log");
+
+/** Rank used to decide who can act on whom. Higher outranks lower; role positions sit far below both. */
+export const OWNER_TOP = 1_000_000_000;
+export const ADMIN_TOP = 1_000_000;
+
+export interface Access {
+  role: Role;
+  joined_at: Date;
+  perms: Set<Permission>;
+  top: number;
+}
+
 /**
  * Huddle Admins count as admins of every server (not DMs), whether or not they have joined it, and nothing in a
  * server's own member list or role badges marks them as different. Real owners stay owners.
+ * The legacy "admin" membership role (from before roles existed) keeps every permission except manage_roles until the owner converts it.
  */
-export async function membership(serverId: string, userId: string) {
-  const r = await one<{ role: Role | null; joined_at: Date | null; huddle_admin: boolean; plain_server: boolean }>(
-    `select m.role, m.joined_at, u.huddle_admin, (s.id is not null and not s.is_dm) as plain_server
+export async function membership(serverId: string, userId: string): Promise<Access | null> {
+  const r = await one<{ role: Role | null; joined_at: Date | null; huddle_admin: boolean; plain_server: boolean; perms: string[]; top: number }>(
+    `select m.role, m.joined_at, u.huddle_admin, (s.id is not null and not s.is_dm) as plain_server,
+            coalesce((select array_agg(distinct p) from member_roles mr join server_roles r on r.id = mr.role_id
+                        cross join lateral unnest(r.permissions) as p where mr.server_id = $1 and mr.user_id = u.id), '{}') as perms,
+            coalesce((select max(r.position) from member_roles mr join server_roles r on r.id = mr.role_id
+                       where mr.server_id = $1 and mr.user_id = u.id), 0) as top
        from users u
        left join memberships m on m.server_id = $1 and m.user_id = u.id
        left join servers s on s.id = $1
@@ -18,9 +51,18 @@ export async function membership(serverId: string, userId: string) {
   );
   if (!r) return null;
   const override = r.huddle_admin && r.plain_server;
-  if (r.role) return { role: override && r.role === "member" ? ("admin" as Role) : r.role, joined_at: r.joined_at! };
-  if (override) return { role: "admin" as Role, joined_at: new Date(0) };
-  return null;
+  let role: Role;
+  let joined: Date;
+  if (r.role) {
+    role = override && r.role === "member" ? "admin" : r.role;
+    joined = r.joined_at!;
+  } else if (override) {
+    role = "admin";
+    joined = new Date(0);
+  } else return null;
+  if (role === "owner") return { role, joined_at: joined, perms: new Set(PERMISSIONS), top: OWNER_TOP };
+  if (role === "admin") return { role, joined_at: joined, perms: new Set(PERMISSIONS.filter((p) => p !== "manage_roles")), top: ADMIN_TOP };
+  return { role, joined_at: joined, perms: new Set(r.perms.filter(isPermission)), top: Number(r.top) };
 }
 export async function isHuddleAdmin(userId: string) {
   return !!(await one(`select 1 from users where id = $1 and huddle_admin`, [userId]));
@@ -30,9 +72,9 @@ export async function requireMember(serverId: string, userId: string) {
   if (!m) throw new HttpError(403, "You're not in this server.");
   return m;
 }
-export async function requireAdmin(serverId: string, userId: string) {
+export async function requirePerm(serverId: string, userId: string, perm: Permission) {
   const m = await requireMember(serverId, userId);
-  if (m.role === "member") throw new HttpError(403, "Only owners and admins can do that.");
+  if (!m.perms.has(perm)) throw new HttpError(403, "You don't have permission to do that.");
   return m;
 }
 export async function timeoutUntil(serverId: string, userId: string) {

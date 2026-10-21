@@ -3,6 +3,7 @@ import type { PoolClient } from "pg";
 import { z } from "zod";
 import { one, q, tx } from "./db";
 import { HttpError, h, rateLimit } from "./http";
+import { STAFF_PERMISSIONS } from "./perms";
 import { emitServer, emitUser, leaveServerRooms, onlineIds } from "./realtime";
 
 export interface VoteDto {
@@ -94,14 +95,16 @@ export async function startVote(serverId: string, initiatorId: string, targetId:
     await canVote(serverId, initiatorId, s.vote_min_member_age_seconds, c);
     if (await activeTimeout(serverId, initiatorId, c)) throw new HttpError(403, "You can't start votes while timed out.");
 
-    const target = await one<{ role: string }>(
-      `select case when u.huddle_admin then 'admin' else m.role end as role
+    const target = await one<{ role: string; staff: boolean }>(
+      `select case when u.huddle_admin then 'admin' else m.role end as role,
+              exists(select 1 from member_roles mr join server_roles r on r.id = mr.role_id
+                      where mr.server_id = m.server_id and mr.user_id = m.user_id and r.permissions && $3::text[]) as staff
          from memberships m join users u on u.id = m.user_id where m.server_id = $1 and m.user_id = $2`,
-      [serverId, targetId],
+      [serverId, targetId, STAFF_PERMISSIONS],
       c
     );
     if (!target) throw new HttpError(404, "That person isn't in this server.");
-    if (target.role !== "member") throw new HttpError(403, "Owners and admins can't be voted on.");
+    if (target.role !== "member" || target.staff) throw new HttpError(403, "The owner and people with moderation permissions can't be voted on.");
 
     const recent = await one(
       `select 1 from votes where server_id = $1 and (target_id = $2 or initiator_id = $3)

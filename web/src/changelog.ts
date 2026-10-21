@@ -11,6 +11,16 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "4.0",
+    date: "2026-10-21",
+    title: "Roles and permissions",
+    changes: [
+      "The single admin rank is gone. Owners now create roles (Settings → Roles) with their own colors and permissions: manage server, channels, roles or messages, kick, ban, time out, mention @everyone, and view the activity log.",
+      "Give roles to people with the Roles button next to them in the member list. You can only edit roles, and moderate people, ranked below your own highest role, and only hand out permissions you have.",
+      "Servers that already had admins: the owner is asked to turn those admins into a role. Until then admins keep their access.",
+    ],
+  },
+  {
     version: "3.3",
     date: "2026-10-22",
     title: "Download button",

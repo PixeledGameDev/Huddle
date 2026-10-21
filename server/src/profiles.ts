@@ -3,7 +3,7 @@ import { z } from "zod";
 import { one, q, tx } from "./db";
 import { sniffImage } from "./fileutil";
 import { HttpError, h, rateLimit } from "./http";
-import { requireAdmin, requireMember } from "./perms";
+import { requireMember, requirePerm } from "./perms";
 import { emitServer } from "./realtime";
 
 export const profilesRouter = Router();
@@ -39,14 +39,20 @@ profilesRouter.get("/users/:userId/profile", h(async (req, res) => {
   const profile = await getProfile(userId);
   if (!profile) throw new HttpError(404, "User not found.");
   if (userId !== me) profile.huddleAdmin = false; // nobody can see who else is a Huddle Admin
-  let server: { role: string; joinedAt: string } | null = null;
+  let server: { role: string; joinedAt: string; roles: { id: string; name: string; color: string | null }[] } | null = null;
   if (typeof req.query.serverId === "string") {
     const m = await one<any>(
       `select b.role, b.joined_at from memberships a join memberships b on a.server_id = b.server_id
         where a.server_id = $1 and a.user_id = $2 and b.user_id = $3`,
       [req.query.serverId, me, userId]
     );
-    if (m) server = { role: m.role, joinedAt: new Date(m.joined_at).toISOString() };
+    if (m) {
+      const roles = await q<any>(
+        `select r.id, r.name, r.color from member_roles mr join server_roles r on r.id = mr.role_id where mr.server_id = $1 and mr.user_id = $2 order by r.position desc`,
+        [req.query.serverId, userId]
+      );
+      server = { role: m.role, joinedAt: new Date(m.joined_at).toISOString(), roles: roles.map((r) => ({ id: r.id, name: r.name, color: r.color ?? null })) };
+    }
   }
   const blockedByMe = !!(await one(`select 1 from user_blocks where blocker = $1 and blocked = $2`, [me, userId]));
   res.json({ profile, server, blockedByMe });
@@ -121,7 +127,7 @@ profilesRouter.get("/users/:userId/avatar", h(async (req, res) => {
 
 profilesRouter.put("/servers/:serverId/icon", imageBody, h(async (req, res) => {
   const { serverId } = req.params;
-  await requireAdmin(serverId, req.user!.id);
+  await requirePerm(serverId, req.user!.id, "manage_server");
   rateLimit(`icon:${req.user!.id}`, 10, 60_000);
   const { mime, data } = readImage(req.body);
   await tx(async (c) => {
@@ -134,7 +140,7 @@ profilesRouter.put("/servers/:serverId/icon", imageBody, h(async (req, res) => {
 
 profilesRouter.delete("/servers/:serverId/icon", h(async (req, res) => {
   const { serverId } = req.params;
-  await requireAdmin(serverId, req.user!.id);
+  await requirePerm(serverId, req.user!.id, "manage_server");
   await tx(async (c) => {
     await q(`delete from server_icons where server_id = $1`, [serverId], c);
     await q(`update servers set icon_version = 0 where id = $1`, [serverId], c);

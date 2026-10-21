@@ -15,7 +15,7 @@ interface Props {
   m: Message;
   grouped: boolean;
   me: User;
-  isAdmin: boolean;
+  canManage: boolean;
   timedOut: boolean;
   byName: Map<string, Member>;
   byId: Map<string, Member>;
@@ -69,13 +69,13 @@ function EditBox({ initial, onSave, onCancel }: { initial: string; onSave: (v: s
 }
 
 export default function MessageRow(p: Props) {
-  const { m, grouped, me, isAdmin, timedOut, byName, byId } = p;
+  const { m, grouped, me, canManage, timedOut, byName, byId } = p;
   const author = byId.get(m.authorId);
   const authorName = author ? nameOfUser(author) : m.authorName;
   const mentionedMe = m.authorId !== me.id && (m.mentions.includes(me.id) || m.mentionsEveryone);
   const replyAuthor = m.replyTo ? byId.get(m.replyTo.authorId) : null;
   const isMine = m.authorId === me.id;
-  const canDelete = isMine || isAdmin;
+  const canDelete = isMine || canManage;
   const embedUrls = useMemo(() => embedUrlsIn(m.content), [m.content]);
   const pictures = useMemo(() => m.attachments.filter((a) => a.mime.startsWith("image/")), [m.attachments]);
   const [viewing, setViewing] = useState<number | null>(null); // which of this message's pictures is open
@@ -136,7 +136,7 @@ export default function MessageRow(p: Props) {
             </div>
           )}
           {m.poll && (
-            <PollCard message={m} poll={m.poll} canClose={isMine || isAdmin} timedOut={timedOut} nameOf={p.nameOf} onVote={p.onVote} onClose={p.onClosePoll} />
+            <PollCard message={m} poll={m.poll} canClose={isMine || canManage} timedOut={timedOut} nameOf={p.nameOf} onVote={p.onVote} onClose={p.onClosePoll} />
           )}
           {m.reactions.length > 0 && (
             <div className="reactions">
