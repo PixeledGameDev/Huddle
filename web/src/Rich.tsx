@@ -50,13 +50,18 @@ interface RichProps {
 const MENTION = /(?<![\w@])@([A-Za-z0-9_]{3,20})(?!\w)/g;
 
 /**
- * Message text: **bold**, *italic*, ||spoilers||, Twemoji, links to this app's invites, and @mention pills.
+ * Message text: **bold**, *italic*, ||spoilers||, :shortcode: emoji, Twemoji, links, and @mention pills.
  * Pills only render for people the server confirmed were mentioned.
  */
 export function RichText({ text, byName, mentionIds, everyone, meId }: RichProps) {
   const tree = useMemo(() => parseFormat(text), [text]);
-  const entities = parse(text);
-  const onlyEmoji = entities.length > 0 && entities.length <= 8 && text.replace(/\s/g, "") === entities.map((e) => e.text).join("");
+  // A message that is nothing but emoji (typed, pasted, or :shortcodes:) shows them large.
+  const onlyEmoji = useMemo(() => {
+    if (!tree.every((n) => n.t === "text" || n.t === "emoji")) return false;
+    const joined = tree.map((n) => (n.t === "text" || n.t === "emoji" ? n.v : "")).join("");
+    const entities = parse(joined);
+    return entities.length > 0 && entities.length <= 8 && joined.replace(/\s/g, "") === entities.map((e) => e.text).join("");
+  }, [tree]);
   let key = 0;
 
   // Plain text: Twemoji and mention pills.
@@ -88,24 +93,21 @@ export function RichText({ text, byName, mentionIds, everyone, meId }: RichProps
     return nodes;
   };
 
-  // Text leaf: invite links become real links, the rest goes through emoji and mentions.
-  const leaf = (s: string): ReactNode[] => {
-    const out: ReactNode[] = [];
-    let i = 0;
-    for (const m of s.matchAll(new RegExp(INVITE_URL_RE))) {
-      if (!isOwnInviteUrl(m[0])) continue;
-      const at = m.index ?? 0;
-      if (at > i) out.push(...emojiAndMentions(s.slice(i, at)));
-      out.push(<a key={key++} className="invite-link" href={m[0]}>{m[0]}</a>);
-      i = at + m[0].length;
-    }
-    if (i < s.length) out.push(...emojiAndMentions(s.slice(i)));
-    return out;
+  // Text leaf: Twemoji and mention pills.
+  const leaf = (str: string): ReactNode[] => emojiAndMentions(str);
+
+  // Links open in a new tab. This app's own invite links stay in the app, as before.
+  const link = (url: string): ReactNode => {
+    const m = new RegExp(INVITE_URL_RE).exec(url);
+    if (m && m[0] === url && isOwnInviteUrl(url)) return <a key={key++} className="invite-link" href={url}>{url}</a>;
+    return <a key={key++} className="msg-link" href={url} target="_blank" rel="noopener noreferrer nofollow ugc">{url}</a>;
   };
 
   const render = (nodes: FNode[]): ReactNode[] =>
     nodes.map((n) => {
       if (n.t === "text") return <Fragment key={key++}>{leaf(n.v)}</Fragment>;
+      if (n.t === "url") return link(n.v);
+      if (n.t === "emoji") return <Emoji key={key++} emoji={n.v} big={onlyEmoji} />;
       if (n.t === "b") return <strong key={key++}>{render(n.c)}</strong>;
       if (n.t === "i") return <em key={key++}>{render(n.c)}</em>;
       return <Spoiler key={key++}>{render(n.c)}</Spoiler>;

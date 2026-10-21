@@ -3,7 +3,9 @@ import EmojiPicker from "./EmojiPicker";
 import GifPicker from "./GifPicker";
 import type { Attachment, Channel, Member, Message, User } from "./types";
 import { plainPreview } from "./format";
-import { fmtSize, MAX_ATTACHMENTS, MAX_FILE_BYTES, nameOfUser, timeOf } from "./util";
+import { Emoji } from "./Rich";
+import { searchShortcodes } from "./shortcodes";
+import { fmtSize, looksLikeVideo, MAX_ATTACHMENTS, MAX_FILE_BYTES, MAX_VIDEO_BYTES, nameOfUser, timeOf } from "./util";
 
 export interface ComposerHandle { addFiles: (files: FileList | File[]) => void }
 
@@ -25,7 +27,7 @@ interface Props {
 }
 
 interface Pending { key: string; name: string; size: number; status: "uploading" | "ready" | "error"; error?: string; attachment?: Attachment }
-interface Suggestion { key: string; username: string; label: string }
+interface Suggestion { key: string; username: string; label: string; emoji?: string }
 
 const Composer = forwardRef<ComposerHandle, Props>(function Composer(props, ref) {
   const { channel, me, members, isAdmin, timedOut, timeoutUntil, replyTo, gifsEnabled, onCancelReply, onSend, onUpload, onTyping, onOpenPoll, placeholder } = props;
@@ -60,8 +62,9 @@ const Composer = forwardRef<ComposerHandle, Props>(function Composer(props, ref)
     const room = MAX_ATTACHMENTS - pendingRef.current.length;
     for (const file of [...list].slice(0, Math.max(0, room))) {
       const key = `${Date.now()}-${Math.random()}`;
-      if (file.size > MAX_FILE_BYTES) {
-        setPending((p) => [...p, { key, name: file.name, size: file.size, status: "error", error: "Larger than 8 MB" }]);
+      const video = looksLikeVideo(file);
+      if (file.size > (video ? MAX_VIDEO_BYTES : MAX_FILE_BYTES)) {
+        setPending((p) => [...p, { key, name: file.name, size: file.size, status: "error", error: video ? "Videos can be up to 50 MB" : "Larger than 8 MB" }]);
         continue;
       }
       setPending((p) => [...p, { key, name: file.name, size: file.size, status: "uploading" }]);
@@ -80,18 +83,31 @@ const Composer = forwardRef<ComposerHandle, Props>(function Composer(props, ref)
     return m ? { query: m[1], start: before.length - m[1].length - 1 } : null;
   }, [text, caret]);
 
-  const suggestions: Suggestion[] = useMemo(() => {
-    if (!mentionQuery || dismissed === `${mentionQuery.start}:${mentionQuery.query}`) return [];
-    const q = mentionQuery.query.toLowerCase();
-    const list: Suggestion[] = members
-      .filter((m) => m.id !== me.id && (m.username.toLowerCase().startsWith(q) || (m.displayName ?? "").toLowerCase().startsWith(q)))
-      .slice(0, 6)
-      .map((m) => ({ key: m.id, username: m.username, label: nameOfUser(m) }));
-    if (isAdmin && "everyone".startsWith(q)) list.push({ key: "everyone", username: "everyone", label: "Notify everyone" });
-    return list;
-  }, [mentionQuery, dismissed, members, me.id, isAdmin]);
+  // ---- :emoji shortcode autocomplete (after at least two characters, and only at the start of a word)
+  const emojiQuery = useMemo(() => {
+    const before = text.slice(0, caret);
+    const m = /(?:^|[\s(])(:[A-Za-z0-9_+-]{2,})$/.exec(before);
+    return m ? { query: m[1].slice(1), start: before.length - m[1].length } : null;
+  }, [text, caret]);
 
-  useEffect(() => setSel(0), [mentionQuery?.query]);
+  const suggestions: Suggestion[] = useMemo(() => {
+    if (mentionQuery) {
+      if (dismissed === `${mentionQuery.start}:${mentionQuery.query}`) return [];
+      const q = mentionQuery.query.toLowerCase();
+      const list: Suggestion[] = members
+        .filter((m) => m.id !== me.id && (m.username.toLowerCase().startsWith(q) || (m.displayName ?? "").toLowerCase().startsWith(q)))
+        .slice(0, 6)
+        .map((m) => ({ key: m.id, username: m.username, label: nameOfUser(m) }));
+      if (isAdmin && "everyone".startsWith(q)) list.push({ key: "everyone", username: "everyone", label: "Notify everyone" });
+      return list;
+    }
+    if (emojiQuery && dismissed !== `:${emojiQuery.start}:${emojiQuery.query}`) {
+      return searchShortcodes(emojiQuery.query).map((e) => ({ key: `emoji:${e.name}`, username: "", label: `:${e.name}:`, emoji: e.glyph }));
+    }
+    return [];
+  }, [mentionQuery, emojiQuery, dismissed, members, me.id, isAdmin]);
+
+  useEffect(() => setSel(0), [mentionQuery?.query, emojiQuery?.query]);
 
   function insertMention(s: Suggestion) {
     if (!mentionQuery) return;
@@ -100,6 +116,21 @@ const Composer = forwardRef<ComposerHandle, Props>(function Composer(props, ref)
     const next = `${before}@${s.username} ${after}`;
     const pos = before.length + s.username.length + 2;
     setText(next);
+    setCaret(pos);
+    requestAnimationFrame(() => {
+      taRef.current?.focus();
+      taRef.current?.setSelectionRange(pos, pos);
+    });
+  }
+
+  /** Picks a suggestion: a @mention, or an emoji that replaces the :partial_name being typed. */
+  function acceptSuggestion(s: Suggestion) {
+    if (!s.emoji) return insertMention(s);
+    if (!emojiQuery) return;
+    const before = text.slice(0, emojiQuery.start);
+    const after = text.slice(caret);
+    const pos = before.length + s.emoji.length + 1;
+    setText(`${before}${s.emoji} ${after}`);
     setCaret(pos);
     requestAnimationFrame(() => {
       taRef.current?.focus();
@@ -176,8 +207,12 @@ const Composer = forwardRef<ComposerHandle, Props>(function Composer(props, ref)
           {suggestions.length > 0 && (
             <ul className="suggest" role="listbox">
               {suggestions.map((s, i) => (
-                <li key={s.key} role="option" aria-selected={i === sel} className={i === sel ? "on" : ""} onMouseDown={(e) => { e.preventDefault(); insertMention(s); }}>
-                  <strong>{s.label}</strong> <small>@{s.username}</small>
+                <li key={s.key} role="option" aria-selected={i === sel} className={i === sel ? "on" : ""} onMouseDown={(e) => { e.preventDefault(); acceptSuggestion(s); }}>
+                  {s.emoji ? (
+                    <><Emoji emoji={s.emoji} /> <strong>{s.label}</strong></>
+                  ) : (
+                    <><strong>{s.label}</strong> <small>@{s.username}</small></>
+                  )}
                 </li>
               ))}
             </ul>
@@ -200,8 +235,8 @@ const Composer = forwardRef<ComposerHandle, Props>(function Composer(props, ref)
               if (suggestions.length) {
                 if (e.key === "ArrowDown") { e.preventDefault(); setSel((s) => (s + 1) % suggestions.length); return; }
                 if (e.key === "ArrowUp") { e.preventDefault(); setSel((s) => (s - 1 + suggestions.length) % suggestions.length); return; }
-                if (e.key === "Enter" || e.key === "Tab") { e.preventDefault(); insertMention(suggestions[sel]); return; }
-                if (e.key === "Escape") { e.preventDefault(); setDismissed(`${mentionQuery!.start}:${mentionQuery!.query}`); return; }
+                if (e.key === "Enter" || e.key === "Tab") { e.preventDefault(); acceptSuggestion(suggestions[sel]); return; }
+                if (e.key === "Escape") { e.preventDefault(); setDismissed(mentionQuery ? `${mentionQuery.start}:${mentionQuery.query}` : `:${emojiQuery!.start}:${emojiQuery!.query}`); return; }
               }
               if (e.key === "Escape" && replyTo) { onCancelReply(); return; }
               if (e.key === "Enter" && !e.shiftKey) {

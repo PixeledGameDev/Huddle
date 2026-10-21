@@ -87,14 +87,15 @@ const AUDIT_TEXT: Record<string, (e: any) => string> = {
   "message.delete": (e) => `${e.actor} deleted a message by ${e.target}`,
 };
 
-type Tab = "general" | "bans" | "deleted" | "activity";
+type Tab = "general" | "bans" | "deleted" | "activity" | "danger";
 
-export function SettingsModal({ server, onClose, onSaved, onError }: { server: ServerDetail; onClose: () => void; onSaved: () => void; onError: (e: unknown) => void }) {
+export function SettingsModal({ server, onClose, onSaved, onDeleted, onError }: { server: ServerDetail; onClose: () => void; onSaved: () => void; onDeleted: () => void; onError: (e: unknown) => void }) {
   const [tab, setTab] = useState<Tab>("general");
   const [s, setS] = useState<Settings>(server.settings);
   const [audit, setAudit] = useState<any[]>([]);
   const [bans, setBans] = useState<BanEntry[]>([]);
   const [deleted, setDeleted] = useState<DeletedMessage[]>([]);
+  const [confirmName, setConfirmName] = useState("");
   const set = <K extends keyof Settings>(k: K, v: Settings[K]) => setS((p) => ({ ...p, [k]: v }));
 
   const loadBans = () => api<{ bans: BanEntry[] }>(`/servers/${server.id}/bans`).then((r) => setBans(r.bans), onError);
@@ -110,7 +111,7 @@ export function SettingsModal({ server, onClose, onSaved, onError }: { server: S
     } catch (err) { onError(err); }
   }
 
-  const tabs: [Tab, string][] = [["general", "General"], ["bans", "Bans"], ["deleted", "Deleted messages"], ["activity", "Activity"]];
+  const tabs: [Tab, string][] = [["general", "General"], ["bans", "Bans"], ["deleted", "Deleted messages"], ["activity", "Activity"], ...(server.myRole === "owner" ? ([["danger", "Danger zone"]] as [Tab, string][]) : [])];
   return (
     <Modal title={`${server.name} settings`} onClose={onClose}>
       <div className="tabs" role="tablist">
@@ -196,6 +197,24 @@ export function SettingsModal({ server, onClose, onSaved, onError }: { server: S
             ))}
           </ul>
         </>
+      )}
+
+      {tab === "danger" && server.myRole === "owner" && (
+        <form
+          className="stack danger-zone"
+          onSubmit={async (e) => {
+            e.preventDefault();
+            try {
+              await api(`/servers/${server.id}`, "DELETE", { name: confirmName });
+              onDeleted();
+            } catch (err) { onError(err); }
+          }}
+        >
+          <h3>Delete this server</h3>
+          <p className="muted">This permanently deletes <strong>{server.name}</strong> for everyone: every channel, message, file, invite and ban. It can't be undone.</p>
+          <label>Type the server's name to confirm<input value={confirmName} onChange={(e) => setConfirmName(e.target.value)} placeholder={server.name} autoComplete="off" /></label>
+          <button className="danger-fill" disabled={confirmName.trim() !== server.name}>Delete server forever</button>
+        </form>
       )}
 
       {tab === "activity" && (

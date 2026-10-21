@@ -1,0 +1,77 @@
+# Huddle desktop app
+
+A small Electron app that opens your Huddle server in its own window and adds the desktop extras: system
+notifications, an unread badge (taskbar / dock / tray), a tray icon, and staying open in the tray when you close the
+window. It doesn't contain Huddle itself: it loads your server's web app, so it's always the same version as the server.
+
+## Run it
+
+```
+cd desktop
+npm install
+npm start
+```
+
+The first time, it asks for your server's address (for example `https://huddle.example.com`) and checks that a Huddle
+server is there. Change it later from **Huddle → Change server…** (or the tray menu). To skip the question for everyone
+who installs your build, put the address in `app.config.json` (`"defaultUrl": "https://huddle.example.com"`) before
+building. For development, `HUDDLE_URL=http://localhost:3000 npm start` works too (plain `http` is only allowed for
+this computer).
+
+## Put it on your website's download page (private repo is fine)
+
+Huddle serves the installers itself at **`/download`**, so people never need access to the repository. The GitHub workflow
+builds them and uploads them to the same Cloudflare R2 bucket your file storage already uses (under a `desktop/` folder,
+separate from message attachments); the Huddle server reads them from there. One-time setup, in your repo's
+**Settings → Secrets and variables → Actions**:
+
+| Where | Name | Value |
+|---|---|---|
+| Secrets | `R2_ACCOUNT_ID`, `R2_BUCKET`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY` | the same four values the server uses for R2 (the key needs write access to the bucket) |
+| Variables | `HUDDLE_URL` | your site, e.g. `https://huddle.onrender.com` (builds the address into the app so it connects without asking) |
+
+Then run **Actions → Desktop app → Run workflow**. After 5–10 minutes the page `https://your-site/download` lists the
+new version (the server checks for changes about once a minute). Each new run replaces the old installers. Anyone with
+the link can download, with or without an account, and the page picks out the right build for their computer.
+Downloads stream through your server, so they count toward its bandwidth.
+
+Without R2 (local development), put the installers and a `latest.json` (made by
+`node scripts/make-manifest.js <folder> > latest.json`) in a folder and set `DOWNLOADS_DIR` to it.
+
+## Build installers
+
+```
+npm run dist        # builds for the system you're on, into desktop/dist
+```
+
+Windows gets an installer (`.exe`), macOS a `.dmg` and `.zip`, Linux an `.AppImage` and `.deb`. You can only build for
+the system you're on, so the easiest way to get all three is the GitHub Actions workflow in
+`.github/workflows/desktop.yml`: open the repo's **Actions** tab, pick **Desktop app**, **Run workflow**, and download
+the files from the finished run (or push a tag such as `desktop-v1.0.0`).
+
+**The installers are unsigned.** Windows SmartScreen will say "unknown publisher" (More info → Run anyway) and on
+macOS you'll need to right-click the app → Open the first time. Removing those warnings needs paid code-signing
+certificates (and, for macOS, an Apple Developer account); electron-builder supports both once you have them.
+
+## What it does
+
+- **Notifications** for direct messages, @mentions and @everyone, with a chime. They appear only when Huddle isn't the
+  window you're looking at, and clicking one opens that conversation. Settings are in Huddle under *Profile &
+  appearance → Notifications*.
+- **Unread badge** on the taskbar icon (Windows), dock icon (macOS), launcher (Linux, where supported) and tray tooltip.
+- **Tray icon**; closing the window keeps Huddle running so notifications keep arriving. Turn that off under
+  Huddle → "Keep running in the tray when closed". Quit from the tray menu. (On Linux desktops without a tray, such as
+  stock GNOME, turn this off, or reopen Huddle by launching it again.)
+- Remembers window size and position, and only one copy runs at a time.
+
+## Safety notes
+
+The window only ever shows your Huddle server. Links to other sites open in your normal browser, and only `http(s)`
+links are ever handed over. The page runs sandboxed with no Node access; it can talk to the app through three small
+functions only (show a notification, set the badge, hear notification clicks), and the app ignores those from any page
+that isn't your Huddle server. Browser permissions such as camera, microphone and location are refused.
+
+## Tests
+
+`npm test` checks the address handling and link-safety helpers. The rest (windows, tray, notifications) needs a real
+desktop to try out.

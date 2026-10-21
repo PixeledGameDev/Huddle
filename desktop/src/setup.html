@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'self'; img-src 'self'" />
+  <title>Huddle</title>
+  <style>
+    :root { color-scheme: light dark; --accent: #3556d8; }
+    body { margin: 0; min-height: 100vh; display: grid; place-items: center; font: 15px system-ui, sans-serif; background: Canvas; color: CanvasText; }
+    main { width: min(420px, 90vw); display: grid; gap: 14px; }
+    h1 { margin: 0; font-size: 22px; }
+    p { margin: 0; opacity: .75; line-height: 1.45; }
+    input { font: inherit; padding: 10px 12px; border-radius: 8px; border: 1px solid #8886; background: transparent; color: inherit; }
+    button { font: inherit; padding: 10px 14px; border-radius: 8px; border: 1px solid #8886; background: transparent; color: inherit; cursor: pointer; }
+    button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+    button:disabled { opacity: .5; cursor: default; }
+    .row { display: flex; gap: 10px; }
+    .error { color: #d93025; min-height: 1.2em; }
+    [hidden] { display: none !important; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1 id="title">Connect to Huddle</h1>
+    <p id="lead">Enter the address of your Huddle server.</p>
+    <form id="form" style="display:grid;gap:14px">
+      <input id="url" placeholder="huddle.example.com" autocomplete="off" spellcheck="false" autofocus />
+      <div class="row"><button class="primary" id="go">Connect</button></div>
+    </form>
+    <div class="row" id="retryRow" hidden>
+      <button class="primary" id="retry">Try again</button>
+      <button id="change">Change server</button>
+    </div>
+    <div class="error" id="error" role="alert"></div>
+  </main>
+  <script src="setup.js"></script>
+</body>
+</html>

@@ -3,13 +3,13 @@ import { z } from "zod";
 import { one, q, tx } from "./db";
 import { sniffImage } from "./fileutil";
 import { HttpError, h, rateLimit } from "./http";
-import { requireAdmin } from "./perms";
+import { requireAdmin, requireMember } from "./perms";
 import { emitServer } from "./realtime";
 
 export const profilesRouter = Router();
 
 export async function getProfile(userId: string) {
-  const r = await one<any>(`select id, username, display_name, bio, accent, status_text, avatar_version, created_at from users where id = $1`, [userId]);
+  const r = await one<any>(`select id, username, display_name, bio, accent, status_text, avatar_version, created_at, huddle_admin from users where id = $1`, [userId]);
   if (!r) return null;
   return {
     id: r.id as string,
@@ -20,6 +20,7 @@ export async function getProfile(userId: string) {
     statusText: r.status_text as string,
     avatarVersion: r.avatar_version as number,
     createdAt: new Date(r.created_at).toISOString(),
+    huddleAdmin: r.huddle_admin as boolean, // only ever sent to the person themselves (see the profile route below)
   };
 }
 
@@ -37,6 +38,7 @@ profilesRouter.get("/users/:userId/profile", h(async (req, res) => {
   }
   const profile = await getProfile(userId);
   if (!profile) throw new HttpError(404, "User not found.");
+  if (userId !== me) profile.huddleAdmin = false; // nobody can see who else is a Huddle Admin
   let server: { role: string; joinedAt: string } | null = null;
   if (typeof req.query.serverId === "string") {
     const m = await one<any>(
@@ -142,7 +144,6 @@ profilesRouter.delete("/servers/:serverId/icon", h(async (req, res) => {
 }));
 
 profilesRouter.get("/servers/:serverId/icon", h(async (req, res) => {
-  const member = await one(`select 1 from memberships where server_id = $1 and user_id = $2`, [req.params.serverId, req.user!.id]);
-  if (!member) throw new HttpError(403, "You're not in this server.");
+  await requireMember(req.params.serverId, req.user!.id);
   sendImage(res, await one(`select mime, data from server_icons where server_id = $1`, [req.params.serverId]));
 }));

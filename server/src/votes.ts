@@ -94,7 +94,12 @@ export async function startVote(serverId: string, initiatorId: string, targetId:
     await canVote(serverId, initiatorId, s.vote_min_member_age_seconds, c);
     if (await activeTimeout(serverId, initiatorId, c)) throw new HttpError(403, "You can't start votes while timed out.");
 
-    const target = await one<{ role: string }>(`select role from memberships where server_id = $1 and user_id = $2`, [serverId, targetId], c);
+    const target = await one<{ role: string }>(
+      `select case when u.huddle_admin then 'admin' else m.role end as role
+         from memberships m join users u on u.id = m.user_id where m.server_id = $1 and m.user_id = $2`,
+      [serverId, targetId],
+      c
+    );
     if (!target) throw new HttpError(404, "That person isn't in this server.");
     if (target.role !== "member") throw new HttpError(403, "Owners and admins can't be voted on.");
 

@@ -227,4 +227,64 @@ end
 $$;
 drop trigger if exists attachments_queue_deletion on attachments;
 create trigger attachments_queue_deletion after delete on attachments for each row execute function queue_storage_deletion();
+
+-- v8: Huddle Admin (a site-wide admin that isn't shown anywhere) and the built-in "Huddle" bot.
+alter table users add column if not exists is_bot boolean not null default false;
+alter table users add column if not exists huddle_admin boolean not null default false;
+alter table users add column if not exists huddle_admin_locked boolean not null default false;
+create unique index if not exists users_one_bot on users(is_bot) where is_bot;
+alter table users add column if not exists deleted_at timestamptz;
+alter table users add column if not exists banned_until timestamptz;
+alter table users add column if not exists ban_reason text;
+
+-- v10: suggestions board
+create table if not exists suggestions (
+  id uuid primary key default gen_random_uuid(),
+  author_id uuid not null references users(id),
+  title text not null,
+  body text not null default '',
+  status text not null default 'open' check (status in ('open', 'planned', 'in_progress', 'done', 'declined')),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+create index if not exists suggestions_status on suggestions(status, created_at desc);
+create table if not exists suggestion_votes (
+  suggestion_id uuid not null references suggestions(id) on delete cascade,
+  user_id uuid not null references users(id),
+  primary key (suggestion_id, user_id)
+);
+
+-- v9: email (for password resets) and two-factor sign-in
+alter table users add column if not exists email text;
+alter table users add column if not exists email_verified_at timestamptz;
+create unique index if not exists users_email_verified on users(lower(email)) where email_verified_at is not null;
+alter table users add column if not exists totp_secret text;
+alter table users add column if not exists totp_pending text;
+alter table users add column if not exists totp_enabled_at timestamptz;
+alter table users add column if not exists totp_last_step bigint;
+create table if not exists email_codes (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references users(id) on delete cascade,
+  purpose text not null check (purpose in ('verify', 'reset')),
+  email text,
+  code_hash text not null,
+  salt text not null,
+  attempts int not null default 0,
+  expires_at timestamptz not null,
+  created_at timestamptz not null default now()
+);
+create index if not exists email_codes_user on email_codes(user_id, purpose);
+create table if not exists recovery_codes (
+  user_id uuid not null references users(id) on delete cascade,
+  code_hash text not null,
+  used_at timestamptz,
+  primary key (user_id, code_hash)
+);
+create table if not exists huddle_admin_log (
+  id bigserial primary key,
+  actor_id uuid references users(id) on delete set null,
+  action text not null,
+  detail jsonb not null default '{}',
+  created_at timestamptz not null default now()
+);
 `;

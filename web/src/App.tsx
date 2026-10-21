@@ -8,6 +8,9 @@ import { hasUnseenUpdates, markUpdatesSeen } from "./changelog";
 import Chat from "./Chat";
 import { InvitePage } from "./Invites";
 import DmPanel from "./DmPanel";
+import { HuddleAdminModal } from "./HuddleAdmin";
+import { SuggestionsModal } from "./Suggestions";
+import { notifyIncoming, setNotificationOpener, updateBadge } from "./notify";
 import Members from "./Members";
 import { AddServerModal, SettingsModal } from "./Modals";
 import { PollModal } from "./Polls";
@@ -46,7 +49,7 @@ interface Toast { id: number; text: string; error?: boolean }
 type MsgState = Record<string, { items: Message[]; hasMore: boolean }>;
 type TypingState = Record<string, Record<string, { name: string; until: number }>>;
 type Unread = { channels: Record<string, number>; servers: Record<string, number> };
-type Modal = "add" | "settings" | "poll" | "myprofile" | "changelog" | null;
+type Modal = "add" | "settings" | "poll" | "myprofile" | "changelog" | "huddle" | "suggestions" | null;
 
 function Main({ me, initialServerId, onUser, onLogout }: { me: User; initialServerId?: string; onUser: (u: User) => void; onLogout: () => void }) {
   const [servers, setServers] = useState<ServerSummary[]>([]);
@@ -57,7 +60,8 @@ function Main({ me, initialServerId, onUser, onLogout }: { me: User; initialServ
   const [msgs, setMsgs] = useState<MsgState>({});
   const [typing, setTyping] = useState<TypingState>({});
   const [toasts, setToasts] = useState<Toast[]>([]);
-  const [modal, setModal] = useState<Modal>(null);
+  // /suggestions in the address bar opens the board, so it can be linked to
+  const [modal, setModal] = useState<Modal>(() => (window.location.pathname === "/suggestions" ? "suggestions" : null));
   const [profileId, setProfileId] = useState<string | null>(null);
   const [moderating, setModerating] = useState<Member | null>(null);
   const [replyTo, setReplyTo] = useState<Message | null>(null);
@@ -65,14 +69,23 @@ function Main({ me, initialServerId, onUser, onLogout }: { me: User; initialServ
   const [gifsEnabled, setGifsEnabled] = useState(false);
   const [dms, setDms] = useState<DmSummary[]>([]);
   const [unseenUpdates, setUnseenUpdates] = useState(hasUnseenUpdates);
+  // The "Download app" button only appears when there's something to download, and never inside the desktop app itself.
+  const [appAvailable, setAppAvailable] = useState(false);
+  useEffect(() => {
+    if (window.huddleDesktop) return;
+    api<{ desktop: unknown }>("/desktop").then((r) => setAppAvailable(!!r.desktop), () => {});
+  }, []);
   const [sideMode, setSideMode] = useState<"server" | "dms">("server");
 
   const socketRef = useRef<Socket | null>(null);
+  const onLogoutRef = useRef(onLogout);
+  onLogoutRef.current = onLogout;
   const meRef = useRef(me);
   const activeIdRef = useRef<string | null>(null);
   const channelIdRef = useRef<string | null>(null);
   const serversRef = useRef<ServerSummary[]>([]);
   const dmsRef = useRef<DmSummary[]>([]);
+  const pendingChannelRef = useRef<string | null>(null);
   meRef.current = me;
   activeIdRef.current = activeId;
   channelIdRef.current = channelId;
@@ -96,7 +109,9 @@ function Main({ me, initialServerId, onUser, onLogout }: { me: User; initialServ
       if (activeIdRef.current !== id) return;
       setDetail(server);
       setVotes((prev) => [...prev.filter((v) => v.status !== "open" && v.serverId === id), ...server.votes]);
-      setChannelId((cur) => (cur && server.channels.some((c) => c.id === cur) ? cur : server.channels[0]?.id ?? null));
+      const wanted = pendingChannelRef.current; // set when a notification asked for a particular channel
+      pendingChannelRef.current = null;
+      setChannelId((cur) => (wanted && server.channels.some((c) => c.id === wanted) ? wanted : cur && server.channels.some((c) => c.id === cur) ? cur : server.channels[0]?.id ?? null));
       setServers((prev) => prev.map((s) => (s.id === id && (s.name !== server.name || s.iconVersion !== server.iconVersion) ? { ...s, name: server.name, iconVersion: server.iconVersion } : s)));
     } catch (e) {
       fail(e);
@@ -168,6 +183,14 @@ function Main({ me, initialServerId, onUser, onLogout }: { me: User; initialServ
   }, [patchMessage]);
 
   // ---- initial data
+  // Gaining or losing Huddle Admin changes which servers you can see.
+  const huddleAdminSeen = useRef(me.huddleAdmin);
+  useEffect(() => {
+    if (huddleAdminSeen.current === me.huddleAdmin) return;
+    huddleAdminSeen.current = me.huddleAdmin;
+    api<{ servers: ServerSummary[] }>("/servers").then((r) => setServers(r.servers), () => {});
+  }, [me.huddleAdmin]);
+
   useEffect(() => {
     api<{ servers: ServerSummary[] }>("/servers").then((r) => {
       setServers(r.servers);
@@ -203,7 +226,21 @@ function Main({ me, initialServerId, onUser, onLogout }: { me: User; initialServ
   const totalUnread = Object.values(unread.servers).reduce((a, b) => a + b, 0);
   useEffect(() => {
     document.title = totalUnread > 0 ? `(${totalUnread}) Huddle` : "Huddle";
+    updateBadge(totalUnread); // desktop app: taskbar / dock / tray badge
   }, [totalUnread]);
+
+  // Clicking a notification opens the conversation it was about.
+  useEffect(() => {
+    setNotificationOpener(({ serverId, channelId: ch }) => {
+      setModal(null);
+      setSideMode(dmsRef.current.some((d) => d.id === serverId) ? "dms" : "server");
+      if (activeIdRef.current === serverId) setChannelId(ch);
+      else {
+        pendingChannelRef.current = ch;
+        setActiveId(serverId);
+      }
+    });
+  }, []);
 
   // ---- realtime
   useEffect(() => {
@@ -232,6 +269,9 @@ function Main({ me, initialServerId, onUser, onLogout }: { me: User; initialServ
         servers: { ...u.servers, [m.serverId]: (u.servers[m.serverId] ?? 0) + 1 },
       }));
       push(isDm ? `${m.authorName} sent you a message` : `${m.authorName} mentioned you`);
+      notifyIncoming(m, isDm ? "dm" : m.mentions.includes(meId) ? "mention" : "everyone", {
+        serverName: serversRef.current.find((x) => x.id === m.serverId)?.name ?? "a server",
+      });
     });
     s.on("message.update", (m: Message) => patchMessage(m.channelId, m.id, (old) => ({ ...m, poll: old.poll })));
     s.on("message.delete", (p: { channelId: string; messageId: string }) => removeMessage(p.channelId, p.messageId));
@@ -262,11 +302,24 @@ function Main({ me, initialServerId, onUser, onLogout }: { me: User; initialServ
       if (p.userId === meRef.current.id) api<{ user: User }>("/auth/me").then((r) => onUser(r.user), () => {});
     });
 
+    s.on("account.banned", (p: { permanent: boolean; until: string | null; reason: string | null }) => {
+      s.disconnect();
+      onLogoutRef.current();
+      setTimeout(() => alert(`Your account has been banned${p.permanent ? "" : ` until ${new Date(p.until!).toLocaleString()}`}.${p.reason ? ` Reason: ${p.reason}` : ""}`), 0);
+    });
+
+    s.on("account.removed", () => {
+      s.disconnect();
+      onLogoutRef.current();
+    });
+
     s.on("server.removed", (p: { serverId: string; reason: string; source?: string }) => {
+      if (!serversRef.current.some((x) => x.id === p.serverId)) return; // already gone from this screen
       const name = serversRef.current.find((x) => x.id === p.serverId)?.name ?? "the server";
       const next = serversRef.current.filter((x) => x.id !== p.serverId);
       setServers(next);
       if (activeIdRef.current === p.serverId) setActiveId(next[0]?.id ?? null);
+      if (p.reason === "deleted") return push(`${name} was deleted.`, true);
       const how = p.source === "admin" ? "by an admin" : "by a member vote";
       push(p.reason === "ban" ? `You were banned from ${name} ${how}.` : `You were removed from ${name} ${how}.`, true);
     });
@@ -525,6 +578,13 @@ function Main({ me, initialServerId, onUser, onLogout }: { me: User; initialServ
           </button>
         ))}
         <button className="srv add" aria-label="Add a server" title="Add a server" onClick={() => setModal("add")}>+</button>
+        <span className="rail-spacer" />
+        <button className="srv util" aria-label="Suggestions" title="Suggestions: ideas for Huddle" onClick={() => setModal("suggestions")}>💡</button>
+        {appAvailable && (
+          <a className="srv util download" href="/download" target="_blank" rel="noopener" aria-label="Download the desktop app" title="Download the desktop app">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M12 3v12m0 0-5-5m5 5 5-5M5 21h14" /></svg>
+          </a>
+        )}
       </nav>
 
       <aside className="side">
@@ -586,6 +646,7 @@ function Main({ me, initialServerId, onUser, onLogout }: { me: User; initialServ
           <button className="icon whatsnew" aria-label={unseenUpdates ? "What's new (new updates)" : "What's new"} title="What's new" onClick={() => { markUpdatesSeen(); setUnseenUpdates(false); setModal("changelog"); }}>
             ✨{unseenUpdates && <span className="new-dot" />}
           </button>
+          {me.huddleAdmin && <button className="icon" title="Huddle Admin" onClick={() => setModal("huddle")}>Huddle Admin</button>}
           {!inDm && detail && detail.myRole !== "owner" && <button className="icon" onClick={leave}>Leave</button>}
           <button className="icon" onClick={logout}>Sign out</button>
         </footer>
@@ -655,10 +716,22 @@ function Main({ me, initialServerId, onUser, onLogout }: { me: User; initialServ
           }}
         />
       )}
-      {modal === "settings" && detail && <SettingsModal server={detail} onClose={() => setModal(null)} onError={fail} onSaved={() => { setModal(null); push("Settings saved."); }} />}
+      {modal === "settings" && detail && <SettingsModal server={detail} onClose={() => setModal(null)} onError={fail} onSaved={() => { setModal(null); push("Settings saved."); }} onDeleted={() => setModal(null)} />}
       {modal === "poll" && channel && <PollModal channelName={channel.name} onClose={() => setModal(null)} onCreate={createPoll} />}
       {modal === "changelog" && <Changelog onClose={() => setModal(null)} />}
-      {modal === "myprofile" && <MyProfileModal me={me} onClose={() => setModal(null)} onUser={onUser} onError={fail} />}
+      {modal === "suggestions" && (
+        <SuggestionsModal
+          admin={!!me.huddleAdmin}
+          onClose={() => {
+            if (window.location.pathname === "/suggestions") window.history.replaceState(null, "", "/");
+            setModal(null);
+          }}
+          onNotice={push}
+          onError={fail}
+        />
+      )}
+      {modal === "huddle" && me.huddleAdmin && <HuddleAdminModal meId={me.id} onClose={() => setModal(null)} onNotice={push} onError={fail} />}
+      {modal === "myprofile" && <MyProfileModal me={me} onClose={() => setModal(null)} onUser={onUser} onDeleted={() => { socketRef.current?.disconnect(); onLogout(); }} onError={fail} />}
       {profileId && detail && (
         <ProfileCard userId={profileId} serverId={detail.id} meId={me.id} onClose={() => setProfileId(null)} onEdit={() => { setProfileId(null); setModal("myprofile"); }} onMessage={startDm} onChanged={refreshDms} />
       )}

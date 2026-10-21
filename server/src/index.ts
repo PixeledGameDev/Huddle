@@ -5,7 +5,10 @@ import path from "path";
 import { ZodError } from "zod";
 import { authRouter, cleanupSessions, requireAuth } from "./auth";
 import { migrate, q } from "./db";
+import { downloadsRouter } from "./downloads";
+import { bootstrapHuddle } from "./huddleAdmin";
 import { inviteMeta, invitesRouter } from "./invites";
+import { recoveryRouter } from "./security";
 import { HttpError } from "./http";
 import { initRealtime } from "./realtime";
 import { api } from "./routes";
@@ -14,6 +17,7 @@ import { startVoteSweeper } from "./votes";
 
 async function main() {
   await migrate();
+  await bootstrapHuddle();
 
   const app = express();
   app.set("trust proxy", 1); // Render terminates TLS in front of the app
@@ -31,7 +35,9 @@ async function main() {
   app.use(express.json({ limit: "20kb" }));
 
   app.get("/healthz", (_req, res) => void res.send("ok"));
+  app.use(downloadsRouter); // desktop app downloads: public, so the page works before signing in
   app.use("/api/auth", authRouter);
+  app.use("/api/auth", recoveryRouter);
   app.use("/api", invitesRouter); // public: invite cards work before signing in
   app.use("/api", requireAuth, api);
   app.use("/api", (_req, res) => void res.status(404).json({ error: "Not found." }));

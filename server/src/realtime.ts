@@ -18,6 +18,30 @@ export const joinServerRooms = (userId: string, serverId: string) =>
 export const leaveServerRooms = (userId: string, serverId: string) =>
   io.in(`user:${userId}`).socketsLeave(`server:${serverId}`);
 
+/** The server is gone: everyone listening to it stops. */
+export const closeServerRoom = (serverId: string) => io.in(`server:${serverId}`).socketsLeave(`server:${serverId}`);
+
+/** Tells a person's open tabs something (optionally), then disconnects them. */
+export function dropUser(userId: string, event?: string, payload?: unknown) {
+  if (event) io.to(`user:${userId}`).emit(event, payload);
+  io.in(`user:${userId}`).disconnectSockets(true);
+}
+
+/** Huddle Admins see live updates from every server, not just the ones they joined. */
+export async function joinAllServers(userId: string) {
+  const rows = await q<{ id: string }>(`select id from servers where not is_dm`);
+  for (const r of rows) joinServerRooms(userId, r.id);
+}
+export async function leaveUnjoinedServers(userId: string) {
+  const rows = await q<{ id: string }>(`select s.id from servers s where not exists (select 1 from memberships m where m.server_id = s.id and m.user_id = $1)`, [userId]);
+  for (const r of rows) leaveServerRooms(userId, r.id);
+}
+/** A new server was just created: every Huddle Admin starts listening to it. */
+export async function joinHuddleAdmins(serverId: string) {
+  const rows = await q<{ id: string }>(`select id from users where huddle_admin`);
+  for (const r of rows) joinServerRooms(r.id, serverId);
+}
+
 export function initRealtime(httpServer: http.Server) {
   io = new IOServer(httpServer, {
     cors: process.env.CLIENT_ORIGIN ? { origin: process.env.CLIENT_ORIGIN, credentials: true } : undefined,
@@ -40,6 +64,11 @@ export function initRealtime(httpServer: http.Server) {
       const servers = await q<{ server_id: string }>(`select server_id from memberships where user_id = $1`, [user.id]);
       socket.join(`user:${user.id}`);
       for (const s of servers) socket.join(`server:${s.server_id}`);
+      const extra = await q<{ id: string }>(
+        `select s.id from servers s where not s.is_dm and exists (select 1 from users u where u.id = $1 and u.huddle_admin)`,
+        [user.id]
+      );
+      for (const s of extra) socket.join(`server:${s.id}`);
 
       const set = online.get(user.id) ?? new Set<string>();
       const first = set.size === 0;

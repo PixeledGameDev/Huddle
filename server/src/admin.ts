@@ -3,7 +3,7 @@ import { z } from "zod";
 import { one, q, tx } from "./db";
 import { channelSlug } from "./fileutil";
 import { HttpError, h } from "./http";
-import { membership, requireAdmin } from "./perms";
+import { isHuddleAdmin, membership, requireAdmin } from "./perms";
 import { emitServer, emitUser, leaveServerRooms } from "./realtime";
 
 export const adminRouter = Router();
@@ -36,6 +36,7 @@ adminRouter.post("/servers/:serverId/moderation", h(async (req, res) => {
   const target = await membership(serverId, targetId);
   if (!target) throw new HttpError(404, "That person isn't in this server.");
   if (target.role === "owner") throw new HttpError(403, "The owner can't be moderated.");
+  if (await isHuddleAdmin(targetId)) throw new HttpError(403, "You can't moderate this person.");
   if (target.role === "admin" && actor.role !== "owner") throw new HttpError(403, "Only the owner can moderate admins.");
 
   if (action === "timeout") {

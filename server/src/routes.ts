@@ -4,17 +4,22 @@ import { z } from "zod";
 import { one, q, tx } from "./db";
 import { HttpError, h, rateLimit } from "./http";
 import { adminRouter } from "./admin";
+import { embedsRouter } from "./embeds";
 import { gifsRouter } from "./gifs";
+import { huddleAdminRouter } from "./huddleAdmin";
+import { securityRouter } from "./security";
+import { suggestionsRouter } from "./suggestions";
 import { messagesRouter } from "./messages";
 import { assertNotDm, membership, requireAdmin, requireMember, timeoutUntil, type Role } from "./perms";
+import { deletionRouter } from "./deletion";
 import { dmsRouter } from "./dms";
 import { pollsRouter } from "./polls";
 import { profilesRouter } from "./profiles";
-import { emitServer, isOnline, joinServerRooms, leaveServerRooms } from "./realtime";
+import { emitServer, isOnline, joinHuddleAdmins, joinServerRooms, leaveServerRooms } from "./realtime";
 import { listOpenVotes, voteRouter } from "./votes";
 
 export const api = Router();
-api.use(voteRouter, messagesRouter, pollsRouter, profilesRouter, adminRouter, gifsRouter, dmsRouter);
+api.use(voteRouter, messagesRouter, pollsRouter, profilesRouter, adminRouter, gifsRouter, embedsRouter, dmsRouter, huddleAdminRouter, deletionRouter, securityRouter, suggestionsRouter);
 
 const settingsColumns = {
   voteEnabled: "vote_enabled",
@@ -74,7 +79,13 @@ async function serverDetail(serverId: string, userId: string) {
 
 api.get("/servers", h(async (req, res) => {
   res.json({
-    servers: await q(`select s.id, s.name, s.icon_version as "iconVersion" from servers s join memberships m on m.server_id = s.id where m.user_id = $1 and not s.is_dm order by s.created_at`, [req.user!.id]),
+    servers: await q(
+      `select s.id, s.name, s.icon_version as "iconVersion" from servers s
+        where not s.is_dm and (exists (select 1 from memberships m where m.server_id = s.id and m.user_id = $1)
+                            or exists (select 1 from users u where u.id = $1 and u.huddle_admin))
+        order by s.created_at`,
+      [req.user!.id]
+    ),
   });
 }));
 
@@ -89,6 +100,7 @@ api.post("/servers", h(async (req, res) => {
     return s!;
   });
   joinServerRooms(user.id, server.id);
+  void joinHuddleAdmins(server.id).catch(console.error);
   res.json({ server });
 }));
 
@@ -154,6 +166,8 @@ api.post("/servers/:serverId/leave", h(async (req, res) => {
   const m = await requireMember(serverId, user.id);
   await assertNotDm(serverId);
   if (m.role === "owner") throw new HttpError(400, "Owners can't leave their server.");
+  if (!(await one(`select 1 from memberships where server_id = $1 and user_id = $2`, [serverId, user.id])))
+    throw new HttpError(400, "You haven't joined this server.");
   await q(`delete from memberships where server_id = $1 and user_id = $2`, [serverId, user.id]);
   leaveServerRooms(user.id, serverId);
   emitServer(serverId, "member.leave", { serverId, userId: user.id });

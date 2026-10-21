@@ -1,5 +1,7 @@
+import { NotificationSettings } from "./NotificationSettings";
+import { SecuritySettings } from "./SecuritySettings";
 import { useEffect, useState } from "react";
-import { api, uploadRaw } from "./api";
+import { api, ApiError, uploadRaw } from "./api";
 import { Avatar } from "./Avatar";
 import { Modal } from "./Modals";
 import { loadPrefs, savePrefs, type Prefs } from "./prefs";
@@ -57,13 +59,18 @@ export function ProfileCard({ userId, serverId, meId, onClose, onEdit, onMessage
   );
 }
 
-export function MyProfileModal({ me, onClose, onUser, onError }: { me: User; onClose: () => void; onUser: (u: User) => void; onError: (e: unknown) => void }) {
+export function MyProfileModal({ me, onClose, onUser, onDeleted, onError }: { me: User; onClose: () => void; onUser: (u: User) => void; onDeleted: () => void; onError: (e: unknown) => void }) {
   const [displayName, setDisplayName] = useState(me.displayName ?? "");
   const [statusText, setStatusText] = useState(me.statusText);
   const [bio, setBio] = useState(me.bio);
   const [accent, setAccent] = useState<string | null>(me.accent);
   const [prefs, setPrefs] = useState<Prefs>(loadPrefs());
   const [busy, setBusy] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [delPassword, setDelPassword] = useState("");
+  const [delMessages, setDelMessages] = useState(false);
+  const [delCode, setDelCode] = useState("");
+  const [delNeedsCode, setDelNeedsCode] = useState(false);
 
   async function save(e: React.FormEvent) {
     e.preventDefault();
@@ -129,6 +136,44 @@ export function MyProfileModal({ me, onClose, onUser, onError }: { me: User; onC
             <option value="compact">Compact</option>
           </select>
         </label>
+      </div>
+      <hr />
+      <NotificationSettings />
+      <hr />
+      <SecuritySettings onError={onError} />
+      <hr />
+      <div className="stack danger-zone">
+        <h3>Delete account</h3>
+        {!deleting ? (
+          <>
+            <p className="muted">Permanently deletes your account. Your name, picture, bio and memberships are removed and your username becomes available again. You can't undo this.</p>
+            <button type="button" className="danger" onClick={() => setDeleting(true)}>Delete my account…</button>
+          </>
+        ) : (
+          <form
+            className="stack"
+            onSubmit={async (e) => {
+              e.preventDefault();
+              if (!window.confirm("Delete your account for good? This can't be undone.")) return;
+              try {
+                await api("/me", "DELETE", { password: delPassword, deleteMessages: delMessages, code: delNeedsCode ? delCode : undefined });
+                onDeleted();
+              } catch (err) {
+                if (err instanceof ApiError && err.data?.needs2fa) setDelNeedsCode(true);
+                onError(err);
+              }
+            }}
+          >
+            <p className="muted">Your old messages stay in the conversations they were part of, shown as from "Deleted user", unless you also delete them. If you own servers, delete them first.</p>
+            <label className="check"><input type="checkbox" checked={delMessages} onChange={(e) => setDelMessages(e.target.checked)} /> Also delete all my messages, reactions and poll votes</label>
+            <label>Your password<input type="password" value={delPassword} onChange={(e) => setDelPassword(e.target.value)} autoComplete="current-password" required /></label>
+            {delNeedsCode && <label>Authenticator or recovery code<input value={delCode} onChange={(e) => setDelCode(e.target.value)} autoComplete="one-time-code" required /></label>}
+            <div className="row">
+              <button type="button" onClick={() => { setDeleting(false); setDelPassword(""); }}>Cancel</button>
+              <button className="danger-fill" disabled={!delPassword}>Delete my account</button>
+            </div>
+          </form>
+        )}
       </div>
       <p className="muted credits">Emoji graphics are Twemoji by Twitter and contributors, used under CC-BY 4.0.</p>
     </Modal>

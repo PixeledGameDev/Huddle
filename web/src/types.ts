@@ -7,6 +7,8 @@ export interface User {
   statusText: string;
   avatarVersion: number;
   createdAt?: string;
+  /** Only present on your own account. */
+  huddleAdmin?: boolean;
 }
 export interface ServerSummary { id: string; name: string; iconVersion: number }
 export interface Channel { id: string; name: string }

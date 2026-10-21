@@ -1,19 +1,22 @@
 import crypto from "crypto";
 import express, { Router } from "express";
-import { pipeline } from "stream";
 import { z } from "zod";
 import { one, q, tx } from "./db";
-import { cleanName, sniffImage } from "./fileutil";
+import { cleanName, sniffImage, sniffVideo } from "./fileutil";
+import { serveFile } from "./fileserve";
 import { isAllowedGif } from "./gifs";
 import { getMessageDto, hydrate, messageSelect } from "./hydrate";
 import { HttpError, h, rateLimit } from "./http";
 import { assertCanWrite, channelServer, requireMember } from "./perms";
 import { emitServer } from "./realtime";
-import { deleteObject, getObject, putObject, r2Enabled, toNodeStream } from "./storage";
+import { deleteObject, putObject, r2Enabled } from "./storage";
 
 export const messagesRouter = Router();
 
 const MAX_FILE_BYTES = 8 * 1024 * 1024;
+/** Videos may be larger, but only when files live in R2: in Postgres every file is held in memory and in a table row. */
+const MAX_VIDEO_BYTES = 50 * 1024 * 1024;
+const UPLOAD_LIMIT = r2Enabled ? MAX_VIDEO_BYTES : MAX_FILE_BYTES;
 const MAX_ATTACHMENTS = 4;
 const MAX_DISTINCT_EMOJI = 20;
 const SERVER_QUOTA_BYTES = Number(process.env.SERVER_STORAGE_MB ?? 250) * 1024 * 1024;
@@ -164,9 +167,14 @@ messagesRouter.delete("/messages/:messageId", h(async (req, res) => {
 messagesRouter.post(
   "/channels/:channelId/files",
   (req, _res, next) => {
-    try { rateLimit(`upload:${req.user!.id}`, 10, 60_000); next(); } catch (e) { next(e); }
+    try {
+      rateLimit(`upload:${req.user!.id}`, 10, 60_000);
+      if (Number(req.headers["content-length"]) > UPLOAD_LIMIT)
+        throw new HttpError(413, r2Enabled ? "Videos can be up to 50 MB and other files up to 8 MB." : "Files can be up to 8 MB.");
+      next();
+    } catch (e) { next(e); }
   },
-  express.raw({ type: "application/octet-stream", limit: MAX_FILE_BYTES }),
+  express.raw({ type: "application/octet-stream", limit: UPLOAD_LIMIT }),
   h(async (req, res) => {
     const user = req.user!;
     const serverId = await channelServer(req.params.channelId);
@@ -177,7 +185,8 @@ messagesRouter.post(
     const name = cleanName(typeof req.query.name === "string" ? req.query.name : "file");
     const used = await one<{ n: string }>(`select coalesce(sum(a.size), 0)::text as n from attachments a join channels c on c.id = a.channel_id where c.server_id = $1`, [serverId]);
     if (Number(used!.n) + data.length > SERVER_QUOTA_BYTES) throw new HttpError(413, "This server has used up its file storage.");
-    const mime = sniffImage(data) ?? "application/octet-stream";
+    const mime = sniffImage(data) ?? sniffVideo(data) ?? "application/octet-stream";
+    if (data.length > MAX_FILE_BYTES && !mime.startsWith("video/")) throw new HttpError(413, "Only videos can be larger than 8 MB.");
     let attachment;
     if (r2Enabled) {
       const id = crypto.randomUUID();
@@ -214,27 +223,7 @@ messagesRouter.get("/files/:fileId", h(async (req, res) => {
   );
   if (!f) throw new HttpError(404, "File not found.");
   await requireMember(f.server_id, req.user!.id);
-  const inline = f.mime.startsWith("image/");
-  const ascii = f.name.replace(/[^\x20-\x7e]/g, "_");
-  res.setHeader("Content-Type", f.mime);
-  res.setHeader("Content-Length", String(f.size));
-  res.setHeader("Content-Disposition", `${inline ? "inline" : "attachment"}; filename="${ascii}"; filename*=UTF-8''${encodeURIComponent(f.name)}`);
-  res.setHeader("Content-Security-Policy", "default-src 'none'; sandbox");
-  res.setHeader("Cache-Control", "private, max-age=31536000, immutable");
-  if (f.storage_key) {
-    if (!r2Enabled) throw new HttpError(503, "File storage isn't configured on this server.");
-    const upstream = await getObject(f.storage_key);
-    if (!upstream.ok || !upstream.body) {
-      console.error(`R2 download failed for ${f.storage_key}: ${upstream.status}`);
-      throw new HttpError(upstream.status === 404 ? 404 : 502, "That file can't be loaded right now.");
-    }
-    pipeline(toNodeStream(upstream.body), res, (err) => {
-      if (err) res.destroy();
-    });
-    return;
-  }
-  if (!f.data) throw new HttpError(404, "File not found.");
-  res.end(f.data);
+  await serveFile(req, res, { ...f, size: Number(f.size) });
 }));
 
 // ---------- reactions ----------

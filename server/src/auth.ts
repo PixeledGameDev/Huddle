@@ -6,6 +6,7 @@ import { z } from "zod";
 import { one, q } from "./db";
 import { HttpError, h, rateLimit } from "./http";
 import { getProfile } from "./profiles";
+import { checkSecondFactor, has2fa } from "./security";
 
 export interface AuthUser {
   id: string;
@@ -26,7 +27,7 @@ export async function userFromCookie(header?: string): Promise<AuthUser | null> 
   if (!sid) return null;
   return one<AuthUser>(
     `select u.id, u.username from sessions s join users u on u.id = s.user_id
-     where s.token_hash = $1 and s.expires_at > now()`,
+     where s.token_hash = $1 and s.expires_at > now() and (u.banned_until is null or u.banned_until <= now())`,
     [sha(sid)]
   );
 }
@@ -63,7 +64,7 @@ const creds = z.object({
   username: z
     .string()
     .regex(/^[a-zA-Z0-9_]{3,20}$/, "Usernames are 3–20 letters, numbers, or underscores.")
-    .refine((u) => !["everyone", "here"].includes(u.toLowerCase()), "That username is reserved."),
+    .refine((u) => !["everyone", "here", "huddle"].includes(u.toLowerCase()), "That username is reserved."),
   password: z.string().min(8, "Passwords need at least 8 characters.").max(128),
 });
 
@@ -92,13 +93,25 @@ authRouter.post(
   "/login",
   h(async (req, res) => {
     rateLimit(`auth:${req.ip}`, 10, 60_000);
-    const { username, password } = z.object({ username: z.string(), password: z.string() }).parse(req.body);
-    const row = await one<{ id: string; username: string; password_hash: string }>(
-      `select id, username, password_hash from users where lower(username) = lower($1)`,
+    const { username, password, code } = z.object({ username: z.string(), password: z.string(), code: z.string().max(40).optional() }).parse(req.body);
+    const row = await one<{ id: string; username: string; password_hash: string; is_banned: boolean; ban_forever: boolean; banned_until: Date | null; ban_reason: string | null }>(
+      `select id, username, password_hash, coalesce(banned_until > now(), false) as is_banned, coalesce(banned_until = 'infinity', false) as ban_forever,
+              case when banned_until = 'infinity' then null else banned_until end as banned_until, ban_reason
+         from users where lower(username) = lower($1)`,
       [username]
     );
     const ok = row ? await verify(row.password_hash, password).catch(() => false) : false;
     if (!row || !ok) throw new HttpError(401, "Wrong username or password.");
+    if (row.is_banned) {
+      const when = row.ban_forever || !row.banned_until ? "This account has been banned." : `This account is banned until ${row.banned_until.toUTCString()}.`;
+      throw new HttpError(403, row.ban_reason ? `${when} Reason: ${row.ban_reason}` : when, { banned: true });
+    }
+    if (await has2fa(row.id)) {
+      // The password was right, so the sign-in only needs the second factor. The app asks for it and sends the same request again with the code.
+      if (!code) return void res.json({ needs2fa: true });
+      rateLimit(`2fa:${row.id}`, 10, 900_000);
+      if (!(await checkSecondFactor(row.id, code))) throw new HttpError(401, "That code isn't right.", { needs2fa: true });
+    }
     await startSession(res, row.id);
     res.json({ user: await getProfile(row.id) });
   })

@@ -39,6 +39,9 @@ export function fmtRemaining(ms: number) {
 export const nameOfUser = (u: { displayName?: string | null; username: string }) => u.displayName || u.username;
 
 export const MAX_FILE_BYTES = 8 * 1024 * 1024;
+/** Videos can be bigger. (The server decides by the file's contents and may allow less if it keeps files in its database.) */
+export const MAX_VIDEO_BYTES = 50 * 1024 * 1024;
+export const looksLikeVideo = (f: { type: string; name: string }) => f.type.startsWith("video/") || /\.(mp4|m4v|mov|webm)$/i.test(f.name);
 export const MAX_ATTACHMENTS = 4;
 
 export const EMOJI_GROUPS: { label: string; emojis: string[] }[] = [

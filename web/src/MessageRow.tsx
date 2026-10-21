@@ -1,6 +1,9 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Avatar } from "./Avatar";
-import { plainPreview } from "./format";
+import { embedUrlsIn, plainPreview } from "./format";
+import { LinkEmbed } from "./LinkEmbed";
+import { Lightbox } from "./Lightbox";
+import { VideoPlayer } from "./VideoPlayer";
 import { InviteEmbed } from "./Invites";
 import EmojiPicker from "./EmojiPicker";
 import { PollCard } from "./Polls";
@@ -73,6 +76,9 @@ export default function MessageRow(p: Props) {
   const replyAuthor = m.replyTo ? byId.get(m.replyTo.authorId) : null;
   const isMine = m.authorId === me.id;
   const canDelete = isMine || isAdmin;
+  const embedUrls = useMemo(() => embedUrlsIn(m.content), [m.content]);
+  const pictures = useMemo(() => m.attachments.filter((a) => a.mime.startsWith("image/")), [m.attachments]);
+  const [viewing, setViewing] = useState<number | null>(null); // which of this message's pictures is open
 
   return (
     <div id={`msg-${m.id}`} className={`msg${grouped ? " grouped" : ""}${mentionedMe ? " mentioned" : ""}${p.pickerOpen ? " raised" : ""}`}>
@@ -109,14 +115,17 @@ export default function MessageRow(p: Props) {
             )
           )}
           {inviteCodesIn(m.content).map((code) => <InviteEmbed key={code} code={code} onJoin={p.onJoinInvite} onOpen={p.onOpenServer} />)}
+          {!p.editing && embedUrls.map((url) => <LinkEmbed key={url} url={url} onLayout={p.onImageLoad} />)}
           {m.gif && <img className="gif" src={m.gif} alt="GIF" loading="lazy" onLoad={p.onImageLoad} />}
           {m.attachments.length > 0 && (
             <div className="atts">
               {m.attachments.map((a) =>
                 a.mime.startsWith("image/") ? (
-                  <a key={a.id} href={`/api/files/${a.id}`} target="_blank" rel="noopener noreferrer" title={a.name}>
+                  <button key={a.id} type="button" className="att-img" title={a.name} aria-label={`View ${a.name}`} onClick={() => setViewing(pictures.findIndex((x) => x.id === a.id))}>
                     <img src={`/api/files/${a.id}`} alt={a.name} loading="lazy" onLoad={p.onImageLoad} />
-                  </a>
+                  </button>
+                ) : a.mime.startsWith("video/") ? (
+                  <VideoPlayer key={a.id} a={a} onLayout={p.onImageLoad} />
                 ) : (
                   <a key={a.id} className="file" href={`/api/files/${a.id}`} download={a.name}>
                     <span className="file-ext">{extOf(a.name)}</span>
@@ -156,6 +165,7 @@ export default function MessageRow(p: Props) {
           {p.pickerOpen && <EmojiPicker className="down" onPick={p.onReact} />}
         </div>
       )}
+      {viewing !== null && pictures[viewing] && <Lightbox images={pictures} index={viewing} onIndex={setViewing} onClose={() => setViewing(null)} />}
     </div>
   );
 }

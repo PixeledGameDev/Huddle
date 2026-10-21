@@ -16,7 +16,7 @@ const userDto = (r: any) => ({
 });
 
 /** The other person in each of viewerId's DMs (or just one DM), newest conversation first. */
-async function dmList(viewerId: string, serverId?: string) {
+export async function dmList(viewerId: string, serverId?: string) {
   const rows = await q<any>(
     `select s.id as server_id, u.id as user_id, u.username, u.display_name, u.avatar_version, u.accent, u.status_text,
             coalesce((select max(m.created_at) from messages m join channels c on c.id = m.channel_id where c.server_id = s.id), s.created_at) as last_at,
@@ -47,7 +47,7 @@ dmsRouter.post("/dms", h(async (req, res) => {
   const me = req.user!.id;
   const { userId } = z.object({ userId: z.string().uuid() }).parse(req.body);
   if (userId === me) throw new HttpError(400, "You can't message yourself.");
-  if (!(await one(`select 1 from users where id = $1`, [userId]))) throw new HttpError(404, "User not found.");
+  if (!(await one(`select 1 from users where id = $1 and deleted_at is null`, [userId]))) throw new HttpError(404, "User not found.");
   if (await one(`select 1 from user_blocks where (blocker = $1 and blocked = $2) or (blocker = $2 and blocked = $1)`, [me, userId]))
     throw new HttpError(403, "You can't message this person.");
 
@@ -55,6 +55,7 @@ dmsRouter.post("/dms", h(async (req, res) => {
   let serverId = (await one<{ id: string }>(`select id from servers where dm_key = $1`, [key]))?.id;
   let created = false;
   if (!serverId) {
+    if (await one(`select 1 from users where id = $1 and is_bot`, [userId])) throw new HttpError(403, "Huddle is a bot, so it can't read replies.");
     rateLimit(`newdm:${me}`, 20, 3600_000);
     const shared = await one(
       `select 1 from memberships a join memberships b on a.server_id = b.server_id join servers s on s.id = a.server_id

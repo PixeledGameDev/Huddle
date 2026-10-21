@@ -30,8 +30,8 @@ export async function putObject(key: string, body: Buffer, contentType: string) 
 }
 
 /** Returns the upstream response so callers can stream it to the client. */
-export async function getObject(key: string) {
-  return aws!.fetch(urlFor(key));
+export async function getObject(key: string, headers?: Record<string, string>) {
+  return aws!.fetch(urlFor(key), headers ? { headers } : undefined);
 }
 
 export async function deleteObject(key: string) {
