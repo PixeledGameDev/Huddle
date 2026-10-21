@@ -79,9 +79,10 @@ export default function MessageRow(p: Props) {
   const embedUrls = useMemo(() => embedUrlsIn(m.content), [m.content]);
   const pictures = useMemo(() => m.attachments.filter((a) => a.mime.startsWith("image/")), [m.attachments]);
   const [viewing, setViewing] = useState<number | null>(null); // which of this message's pictures is open
+  const [tapped, setTapped] = useState(false); // phones and tablets: tap a message to show its buttons
 
   return (
-    <div id={`msg-${m.id}`} className={`msg${grouped ? " grouped" : ""}${mentionedMe ? " mentioned" : ""}${p.pickerOpen ? " raised" : ""}`}>
+    <div id={`msg-${m.id}`} className={`msg${grouped ? " grouped" : ""}${mentionedMe ? " mentioned" : ""}${p.pickerOpen ? " raised" : ""}${tapped ? " tapped" : ""}`} onClick={(e) => { if (!window.matchMedia("(any-hover: hover)").matches && !(e.target as HTMLElement).closest("button, a, input, textarea, video")) setTapped((t) => !t); }}>
       {m.replyTo && (
         <button className="reply-ref" onClick={() => p.onJumpTo(m.replyTo!.id)} title="Jump to the original message">
           <span className="reply-arrow">↪</span>

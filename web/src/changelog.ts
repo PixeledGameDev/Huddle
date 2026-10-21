@@ -11,6 +11,16 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "4.1",
+    date: "2026-10-21",
+    title: "Small fixes",
+    changes: [
+      "Rename a server from Settings → General (needs the Manage server permission).",
+      "In light mode the left bars are light too.",
+      "The react, reply, edit and delete buttons only show when you hover a message (on a phone or tablet, tap the message).",
+    ],
+  },
+  {
     version: "4.0",
     date: "2026-10-21",
     title: "Roles and permissions",

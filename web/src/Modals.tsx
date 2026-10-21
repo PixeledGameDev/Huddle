@@ -79,6 +79,7 @@ const AUDIT_TEXT: Record<string, (e: any) => string> = {
   "vote.passed": (e) => `Vote on ${e.target} passed (${e.detail?.action})`,
   "vote.failed": (e) => `Vote on ${e.target} failed`,
   "settings.update": (e) => `${e.actor} changed server settings`,
+  "server.rename": (e) => `${e.actor} renamed the server from ${e.detail?.from} to ${e.detail?.to}`,
   "role.create": (e) => `${e.actor} created the role ${e.detail?.name}`,
   "role.update": (e) => `${e.actor} edited the role ${e.detail?.name}`,
   "role.delete": (e) => `${e.actor} deleted the role ${e.detail?.name}`,
@@ -111,6 +112,7 @@ export function SettingsModal({ server, onClose, onSaved, onDeleted, onError }: 
   const [bans, setBans] = useState<BanEntry[]>([]);
   const [deleted, setDeleted] = useState<DeletedMessage[]>([]);
   const [confirmName, setConfirmName] = useState("");
+  const [newName, setNewName] = useState(server.name);
   const set = <K extends keyof Settings>(k: K, v: Settings[K]) => setS((p) => ({ ...p, [k]: v }));
 
   const loadBans = () => api<{ bans: BanEntry[] }>(`/servers/${server.id}/bans`).then((r) => setBans(r.bans), onError);
@@ -143,6 +145,19 @@ export function SettingsModal({ server, onClose, onSaved, onDeleted, onError }: 
               {server.iconVersion > 0 && <button type="button" className="link left" onClick={() => api(`/servers/${server.id}/icon`, "DELETE").catch(onError)}>Remove icon</button>}
             </div>
           </div>
+          <form
+            className="stack"
+            onSubmit={async (e) => {
+              e.preventDefault();
+              try {
+                await api(`/servers/${server.id}/name`, "PATCH", { name: newName });
+                onSaved();
+              } catch (err) { onError(err); }
+            }}
+          >
+            <label>Server name<input value={newName} maxLength={40} onChange={(e) => setNewName(e.target.value)} required /></label>
+            <button className="primary" disabled={!newName.trim() || newName.trim() === server.name}>Rename server</button>
+          </form>
           <hr />
           <form
             className="stack"

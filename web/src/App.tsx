@@ -309,6 +309,10 @@ function Main({ me, initialServerId, onUser, onLogout }: { me: User; initialServ
       if (p.serverId === activeIdRef.current) void loadServer(p.serverId);
     };
     for (const ev of ["member.join", "member.leave", "member.update", "channel.create", "channel.update", "channel.delete", "server.update"]) s.on(ev, refresh);
+    // Other servers' names and icons change too, so keep the left bar fresh.
+    s.on("server.update", (p: { serverId: string }) => {
+      if (p.serverId !== activeIdRef.current) api<{ servers: ServerSummary[] }>("/servers").then((r) => setServers(r.servers), () => {});
+    });
     s.on("profile.update", (p: { serverId: string; userId: string }) => {
       refresh(p);
       refreshDms();

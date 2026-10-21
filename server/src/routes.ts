@@ -153,6 +153,22 @@ api.patch("/servers/:serverId/settings", h(async (req, res) => {
   res.json({ server: await serverDetail(serverId, user.id) });
 }));
 
+api.patch("/servers/:serverId/name", h(async (req, res) => {
+  const { serverId } = req.params;
+  const user = req.user!;
+  await requirePerm(serverId, user.id, "manage_server");
+  await assertNotDm(serverId);
+  rateLimit(`rename:${user.id}`, 10, 3600_000);
+  const { name } = z.object({ name: z.string().trim().min(1, "Give the server a name.").max(40) }).parse(req.body);
+  const old = await one<{ name: string }>(`select name from servers where id = $1`, [serverId]);
+  if (old && old.name !== name) {
+    await q(`update servers set name = $2 where id = $1`, [serverId, name]);
+    await q(`insert into audit_log(server_id, actor_id, action, detail) values ($1, $2, 'server.rename', $3)`, [serverId, user.id, JSON.stringify({ from: old.name, to: name })]);
+    emitServer(serverId, "server.update", { serverId });
+  }
+  res.json({ ok: true });
+}));
+
 api.post("/servers/:serverId/invites", h(async (req, res) => {
   const { serverId } = req.params;
   const user = req.user!;
