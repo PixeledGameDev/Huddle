@@ -520,3 +520,49 @@ a.srv.download { color: #fff; }
 .swatch.none.on { border-color: var(--text); }
 .swatch-input { width: 32px; height: 28px; padding: 0; border: 0; background: none; }
 .row-actions { display: flex; gap: 8px; }
+
+/* ---- statuses ---- */
+.dot.st-online { background: #3ba55d; }
+.dot.st-idle { background: #e0a21b; }
+.dot.st-dnd { background: #d93f3b; }
+.dot.st-offline { background: #6b7694; }
+.dot.inline { display: inline-block; width: 10px; height: 10px; border: 0; vertical-align: middle; }
+.avatar-wrap { position: relative; display: inline-flex; flex-shrink: 0; }
+.avatar-wrap .dot { position: absolute; right: -2px; bottom: -2px; width: 11px; height: 11px; border: 2px solid var(--panel); }
+.dm-panel .dm-presence { margin: 0 0 6px; }
+.profile-presence { margin: 0 0 4px; text-align: center; }
+.status-menu { position: relative; }
+.status-btn { display: grid; place-items: center; }
+.menu { position: absolute; bottom: 36px; left: 0; z-index: 30; width: 250px; background: var(--panel); color: var(--text); border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 8px 28px rgba(20, 30, 60, .28); padding: 4px; display: grid; }
+.menu button { display: flex; align-items: flex-start; gap: 10px; text-align: left; border: 0; background: none; padding: 8px 10px; border-radius: 6px; }
+.menu button:hover, .menu button.on { background: var(--hover); }
+.menu button .dot { margin-top: 5px; }
+.menu button span { display: grid; }
+.menu button small { color: var(--dim); }
+.status-reply { display: flex; gap: 6px; margin: 4px 0 10px; }
+.status-ref { cursor: default; font-style: italic; }
+
+/* ---- friends & mutuals ---- */
+.friend-add { display: flex; gap: 6px; margin: 4px 0 8px; }
+.people li { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.member-actions.always { display: flex; gap: 6px; align-items: center; }
+.mutuals { display: grid; gap: 10px; margin: 6px 0 12px; text-align: left; }
+.mutuals h4 { margin: 0 0 6px; font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: var(--dim); }
+.mutual-list { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px; }
+.mutual-list li { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px 3px 4px; border: 1px solid var(--line); border-radius: 14px; font-size: 13px; background: var(--surface2); max-width: 100%; }
+.mutual-list li span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mutual-icon { width: 22px; height: 22px; border-radius: 6px; object-fit: cover; display: grid; place-items: center; color: #fff; font-size: 12px; font-weight: 700; flex: none; }
+
+/* ---- banners & name fonts ---- */
+.banner-edit { display: grid; gap: 8px; margin-bottom: 12px; }
+.banner-edit .profile-banner { border-radius: 10px; height: 96px; }
+.font-preview { display: block; margin-top: 4px; font-size: 20px; }
+.nf-serif { font-family: Georgia, "Times New Roman", serif; }
+.nf-mono { font-family: "Fira Code", ui-monospace, Consolas, monospace; }
+.nf-handwriting { font-family: "Caveat", cursive; font-size: 1.15em; }
+.nf-script { font-family: "Pacifico", cursive; }
+.nf-display { font-family: "Lobster", cursive; }
+.nf-retro { font-family: "Press Start 2P", monospace; font-size: .75em; }
+.nf-techno { font-family: "Orbitron", sans-serif; }
+.nf-elegant { font-family: "Playfair Display", Georgia, serif; }
+.nf-impact { font-family: "Bebas Neue", Impact, sans-serif; font-size: 1.1em; letter-spacing: .03em; }

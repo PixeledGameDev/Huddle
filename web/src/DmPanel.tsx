@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { api } from "./api";
 import { Avatar } from "./Avatar";
+import { Name } from "./Name";
+import { STATUS_LABEL, StatusDot } from "./Status";
 import type { DmSummary, User } from "./types";
 import { nameOfUser } from "./util";
 
@@ -27,7 +29,8 @@ export default function DmPanel({ dm, onChanged, onError }: { dm: DmSummary; onC
   return (
     <aside className="members dm-panel" aria-label="About this person">
       <Avatar id={dm.user.id} name={name} version={dm.user.avatarVersion} accent={dm.user.accent} size={72} />
-      <h3 className="dm-name">{name}</h3>
+      <h3 className="dm-name"><Name user={dm.user} /></h3>
+      <p className="muted dm-presence"><StatusDot status={dm.status ?? (dm.online ? "online" : "offline")} className="inline" /> {STATUS_LABEL[dm.status ?? (dm.online ? "online" : "offline")]}</p>
       <p className="muted">@{dm.user.username}</p>
       {dm.user.statusText && <p className="profile-status">{dm.user.statusText}</p>}
       {profile?.bio && <p className="profile-bio">{profile.bio}</p>}

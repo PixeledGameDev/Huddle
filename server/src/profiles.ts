@@ -3,13 +3,18 @@ import { z } from "zod";
 import { one, q, tx } from "./db";
 import { sniffImage } from "./fileutil";
 import { HttpError, h, rateLimit } from "./http";
+import { assertAllowsNewDm } from "./dms";
+import { areFriends, friendshipState } from "./friends";
 import { requireMember, requirePerm } from "./perms";
-import { emitServer } from "./realtime";
+import { emitServer, setPresence, statusOf } from "./realtime";
 
 export const profilesRouter = Router();
 
+/** Fonts people can pick for their display name. They ship with the app (the page can't load fonts from other sites). */
+export const NAME_FONTS = ["default", "serif", "mono", "handwriting", "script", "display", "retro", "techno", "elegant", "impact"] as const;
+
 export async function getProfile(userId: string) {
-  const r = await one<any>(`select id, username, display_name, bio, accent, status_text, avatar_version, created_at, huddle_admin from users where id = $1`, [userId]);
+  const r = await one<any>(`select id, username, display_name, bio, accent, status_text, avatar_version, created_at, huddle_admin, presence, dm_privacy, banner_version, name_font from users where id = $1`, [userId]);
   if (!r) return null;
   return {
     id: r.id as string,
@@ -19,7 +24,12 @@ export async function getProfile(userId: string) {
     accent: (r.accent ?? null) as string | null,
     statusText: r.status_text as string,
     avatarVersion: r.avatar_version as number,
+    bannerVersion: r.banner_version as number,
+    nameFont: r.name_font as string,
     createdAt: new Date(r.created_at).toISOString(),
+    status: statusOf(userId) as string, // how others currently see them
+    dmPrivacy: r.dm_privacy as string | null, // who may start a DM with them (hidden from everyone else by the profile route)
+    presence: r.presence as string | null, // what they chose (hidden from everyone else by the profile route)
     huddleAdmin: r.huddle_admin as boolean, // only ever sent to the person themselves (see the profile route below)
   };
 }
@@ -38,7 +48,11 @@ profilesRouter.get("/users/:userId/profile", h(async (req, res) => {
   }
   const profile = await getProfile(userId);
   if (!profile) throw new HttpError(404, "User not found.");
-  if (userId !== me) profile.huddleAdmin = false; // nobody can see who else is a Huddle Admin
+  if (userId !== me) {
+    profile.huddleAdmin = false; // nobody can see who else is a Huddle Admin
+    profile.presence = null; // an invisible person must not be given away
+    profile.dmPrivacy = null;
+  }
   let server: { role: string; joinedAt: string; roles: { id: string; name: string; color: string | null }[] } | null = null;
   if (typeof req.query.serverId === "string") {
     const m = await one<any>(
@@ -55,7 +69,35 @@ profilesRouter.get("/users/:userId/profile", h(async (req, res) => {
     }
   }
   const blockedByMe = !!(await one(`select 1 from user_blocks where blocker = $1 and blocked = $2`, [me, userId]));
-  res.json({ profile, server, blockedByMe });
+  let extra: object = {};
+  if (userId !== me) {
+    const blockedEither = !!(await one(`select 1 from user_blocks where (blocker = $1 and blocked = $2) or (blocker = $2 and blocked = $1)`, [me, userId]));
+    const mutualServers = await q<any>(
+      `select s.id, s.name, s.icon_version from servers s
+         join memberships a on a.server_id = s.id and a.user_id = $1 join memberships b on b.server_id = s.id and b.user_id = $2
+        where not s.is_dm order by s.name limit 50`,
+      [me, userId]
+    );
+    const mutualFriends = await q<any>(
+      `select u.id, u.username, u.display_name, u.avatar_version, u.accent from users u
+        where u.deleted_at is null and u.id <> $1 and u.id <> $2
+          and exists (select 1 from friendships f where f.user_a = least(u.id, $1::uuid) and f.user_b = greatest(u.id, $1::uuid))
+          and exists (select 1 from friendships f where f.user_a = least(u.id, $2::uuid) and f.user_b = greatest(u.id, $2::uuid))
+        order by lower(u.username) limit 50`,
+      [me, userId]
+    );
+    let canMessage = !blockedEither;
+    if (canMessage && !(await one(`select 1 from servers where dm_key = $1`, [[me, userId].sort().join(":")]))) {
+      canMessage = await assertAllowsNewDm(me, userId).then(() => true, () => false);
+    }
+    extra = {
+      friendship: await friendshipState(me, userId),
+      canMessage,
+      mutualServers: mutualServers.map((s) => ({ id: s.id, name: s.name, iconVersion: s.icon_version })),
+      mutualFriends: mutualFriends.map((u) => ({ id: u.id, username: u.username, displayName: u.display_name ?? null, avatarVersion: u.avatar_version, accent: u.accent ?? null })),
+    };
+  }
+  res.json({ profile, server, blockedByMe, ...extra });
 }));
 
 const profileSchema = z
@@ -64,6 +106,9 @@ const profileSchema = z
     bio: z.string().trim().max(190),
     accent: z.string().regex(/^#[0-9a-fA-F]{6}$/, "Pick a valid color.").nullable(),
     statusText: z.string().trim().max(80),
+    presence: z.enum(["online", "idle", "dnd", "invisible"]),
+    dmPrivacy: z.enum(["everyone", "friends", "nobody"]),
+    nameFont: z.enum(NAME_FONTS),
   })
   .partial();
 
@@ -71,11 +116,12 @@ profilesRouter.patch("/me/profile", h(async (req, res) => {
   const user = req.user!;
   rateLimit(`profile:${user.id}`, 20, 60_000);
   const patch = profileSchema.parse(req.body);
-  const columns: Record<string, string> = { displayName: "display_name", bio: "bio", accent: "accent", statusText: "status_text" };
+  const columns: Record<string, string> = { displayName: "display_name", bio: "bio", accent: "accent", statusText: "status_text", presence: "presence", dmPrivacy: "dm_privacy", nameFont: "name_font" };
   const entries = Object.entries(patch).filter(([, v]) => v !== undefined);
   if (!entries.length) throw new HttpError(400, "Nothing to update.");
   const sets = entries.map(([k], i) => `${columns[k]} = $${i + 2}`).join(", ");
   await q(`update users set ${sets} where id = $1`, [user.id, ...entries.map(([, v]) => v)]);
+  if (patch.presence) await setPresence(user.id, patch.presence);
   await announceProfile(user.id);
   res.json({ user: await getProfile(user.id) });
 }));
@@ -123,6 +169,35 @@ profilesRouter.delete("/me/avatar", h(async (req, res) => {
 
 profilesRouter.get("/users/:userId/avatar", h(async (req, res) => {
   sendImage(res, await one(`select mime, data from user_avatars where user_id = $1`, [req.params.userId]));
+}));
+
+// Banners are wider, so they get their own size limit.
+const bannerBody = express.raw({ type: "application/octet-stream", limit: 2 * 1024 * 1024 });
+
+profilesRouter.put("/me/banner", bannerBody, h(async (req, res) => {
+  const user = req.user!;
+  rateLimit(`banner:${user.id}`, 10, 60_000);
+  const { mime, data } = readImage(req.body);
+  await tx(async (c) => {
+    await q(`insert into user_banners(user_id, mime, data) values ($1, $2, $3) on conflict (user_id) do update set mime = excluded.mime, data = excluded.data`, [user.id, mime, data], c);
+    await q(`update users set banner_version = banner_version + 1 where id = $1`, [user.id], c);
+  });
+  await announceProfile(user.id);
+  res.json({ user: await getProfile(user.id) });
+}));
+
+profilesRouter.delete("/me/banner", h(async (req, res) => {
+  const user = req.user!;
+  await tx(async (c) => {
+    await q(`delete from user_banners where user_id = $1`, [user.id], c);
+    await q(`update users set banner_version = 0 where id = $1`, [user.id], c);
+  });
+  await announceProfile(user.id);
+  res.json({ user: await getProfile(user.id) });
+}));
+
+profilesRouter.get("/users/:userId/banner", h(async (req, res) => {
+  sendImage(res, await one(`select mime, data from user_banners where user_id = $1`, [req.params.userId]));
 }));
 
 profilesRouter.put("/servers/:serverId/icon", imageBody, h(async (req, res) => {

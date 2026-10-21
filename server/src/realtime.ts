@@ -6,8 +6,31 @@ import { one, q } from "./db";
 let io: IOServer;
 const online = new Map<string, Set<string>>(); // userId -> socket ids
 
-export const isOnline = (userId: string) => online.has(userId);
+export type Presence = "online" | "idle" | "dnd" | "invisible";
+export type PublicStatus = "online" | "idle" | "dnd" | "offline";
+const presenceOf = new Map<string, Presence>(); // what each connected person chose
+
+/** What other people see: someone who is invisible looks offline. */
+export function statusOf(userId: string): PublicStatus {
+  if (!online.has(userId)) return "offline";
+  const p = presenceOf.get(userId) ?? "online";
+  return p === "invisible" ? "offline" : p;
+}
+export const isOnline = (userId: string) => statusOf(userId) !== "offline";
+/** Everyone with an open connection, including people who appear offline (used for vote eligibility). */
 export const onlineIds = () => [...online.keys()];
+
+/** Tells everyone who shares a server or DM with this person how they now appear. */
+export async function announcePresence(userId: string) {
+  const status = statusOf(userId);
+  const rows = await q<{ server_id: string }>(`select server_id from memberships where user_id = $1`, [userId]);
+  for (const r of rows) emitServer(r.server_id, "presence", { serverId: r.server_id, userId, online: status !== "offline", status });
+  emitUser(userId, "presence.self", { presence: presenceOf.get(userId) ?? "online" });
+}
+export async function setPresence(userId: string, presence: Presence) {
+  presenceOf.set(userId, presence);
+  await announcePresence(userId);
+}
 
 export const emitServer = (serverId: string, event: string, payload: unknown) =>
   io.to(`server:${serverId}`).emit(event, payload);
@@ -75,7 +98,10 @@ export function initRealtime(httpServer: http.Server) {
       set.add(socket.id);
       online.set(user.id, set);
       if (first) {
-        for (const s of servers) emitServer(s.server_id, "presence", { serverId: s.server_id, userId: user.id, online: true });
+        const chosen = await one<{ presence: Presence }>(`select presence from users where id = $1`, [user.id]);
+        presenceOf.set(user.id, chosen?.presence ?? "online");
+        const status = statusOf(user.id);
+        for (const s of servers) emitServer(s.server_id, "presence", { serverId: s.server_id, userId: user.id, online: status !== "offline", status });
       }
     } catch (e) {
       console.error("socket connect failed", e);
@@ -100,11 +126,14 @@ export function initRealtime(httpServer: http.Server) {
       if (!set) return;
       set.delete(socket.id);
       if (set.size === 0) {
+        const wasVisible = statusOf(user.id) !== "offline";
         online.delete(user.id);
-        for (const r of rooms) {
-          const serverId = r.slice("server:".length);
-          emitServer(serverId, "presence", { serverId, userId: user.id, online: false });
-        }
+        presenceOf.delete(user.id);
+        if (wasVisible)
+          for (const r of rooms) {
+            const serverId = r.slice("server:".length);
+            emitServer(serverId, "presence", { serverId, userId: user.id, online: false, status: "offline" });
+          }
       }
     });
   });

@@ -13,14 +13,15 @@ import { messagesRouter } from "./messages";
 import { ADMIN_TOP, OWNER_TOP, assertNotDm, requireMember, requirePerm, timeoutUntil, type Role } from "./perms";
 import { deletionRouter } from "./deletion";
 import { dmsRouter } from "./dms";
+import { friendsRouter } from "./friends";
 import { pollsRouter } from "./polls";
 import { rolesRouter } from "./roles";
 import { profilesRouter } from "./profiles";
-import { emitServer, isOnline, joinHuddleAdmins, joinServerRooms, leaveServerRooms } from "./realtime";
+import { emitServer, isOnline, joinHuddleAdmins, joinServerRooms, leaveServerRooms, statusOf } from "./realtime";
 import { listOpenVotes, voteRouter } from "./votes";
 
 export const api = Router();
-api.use(voteRouter, messagesRouter, pollsRouter, profilesRouter, adminRouter, gifsRouter, embedsRouter, dmsRouter, huddleAdminRouter, deletionRouter, securityRouter, suggestionsRouter, rolesRouter);
+api.use(voteRouter, messagesRouter, pollsRouter, profilesRouter, adminRouter, gifsRouter, embedsRouter, dmsRouter, huddleAdminRouter, deletionRouter, securityRouter, suggestionsRouter, rolesRouter, friendsRouter);
 
 const settingsColumns = {
   voteEnabled: "vote_enabled",
@@ -62,7 +63,7 @@ async function serverDetail(serverId: string, userId: string) {
   const legacyAdminCount = me.role === "owner" ? (await one<{ n: number }>(`select count(*)::int as n from memberships where server_id = $1 and role = 'admin'`, [serverId]))!.n : 0;
   const members = (
     await q<any>(
-      `select u.id, u.username, u.display_name, u.avatar_version, u.accent, u.status_text, m.role, t.until as timeout_until
+      `select u.id, u.username, u.display_name, u.avatar_version, u.accent, u.status_text, u.name_font, m.role, t.until as timeout_until
          from memberships m join users u on u.id = m.user_id
          left join server_timeouts t on t.server_id = m.server_id and t.user_id = m.user_id and t.until > now()
         where m.server_id = $1`,
@@ -72,7 +73,7 @@ async function serverDetail(serverId: string, userId: string) {
     .map((r) => {
       const roleIds = roleIdsOf(r.id);
       const top = r.role === "owner" ? OWNER_TOP : r.role === "admin" ? ADMIN_TOP : roleIds.length ? positionOf.get(roleIds[0]) ?? 0 : 0;
-      return { id: r.id, username: r.username, displayName: r.display_name ?? null, avatarVersion: r.avatar_version as number, accent: r.accent ?? null, statusText: r.status_text as string, role: r.role as Role, roleIds, top, online: isOnline(r.id), timeoutUntil: r.timeout_until ? new Date(r.timeout_until).toISOString() : null };
+      return { id: r.id, username: r.username, displayName: r.display_name ?? null, avatarVersion: r.avatar_version as number, accent: r.accent ?? null, statusText: r.status_text as string, nameFont: r.name_font as string, role: r.role as Role, roleIds, top, online: isOnline(r.id), status: statusOf(r.id), timeoutUntil: r.timeout_until ? new Date(r.timeout_until).toISOString() : null };
     })
     .sort((a, b) => Number(b.online) - Number(a.online) || a.username.localeCompare(b.username));
   const settings = Object.fromEntries(Object.entries(settingsColumns).map(([k, col]) => [k, s[col]]));

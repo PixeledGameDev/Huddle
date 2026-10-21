@@ -11,6 +11,35 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "4.4",
+    date: "2026-10-21",
+    title: "Banners and name fonts",
+    changes: [
+      "Add a banner image to your profile card (Profile & appearance → Upload banner).",
+      "Pick a font for your display name from ten styles. It shows in the member list, messages, direct messages and your profile.",
+    ],
+  },
+  {
+    version: "4.3",
+    date: "2026-10-21",
+    title: "Friends and DM privacy",
+    changes: [
+      "Add friends from someone's profile (Add friend) or by username in the new Friends window, next to your direct messages. Accept or decline requests there too.",
+      "Profiles now show the servers and friends you have in common.",
+      "Choose who can start a direct message with you in Profile & appearance: anyone who shares a server, only friends, or nobody. This only affects new conversations.",
+      "Blocking someone also ends your friendship.",
+    ],
+  },
+  {
+    version: "4.2",
+    date: "2026-10-21",
+    title: "Statuses",
+    changes: [
+      "Pick Online, Idle, Do not disturb or Invisible with the dot at the bottom left. Invisible makes you look offline to everyone while you keep using Huddle normally; Do not disturb stops pop-ups and desktop notifications (unread badges still count).",
+      "You can now reply to someone's status: open their profile and choose Reply to status. It opens a direct message that quotes what their status said.",
+    ],
+  },
+  {
     version: "4.1",
     date: "2026-10-21",
     title: "Small fixes",

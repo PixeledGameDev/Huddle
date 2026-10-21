@@ -3,17 +3,55 @@ import { SecuritySettings } from "./SecuritySettings";
 import { useEffect, useState } from "react";
 import { api, ApiError, uploadRaw } from "./api";
 import { Avatar } from "./Avatar";
+import { NAME_FONTS, type NameFont } from "./fonts";
+import { Name } from "./Name";
+import { StatusDot } from "./Status";
 import { Modal } from "./Modals";
 import { loadPrefs, savePrefs, type Prefs } from "./prefs";
-import type { Member, ServerDetail, User } from "./types";
-import { hue, nameOfUser, squareImage } from "./util";
+import type { DmPrivacy, Friendship, Member, ServerDetail, User } from "./types";
+import { bannerImage, hue, nameOfUser, squareImage } from "./util";
+
+interface Mutual { id: string; username: string; displayName: string | null; avatarVersion: number; accent: string | null }
+interface ProfileData {
+  profile: User;
+  server: { role: string; joinedAt: string; roles: { id: string; name: string; color: string | null }[] } | null;
+  blockedByMe: boolean;
+  friendship?: Friendship;
+  canMessage?: boolean;
+  mutualServers?: { id: string; name: string; iconVersion: number }[];
+  mutualFriends?: Mutual[];
+}
 
 export function ProfileCard({ userId, serverId, meId, onClose, onEdit, onMessage, onChanged }: { userId: string; serverId: string; meId: string; onClose: () => void; onEdit: () => void; onMessage: (userId: string) => void; onChanged: () => void }) {
-  const [data, setData] = useState<{ profile: User; server: { role: string; joinedAt: string; roles: { id: string; name: string; color: string | null }[] } | null; blockedByMe: boolean } | null>(null);
+  const [data, setData] = useState<ProfileData | null>(null);
   const [error, setError] = useState("");
+  const [replying, setReplying] = useState(false);
+  const [reply, setReply] = useState("");
   useEffect(() => {
-    api<{ profile: User; server: { role: string; joinedAt: string; roles: { id: string; name: string; color: string | null }[] } | null; blockedByMe: boolean }>(`/users/${userId}/profile?serverId=${serverId}`).then(setData, (e) => setError(e.message));
+    api<ProfileData>(`/users/${userId}/profile?serverId=${serverId}`).then(setData, (e) => setError(e.message));
   }, [userId, serverId]);
+
+  async function friendAction(kind: "add" | "accept" | "cancel" | "remove") {
+    if (!data) return;
+    try {
+      if (kind === "add") {
+        const r = await api<{ state: Friendship }>("/friends/requests", "POST", { userId });
+        setData({ ...data, friendship: r.state });
+      } else if (kind === "accept") {
+        await api(`/friends/requests/${userId}/accept`, "POST");
+        setData({ ...data, friendship: "friends" });
+      } else if (kind === "cancel") {
+        await api(`/friends/requests/${userId}`, "DELETE");
+        setData({ ...data, friendship: "none" });
+      } else {
+        if (!window.confirm(`Remove ${nameOfUser(data.profile)} from your friends?`)) return;
+        await api(`/friends/${userId}`, "DELETE");
+        setData({ ...data, friendship: "none" });
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Something went wrong.");
+    }
+  }
 
   async function toggleBlock() {
     if (!data) return;
@@ -28,6 +66,16 @@ export function ProfileCard({ userId, serverId, meId, onClose, onEdit, onMessage
     }
   }
 
+  async function sendStatusReply() {
+    if (!reply.trim()) return;
+    try {
+      await api(`/users/${userId}/status-reply`, "POST", { content: reply.trim() });
+      onMessage(userId); // jump to the conversation
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Something went wrong.");
+    }
+  }
+
   const p = data?.profile;
   const name = p ? nameOfUser(p) : "";
   return (
@@ -35,24 +83,69 @@ export function ProfileCard({ userId, serverId, meId, onClose, onEdit, onMessage
       {error && <p className="error">{error}</p>}
       {p && (
         <div className="profile-card">
-          <div className="profile-banner" style={{ background: p.accent ?? `hsl(${hue(p.username)} 45% 42%)` }} />
+          <div
+            className="profile-banner"
+            style={p.bannerVersion ? { backgroundImage: `url(/api/users/${p.id}/banner?v=${p.bannerVersion})`, backgroundSize: "cover", backgroundPosition: "center" } : { background: p.accent ?? `hsl(${hue(p.username)} 45% 42%)` }}
+          />
           <div className="profile-avatar"><Avatar id={p.id} name={name} version={p.avatarVersion} accent={p.accent} size={84} /></div>
-          <h3>{name}</h3>
+          <h3><Name user={p} /></h3>
           <p className="muted">@{p.username}{data?.server && data.server.role !== "member" && <em className="tag">{data.server.role}</em>}</p>
           {data?.server && data.server.roles.length > 0 && (
             <p className="profile-roles">{data.server.roles.map((r) => <em key={r.id} className="tag role-tag"><i className="role-dot" style={{ background: r.color ?? "var(--dim)" }} />{r.name}</em>)}</p>
           )}
+          {p.status && <p className="muted profile-presence"><StatusDot status={p.status} className="inline" /> {p.status === "dnd" ? "Do not disturb" : p.status[0].toUpperCase() + p.status.slice(1)}</p>}
           {p.statusText && <p className="profile-status">{p.statusText}</p>}
+          {p.statusText && p.id !== meId && !data?.blockedByMe && (
+            replying ? (
+              <form className="status-reply" onSubmit={(e) => { e.preventDefault(); void sendStatusReply(); }}>
+                <input autoFocus value={reply} maxLength={2000} placeholder="Reply to their status…" onChange={(e) => setReply(e.target.value)} />
+                <button className="primary" disabled={!reply.trim()}>Send</button>
+              </form>
+            ) : <button className="link" onClick={() => setReplying(true)}>Reply to status</button>
+          )}
           {p.bio && <p className="profile-bio">{p.bio}</p>}
           <dl className="profile-meta">
             {p.createdAt && (<><dt>On Huddle since</dt><dd>{new Date(p.createdAt).toLocaleDateString([], { year: "numeric", month: "short", day: "numeric" })}</dd></>)}
             {data?.server && (<><dt>Joined this server</dt><dd>{new Date(data.server.joinedAt).toLocaleDateString([], { year: "numeric", month: "short", day: "numeric" })}</dd></>)}
           </dl>
+          {p.id !== meId && ((data?.mutualFriends?.length ?? 0) > 0 || (data?.mutualServers?.length ?? 0) > 0) && (
+            <div className="mutuals">
+              {(data?.mutualServers?.length ?? 0) > 0 && (
+                <section>
+                  <h4>Mutual servers · {data!.mutualServers!.length}</h4>
+                  <ul className="mutual-list">
+                    {data!.mutualServers!.map((s) => (
+                      <li key={s.id} title={s.name}>
+                        {s.iconVersion > 0 ? <img className="mutual-icon" src={`/api/servers/${s.id}/icon?v=${s.iconVersion}`} alt="" /> : <span className="mutual-icon" style={{ background: `hsl(${hue(s.name)} 38% 40%)` }}>{s.name[0].toUpperCase()}</span>}
+                        <span>{s.name}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </section>
+              )}
+              {(data?.mutualFriends?.length ?? 0) > 0 && (
+                <section>
+                  <h4>Mutual friends · {data!.mutualFriends!.length}</h4>
+                  <ul className="mutual-list">
+                    {data!.mutualFriends!.map((f) => (
+                      <li key={f.id} title={`@${f.username}`}><Avatar id={f.id} name={nameOfUser(f)} version={f.avatarVersion} accent={f.accent} size={22} /><span>{nameOfUser(f)}</span></li>
+                    ))}
+                  </ul>
+                </section>
+              )}
+            </div>
+          )}
           {p.id === meId ? (
             <button className="primary" onClick={onEdit}>Edit profile</button>
           ) : (
             <div className="profile-actions">
-              {!data?.blockedByMe && <button className="primary" onClick={() => onMessage(p.id)}>Message</button>}
+              {!data?.blockedByMe && (
+                <button className="primary" disabled={data?.canMessage === false} title={data?.canMessage === false ? "This person isn't accepting new direct messages from you." : undefined} onClick={() => onMessage(p.id)}>Message</button>
+              )}
+              {!data?.blockedByMe && data?.friendship === "none" && <button onClick={() => void friendAction("add")}>Add friend</button>}
+              {data?.friendship === "outgoing" && <button onClick={() => void friendAction("cancel")}>Cancel request</button>}
+              {data?.friendship === "incoming" && <button onClick={() => void friendAction("accept")}>Accept request</button>}
+              {data?.friendship === "friends" && <button onClick={() => void friendAction("remove")}>Friends ✓</button>}
               <button className="danger" onClick={() => void toggleBlock()}>{data?.blockedByMe ? "Unblock" : "Block"}</button>
             </div>
           )}
@@ -67,6 +160,8 @@ export function MyProfileModal({ me, onClose, onUser, onDeleted, onError }: { me
   const [statusText, setStatusText] = useState(me.statusText);
   const [bio, setBio] = useState(me.bio);
   const [accent, setAccent] = useState<string | null>(me.accent);
+  const [nameFont, setNameFont] = useState<NameFont>((me.nameFont as NameFont) ?? "default");
+  const [dmPrivacy, setDmPrivacy] = useState<DmPrivacy>(me.dmPrivacy ?? "everyone");
   const [prefs, setPrefs] = useState<Prefs>(loadPrefs());
   const [busy, setBusy] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -79,7 +174,7 @@ export function MyProfileModal({ me, onClose, onUser, onDeleted, onError }: { me
     e.preventDefault();
     setBusy(true);
     try {
-      const { user } = await api<{ user: User }>("/me/profile", "PATCH", { displayName: displayName.trim() || null, statusText: statusText.trim(), bio: bio.trim(), accent });
+      const { user } = await api<{ user: User }>("/me/profile", "PATCH", { displayName: displayName.trim() || null, statusText: statusText.trim(), bio: bio.trim(), accent, dmPrivacy, nameFont });
       onUser(user);
       onClose();
     } catch (err) {
@@ -91,6 +186,15 @@ export function MyProfileModal({ me, onClose, onUser, onDeleted, onError }: { me
   async function pickAvatar(file: File) {
     try {
       const { user } = await uploadRaw<{ user: User }>("/me/avatar", await squareImage(file, 256));
+      onUser(user);
+    } catch (err) {
+      onError(err);
+    }
+  }
+
+  async function pickBanner(file: File) {
+    try {
+      const { user } = await uploadRaw<{ user: User }>("/me/banner", await bannerImage(file));
       onUser(user);
     } catch (err) {
       onError(err);
@@ -113,14 +217,33 @@ export function MyProfileModal({ me, onClose, onUser, onDeleted, onError }: { me
           )}
         </div>
       </div>
+      <div className="banner-edit">
+        <div className="profile-banner" style={me.bannerVersion ? { backgroundImage: `url(/api/users/${me.id}/banner?v=${me.bannerVersion})`, backgroundSize: "cover", backgroundPosition: "center" } : { background: accent ?? `hsl(${hue(me.username)} 45% 42%)` }} />
+        <div className="row-actions">
+          <label className="file-btn">Upload banner<input type="file" accept="image/png,image/jpeg,image/gif,image/webp" hidden onChange={(e) => { const f = e.target.files?.[0]; if (f) void pickBanner(f); e.target.value = ""; }} /></label>
+          {!!me.bannerVersion && <button type="button" className="link" onClick={async () => { try { onUser((await api<{ user: User }>("/me/banner", "DELETE")).user); } catch (err) { onError(err); } }}>Remove banner</button>}
+        </div>
+      </div>
       <form className="stack" onSubmit={save}>
         <label>Display name<input value={displayName} maxLength={32} placeholder={me.username} onChange={(e) => setDisplayName(e.target.value)} /><small className="muted">Shown instead of @{me.username}. People still @mention you as @{me.username}.</small></label>
+        <label>Display name font
+          <select value={nameFont} onChange={(e) => setNameFont(e.target.value as NameFont)}>{NAME_FONTS.map((f) => <option key={f.id} value={f.id}>{f.label}</option>)}</select>
+          <span className="font-preview"><Name user={{ username: me.username, displayName: displayName.trim() || null, nameFont }} /></span>
+        </label>
         <label>Status<input value={statusText} maxLength={80} placeholder="What are you up to?" onChange={(e) => setStatusText(e.target.value)} /></label>
         <label>About me<textarea value={bio} maxLength={190} rows={3} onChange={(e) => setBio(e.target.value)} /><small className="muted">{bio.length}/190</small></label>
         <div className="color-row">
           <label>Profile color<input type="color" value={accent ?? "#3556d8"} onChange={(e) => setAccent(e.target.value)} /></label>
           {accent && <button type="button" className="link" onClick={() => setAccent(null)}>Use automatic color</button>}
         </div>
+        <label>Who can start a direct message with you
+          <select value={dmPrivacy} onChange={(e) => setDmPrivacy(e.target.value as DmPrivacy)}>
+            <option value="everyone">Anyone who shares a server with me</option>
+            <option value="friends">Only my friends</option>
+            <option value="nobody">Nobody</option>
+          </select>
+          <small className="muted">This only affects new conversations. Existing ones keep working, and you can still block people.</small>
+        </label>
         <button className="primary" disabled={busy}>Save profile</button>
       </form>
       <hr />

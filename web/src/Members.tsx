@@ -1,4 +1,6 @@
 import { Avatar } from "./Avatar";
+import { Name } from "./Name";
+import { StatusDot } from "./Status";
 import { can, canModerateMember, memberColor } from "./permissions";
 import type { Member, ServerDetail, User, Vote } from "./types";
 import { actionVerb, nameOfUser } from "./util";
@@ -29,10 +31,10 @@ export default function Members({ server, me, votes, onStartVote, onRoles, onOpe
     return (
       <li key={m.id} className={m.online ? "member" : "member off"}>
         <button className="member-id" onClick={() => onOpenProfile(m.id)} title={`View ${name}'s profile`}>
-          <Avatar id={m.id} name={name} version={m.avatarVersion} accent={m.accent} size={28} />
+          <span className="avatar-wrap"><Avatar id={m.id} name={name} version={m.avatarVersion} accent={m.accent} size={28} /><StatusDot status={m.status ?? (m.online ? "online" : "offline")} /></span>
           <span className="member-name">
             <span className="member-line">
-              <span style={color ? { color } : undefined}>{name}</span>
+              <span style={color ? { color } : undefined}><Name user={m} /></span>
               {m.role !== "member" && <em className="tag">{m.role}</em>}
               {roles.slice(0, 2).map((r) => (
                 <em key={r!.id} className="tag role-tag"><i className="role-dot" style={{ background: r!.color ?? "var(--dim)" }} />{r!.name}</em>

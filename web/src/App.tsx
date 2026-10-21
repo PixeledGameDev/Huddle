@@ -10,6 +10,9 @@ import { InvitePage } from "./Invites";
 import DmPanel from "./DmPanel";
 import { HuddleAdminModal } from "./HuddleAdmin";
 import { SuggestionsModal } from "./Suggestions";
+import { Name } from "./Name";
+import { StatusDot, StatusMenu } from "./Status";
+import { FriendsModal, useFriends } from "./Friends";
 import { notifyIncoming, setNotificationOpener, updateBadge } from "./notify";
 import Members from "./Members";
 import { AddServerModal, SettingsModal } from "./Modals";
@@ -17,7 +20,7 @@ import { PollModal } from "./Polls";
 import { ModerateModal, MyProfileModal, ProfileCard } from "./ProfileModals";
 import { can, canAny, isOwner } from "./permissions";
 import { LegacyAdminsModal, MemberRolesModal } from "./Roles";
-import type { Channel, DmSummary, Member, Message, Poll, Reaction, ServerDetail, ServerSummary, User, Vote } from "./types";
+import type { Channel, DmSummary, Member, Message, Poll, Reaction, ServerDetail, ServerSummary, User, Vote, PublicStatus } from "./types";
 import { actionVerb, fmtDuration, hue, nameOfUser } from "./util";
 import VoteBanner from "./VoteBanner";
 
@@ -51,7 +54,7 @@ interface Toast { id: number; text: string; error?: boolean }
 type MsgState = Record<string, { items: Message[]; hasMore: boolean }>;
 type TypingState = Record<string, Record<string, { name: string; until: number }>>;
 type Unread = { channels: Record<string, number>; servers: Record<string, number> };
-type Modal = "add" | "settings" | "legacy" | "poll" | "myprofile" | "changelog" | "huddle" | "suggestions" | null;
+type Modal = "add" | "settings" | "legacy" | "friends" | "poll" | "myprofile" | "changelog" | "huddle" | "suggestions" | null;
 
 function Main({ me, initialServerId, onUser, onLogout }: { me: User; initialServerId?: string; onUser: (u: User) => void; onLogout: () => void }) {
   const [servers, setServers] = useState<ServerSummary[]>([]);
@@ -67,6 +70,8 @@ function Main({ me, initialServerId, onUser, onLogout }: { me: User; initialServ
   const [profileId, setProfileId] = useState<string | null>(null);
   const [moderating, setModerating] = useState<Member | null>(null);
   const [roleMember, setRoleMember] = useState<Member | null>(null);
+  const [friendsTick, setFriendsTick] = useState(0);
+  const { data: friendsData } = useFriends(friendsTick);
   const legacyPromptedRef = useRef<Set<string>>(new Set());
   const [replyTo, setReplyTo] = useState<Message | null>(null);
   const [unread, setUnread] = useState<Unread>({ channels: {}, servers: {} });
@@ -281,6 +286,7 @@ function Main({ me, initialServerId, onUser, onLogout }: { me: User; initialServ
         channels: { ...u.channels, [m.channelId]: (u.channels[m.channelId] ?? 0) + 1 },
         servers: { ...u.servers, [m.serverId]: (u.servers[m.serverId] ?? 0) + 1 },
       }));
+      if (meRef.current.presence === "dnd") return; // Do not disturb: the badge counts up, but nothing pops up
       push(isDm ? `${m.authorName} sent you a message` : `${m.authorName} mentioned you`);
       notifyIncoming(m, isDm ? "dm" : m.mentions.includes(meId) ? "mention" : "everyone", {
         serverName: serversRef.current.find((x) => x.id === m.serverId)?.name ?? "a server",
@@ -297,11 +303,13 @@ function Main({ me, initialServerId, onUser, onLogout }: { me: User; initialServ
       setTimeout(() => setTyping((t) => ({ ...t })), 4100);
     });
     s.on("dm.new", (d: DmSummary) => setDms((prev) => (prev.some((x) => x.id === d.id) ? prev : [d, ...prev])));
-    s.on("presence", (p: { serverId: string; userId: string; online: boolean }) => {
-      setDms((prev) => prev.map((d) => (d.id === p.serverId && d.user.id === p.userId ? { ...d, online: p.online } : d)));
+    s.on("presence.self", (p: { presence: User["presence"] }) => onUser({ ...meRef.current, presence: p.presence }));
+    s.on("presence", (p: { serverId: string; userId: string; online: boolean; status?: PublicStatus }) => {
+      const status: PublicStatus = p.status ?? (p.online ? "online" : "offline");
+      setDms((prev) => prev.map((d) => (d.id === p.serverId && d.user.id === p.userId ? { ...d, online: p.online, status } : d)));
       setDetail((d) =>
         d && d.id === p.serverId
-          ? { ...d, members: d.members.map((m) => (m.id === p.userId ? { ...m, online: p.online } : m)).sort((a, b) => Number(b.online) - Number(a.online) || a.username.localeCompare(b.username)) }
+          ? { ...d, members: d.members.map((m) => (m.id === p.userId ? { ...m, online: p.online, status } : m)).sort((a, b) => Number(b.online) - Number(a.online) || a.username.localeCompare(b.username)) }
           : d
       );
     });
@@ -309,6 +317,10 @@ function Main({ me, initialServerId, onUser, onLogout }: { me: User; initialServ
       if (p.serverId === activeIdRef.current) void loadServer(p.serverId);
     };
     for (const ev of ["member.join", "member.leave", "member.update", "channel.create", "channel.update", "channel.delete", "server.update"]) s.on(ev, refresh);
+    s.on("friends.update", (p: { event: string; name?: string }) => {
+      setFriendsTick((n) => n + 1);
+      if (p.event === "request" && meRef.current.presence !== "dnd") push(`${p.name ?? "Someone"} sent you a friend request`);
+    });
     // Other servers' names and icons change too, so keep the left bar fresh.
     s.on("server.update", (p: { serverId: string }) => {
       if (p.serverId !== activeIdRef.current) api<{ servers: ServerSummary[] }>("/servers").then((r) => setServers(r.servers), () => {});
@@ -571,7 +583,7 @@ function Main({ me, initialServerId, onUser, onLogout }: { me: User; initialServ
     <div className="app">
       <nav className="rail" aria-label="Servers">
         <button className={inDm ? "srv dm-btn active" : "srv dm-btn"} aria-label="Direct messages" title="Direct messages" onClick={openDms}>
-          💬{dmUnread > 0 && <span className="badge" aria-label={`${dmUnread} unread`}>{dmUnread}</span>}
+          💬{dmUnread + friendsData.incoming.length > 0 && <span className="badge" aria-label={`${dmUnread + friendsData.incoming.length} unread`}>{dmUnread + friendsData.incoming.length}</span>}
         </button>
         <span className="rail-sep" />
         {servers.map((s) => (
@@ -601,16 +613,19 @@ function Main({ me, initialServerId, onUser, onLogout }: { me: User; initialServ
       <aside className="side">
         {inDm ? (
           <>
-            <header className="side-head"><strong>Direct messages</strong></header>
+            <header className="side-head">
+              <strong>Direct messages</strong>
+              <button className="icon" title="Friends" onClick={() => setModal("friends")}>Friends{friendsData.incoming.length > 0 && <span className="badge inline">{friendsData.incoming.length}</span>}</button>
+            </header>
             <div className="channels">
               {dms.length === 0 && <p className="side-empty">No conversations yet. Open someone's profile or hit Message next to a member to start one.</p>}
               {dms.map((d) => (
                 <button key={d.id} className={d.id === activeId ? "chan dm-item active" : "chan dm-item"} onClick={() => setActiveId(d.id)}>
                   <span className="dm-avatar">
                     <Avatar id={d.user.id} name={nameOfUser(d.user)} version={d.user.avatarVersion} accent={d.user.accent} size={28} />
-                    <span className={d.online ? "dot on" : "dot"} />
+                    <StatusDot status={d.status ?? (d.online ? "online" : "offline")} />
                   </span>
-                  <span className="chan-name">{nameOfUser(d.user)}</span>
+                  <span className="chan-name"><Name user={d.user} /></span>
                   {(unread.servers[d.id] ?? 0) > 0 && <span className="badge inline" aria-label={`${unread.servers[d.id]} unread`}>{unread.servers[d.id]}</span>}
                 </button>
               ))}
@@ -654,6 +669,7 @@ function Main({ me, initialServerId, onUser, onLogout }: { me: User; initialServ
             <Avatar id={me.id} name={myName} version={me.avatarVersion} accent={me.accent} size={28} />
             <span className="me-name">{myName}</span>
           </button>
+          <StatusMenu me={me} onUser={onUser} onError={fail} />
           <button className="icon whatsnew" aria-label={unseenUpdates ? "What's new (new updates)" : "What's new"} title="What's new" onClick={() => { markUpdatesSeen(); setUnseenUpdates(false); setModal("changelog"); }}>
             ✨{unseenUpdates && <span className="new-dot" />}
           </button>
@@ -739,6 +755,17 @@ function Main({ me, initialServerId, onUser, onLogout }: { me: User; initialServ
         <LegacyAdminsModal server={detail} onClose={() => setModal(null)} onError={fail} onDone={() => { setModal(null); push("Done. Your admins now have a role."); void loadServer(detail.id); }} />
       )}
       {roleMember && detail && <MemberRolesModal server={detail} member={roleMember} onClose={() => setRoleMember(null)} onError={fail} />}
+      {modal === "friends" && (
+        <FriendsModal
+          data={friendsData}
+          refreshKey={friendsTick}
+          onClose={() => setModal(null)}
+          onOpenProfile={(id) => { setModal(null); setProfileId(id); }}
+          onMessage={startDm}
+          onError={fail}
+          onNotice={push}
+        />
+      )}
       {modal === "poll" && channel && <PollModal channelName={channel.name} onClose={() => setModal(null)} onCreate={createPoll} />}
       {modal === "changelog" && <Changelog onClose={() => setModal(null)} />}
       {modal === "suggestions" && (

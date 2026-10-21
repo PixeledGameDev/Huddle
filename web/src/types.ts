@@ -6,10 +6,23 @@ export interface User {
   accent: string | null;
   statusText: string;
   avatarVersion: number;
+  bannerVersion?: number;
+  nameFont?: string;
   createdAt?: string;
+  /** How others currently see them. */
+  status?: PublicStatus;
+  /** What you chose. Only present on your own account. */
+  presence?: Presence | null;
+  /** Who may start a new DM with you. Only present on your own account. */
+  dmPrivacy?: DmPrivacy | null;
   /** Only present on your own account. */
   huddleAdmin?: boolean;
 }
+export type Presence = "online" | "idle" | "dnd" | "invisible";
+export type PublicStatus = "online" | "idle" | "dnd" | "offline";
+export interface FriendUser { id: string; username: string; displayName: string | null; avatarVersion: number; accent: string | null; statusText: string; nameFont?: string; status: PublicStatus }
+export type Friendship = "none" | "friends" | "outgoing" | "incoming";
+export type DmPrivacy = "everyone" | "friends" | "nobody";
 export interface ServerSummary { id: string; name: string; iconVersion: number }
 export interface Channel { id: string; name: string }
 /** The base membership role. "admin" only exists on servers that haven't converted their old admins to a role yet. */
@@ -25,12 +38,14 @@ export interface Member {
   avatarVersion: number;
   accent: string | null;
   statusText: string;
+  nameFont?: string;
   role: Role;
   /** Role ids, highest ranked first. */
   roleIds: string[];
   /** Rank: higher outranks lower. You can only moderate people ranked below you. */
   top: number;
   online: boolean;
+  status: PublicStatus;
   timeoutUntil: string | null;
 }
 
@@ -111,6 +126,8 @@ export interface Message {
   mentions: string[];
   mentionsEveryone: boolean;
   gif: string | null;
+  /** The status text this message is a reply to (direct messages only). */
+  statusReply: string | null;
   replyTo: ReplyRef | null;
   attachments: Attachment[];
   reactions: Reaction[];
@@ -140,6 +157,7 @@ export interface DmSummary {
   id: string; // the DM's conversation id (used like a server id)
   lastAt: string;
   online: boolean;
+  status: PublicStatus;
   blockedByMe: boolean;
-  user: { id: string; username: string; displayName: string | null; avatarVersion: number; accent: string | null; statusText: string };
+  user: { id: string; username: string; displayName: string | null; avatarVersion: number; accent: string | null; statusText: string; nameFont?: string };
 }

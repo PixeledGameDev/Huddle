@@ -61,6 +61,20 @@ export async function squareImage(file: File, size = 256): Promise<Blob> {
   return new Promise((res, rej) => canvas.toBlob((b) => (b ? res(b) : rej(new Error("Couldn't process that image."))), "image/webp", 0.9));
 }
 
+/** A wide 3:1 crop for profile banners. */
+export async function bannerImage(file: File, width = 900): Promise<Blob> {
+  const bmp = await createImageBitmap(file);
+  const height = Math.round(width / 3);
+  const scale = Math.max(width / bmp.width, height / bmp.height);
+  const w = bmp.width * scale;
+  const h = bmp.height * scale;
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  canvas.getContext("2d")!.drawImage(bmp, (width - w) / 2, (height - h) / 2, w, h);
+  return new Promise((res, rej) => canvas.toBlob((b) => (b ? res(b) : rej(new Error("Couldn't process that image."))), "image/webp", 0.88));
+}
+
 /** Invite links look like https://<this app>/invite/<code>. */
 export const INVITE_URL_RE = /https?:\/\/[^\s/]+\/invite\/([A-Za-z0-9_-]{6,32})(?![A-Za-z0-9_-])/g;
 

@@ -2,7 +2,10 @@ import { Router } from "express";
 import { z } from "zod";
 import { one, q, tx } from "./db";
 import { HttpError, h, rateLimit } from "./http";
-import { emitUser, isOnline, joinServerRooms } from "./realtime";
+import { areFriends, dropFriendship } from "./friends";
+import { getMessageDto } from "./hydrate";
+import { assertCanWrite } from "./perms";
+import { emitServer, emitUser, isOnline, joinServerRooms, statusOf } from "./realtime";
 
 export const dmsRouter = Router();
 
@@ -13,12 +16,13 @@ const userDto = (r: any) => ({
   avatarVersion: r.avatar_version as number,
   accent: (r.accent ?? null) as string | null,
   statusText: r.status_text as string,
+  nameFont: (r.name_font ?? "default") as string,
 });
 
 /** The other person in each of viewerId's DMs (or just one DM), newest conversation first. */
 export async function dmList(viewerId: string, serverId?: string) {
   const rows = await q<any>(
-    `select s.id as server_id, u.id as user_id, u.username, u.display_name, u.avatar_version, u.accent, u.status_text,
+    `select s.id as server_id, u.id as user_id, u.username, u.display_name, u.avatar_version, u.accent, u.status_text, u.name_font,
             coalesce((select max(m.created_at) from messages m join channels c on c.id = m.channel_id where c.server_id = s.id), s.created_at) as last_at,
             exists(select 1 from user_blocks b where b.blocker = $1 and b.blocked = u.id) as blocked_by_me
        from servers s
@@ -33,6 +37,7 @@ export async function dmList(viewerId: string, serverId?: string) {
     id: r.server_id as string,
     lastAt: new Date(r.last_at).toISOString(),
     online: isOnline(r.user_id),
+    status: statusOf(r.user_id),
     blockedByMe: r.blocked_by_me as boolean,
     user: userDto(r),
   }));
@@ -42,10 +47,18 @@ dmsRouter.get("/dms", h(async (req, res) => {
   res.json({ dms: await dmList(req.user!.id) });
 }));
 
-/** Open (or create) a DM. Only people who share a server can start one, and blocked pairs can't. */
-dmsRouter.post("/dms", h(async (req, res) => {
-  const me = req.user!.id;
-  const { userId } = z.object({ userId: z.string().uuid() }).parse(req.body);
+export type DmPrivacy = "everyone" | "friends" | "nobody";
+
+/** Starting a new conversation obeys the other person's privacy setting. Conversations that already exist are unaffected. */
+export async function assertAllowsNewDm(me: string, userId: string) {
+  const t = await one<{ dm_privacy: DmPrivacy }>(`select dm_privacy from users where id = $1`, [userId]);
+  if (!t || t.dm_privacy === "everyone") return;
+  if (t.dm_privacy === "friends" && (await areFriends(me, userId))) return;
+  throw new HttpError(403, t.dm_privacy === "friends" ? "This person only accepts new direct messages from friends." : "This person isn't accepting new direct messages.");
+}
+
+/** Opens (or creates) the DM between two people. Only people who share a server can start one, and blocked pairs can't. */
+export async function openDm(me: string, userId: string) {
   if (userId === me) throw new HttpError(400, "You can't message yourself.");
   if (!(await one(`select 1 from users where id = $1 and deleted_at is null`, [userId]))) throw new HttpError(404, "User not found.");
   if (await one(`select 1 from user_blocks where (blocker = $1 and blocked = $2) or (blocker = $2 and blocked = $1)`, [me, userId]))
@@ -63,6 +76,7 @@ dmsRouter.post("/dms", h(async (req, res) => {
       [me, userId]
     );
     if (!shared) throw new HttpError(403, "You can only message people you share a server with.");
+    await assertAllowsNewDm(me, userId);
     serverId = await tx(async (c) => {
       const s = await one<{ id: string }>(
         `insert into servers(name, owner_id, is_dm, dm_key) values ('', $1, true, $2) on conflict (dm_key) where dm_key is not null do nothing returning id`,
@@ -79,13 +93,40 @@ dmsRouter.post("/dms", h(async (req, res) => {
     joinServerRooms(userId, serverId);
   }
   if (created) emitUser(userId, "dm.new", (await dmList(userId, serverId))[0]);
-  res.json({ dm: (await dmList(me, serverId))[0] });
+  return { serverId, dm: (await dmList(me, serverId))[0] };
+}
+
+dmsRouter.post("/dms", h(async (req, res) => {
+  const { userId } = z.object({ userId: z.string().uuid() }).parse(req.body);
+  const { dm } = await openDm(req.user!.id, userId);
+  res.json({ dm });
+}));
+
+/** Replies to what someone has set as their status: opens the DM if needed and sends a message that quotes the status. */
+dmsRouter.post("/users/:userId/status-reply", h(async (req, res) => {
+  const me = req.user!.id;
+  const { userId } = req.params;
+  rateLimit(`msg:${me}`, 6, 5000);
+  const { content } = z.object({ content: z.string().trim().min(1, "Write a reply.").max(2000) }).parse(req.body);
+  const target = await one<{ status_text: string }>(`select status_text from users where id = $1 and deleted_at is null`, [userId]);
+  if (!target) throw new HttpError(404, "User not found.");
+  if (!target.status_text) throw new HttpError(409, "They don't have a status to reply to any more.");
+  const { serverId, dm } = await openDm(me, userId);
+  await assertCanWrite(serverId, me);
+  const ch = await one<{ id: string }>(`select id from channels where server_id = $1 limit 1`, [serverId]);
+  const row = await one<{ id: string }>(
+    `insert into messages(channel_id, author_id, content, status_reply) values ($1, $2, $3, $4) returning id::text as id`,
+    [ch!.id, me, content, target.status_text]
+  );
+  const message = await getMessageDto(row!.id, null);
+  emitServer(serverId, "message.create", message);
+  res.json({ dm, message });
 }));
 
 // ---------- blocking ----------
 dmsRouter.get("/blocks", h(async (req, res) => {
   const rows = await q<any>(
-    `select u.id as user_id, u.username, u.display_name, u.avatar_version, u.accent, u.status_text
+    `select u.id as user_id, u.username, u.display_name, u.avatar_version, u.accent, u.status_text, u.name_font
        from user_blocks b join users u on u.id = b.blocked where b.blocker = $1 order by u.username`,
     [req.user!.id]
   );
@@ -97,6 +138,7 @@ dmsRouter.put("/users/:userId/block", h(async (req, res) => {
   if (req.params.userId === me) throw new HttpError(400, "You can't block yourself.");
   if (!(await one(`select 1 from users where id = $1`, [req.params.userId]))) throw new HttpError(404, "User not found.");
   await q(`insert into user_blocks(blocker, blocked) values ($1, $2) on conflict do nothing`, [me, req.params.userId]);
+  await dropFriendship(me, req.params.userId);
   res.json({ ok: true });
 }));
 

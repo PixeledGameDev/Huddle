@@ -314,4 +314,36 @@ end
 $$;
 drop trigger if exists memberships_drop_roles on memberships;
 create trigger memberships_drop_roles after delete on memberships for each row execute function drop_member_roles();
+
+-- v20: presence statuses and replies to someone's status
+alter table users add column if not exists presence text not null default 'online' check (presence in ('online', 'idle', 'dnd', 'invisible'));
+alter table messages add column if not exists status_reply text;
+
+-- v21: friends and who may start a DM with you
+alter table users add column if not exists dm_privacy text not null default 'everyone' check (dm_privacy in ('everyone', 'friends', 'nobody'));
+create table if not exists friendships (
+  user_a uuid not null references users(id) on delete cascade,
+  user_b uuid not null references users(id) on delete cascade,
+  created_at timestamptz not null default now(),
+  primary key (user_a, user_b),
+  check (user_a < user_b)
+);
+create index if not exists friendships_b on friendships(user_b);
+create table if not exists friend_requests (
+  from_id uuid not null references users(id) on delete cascade,
+  to_id uuid not null references users(id) on delete cascade,
+  created_at timestamptz not null default now(),
+  primary key (from_id, to_id),
+  check (from_id <> to_id)
+);
+create index if not exists friend_requests_to on friend_requests(to_id);
+
+-- v22: profile banners and display-name fonts
+alter table users add column if not exists banner_version int not null default 0;
+alter table users add column if not exists name_font text not null default 'default';
+create table if not exists user_banners (
+  user_id uuid primary key references users(id) on delete cascade,
+  mime text not null,
+  data bytea not null
+);
 `;
