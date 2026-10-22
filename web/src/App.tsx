@@ -11,6 +11,7 @@ import DmPanel from "./DmPanel";
 import { HuddleAdminModal } from "./HuddleAdmin";
 import { SuggestionsModal } from "./Suggestions";
 import { Name } from "./Name";
+import { ThemeEditorModal } from "./ThemeEditor";
 import { UpdateBanner } from "./UpdateBanner";
 import { ServerAssetsContext } from "./ServerAssets";
 import { VerifiedBadge } from "./Verified";
@@ -57,7 +58,7 @@ interface Toast { id: number; text: string; error?: boolean }
 type MsgState = Record<string, { items: Message[]; hasMore: boolean }>;
 type TypingState = Record<string, Record<string, { name: string; until: number }>>;
 type Unread = { channels: Record<string, number>; servers: Record<string, number> };
-type Modal = "add" | "settings" | "legacy" | "friends" | "poll" | "myprofile" | "changelog" | "huddle" | "suggestions" | null;
+type Modal = "add" | "settings" | "legacy" | "friends" | "poll" | "myprofile" | "changelog" | "huddle" | "suggestions" | "themes" | null;
 
 function Main({ me, initialServerId, onUser, onLogout }: { me: User; initialServerId?: string; onUser: (u: User) => void; onLogout: () => void }) {
   const [servers, setServers] = useState<ServerSummary[]>([]);
@@ -785,7 +786,8 @@ function Main({ me, initialServerId, onUser, onLogout }: { me: User; initialServ
         />
       )}
       {modal === "huddle" && me.huddleAdmin && <HuddleAdminModal meId={me.id} onClose={() => setModal(null)} onNotice={push} onError={fail} />}
-      {modal === "myprofile" && <MyProfileModal me={me} onClose={() => setModal(null)} onUser={onUser} onDeleted={() => { socketRef.current?.disconnect(); onLogout(); }} onError={fail} />}
+      {modal === "myprofile" && <MyProfileModal me={me} onClose={() => setModal(null)} onUser={onUser} onDeleted={() => { socketRef.current?.disconnect(); onLogout(); }} onError={fail} onOpenThemes={() => setModal("themes")} />}
+      {modal === "themes" && window.huddleDesktop && <ThemeEditorModal onClose={() => setModal(null)} onError={fail} onNotice={push} />}
       {profileId && detail && (
         <ProfileCard userId={profileId} serverId={detail.id} meId={me.id} onClose={() => setProfileId(null)} onEdit={() => { setProfileId(null); setModal("myprofile"); }} onMessage={startDm} onChanged={refreshDms} />
       )}

@@ -72,6 +72,13 @@ to the same R2 `desktop/` folder, and your server hands them to the apps. Notes:
 - Apps older than 1.1 don't have the updater; they need one manual reinstall from `/download`, after which they update themselves.
 - Set `HUDDLE_NO_AUTO_UPDATE=1` to turn automatic updates off. `npm start` never updates.
 
+## Custom themes
+
+Profile & appearance → **Custom themes** (desktop app only) opens a theme designer: every color of the interface,
+background pictures for the whole window / chat area / sidebar, and export/import as a `.huddle-theme.json` file. Pictures
+are chosen from the computer's files and stored in the app's own local storage (IndexedDB); they are not uploaded to
+the server or to R2. Themes are per computer and per server address.
+
 ## What it does
 
 - **Notifications** for direct messages, @mentions and @everyone, with a chime. They appear only when Huddle isn't the

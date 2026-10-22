@@ -11,6 +11,16 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "4.8",
+    date: "2026-10-22",
+    title: "Custom themes (desktop app)",
+    changes: [
+      "In the desktop app, Profile & appearance → Custom themes lets you design your own look: pick every color, or start from a preset (Midnight, Sunset, Forest, Paper, Rose, High contrast).",
+      "Add background pictures from your own computer for the whole window, the chat area or the sidebar. They stay on your computer and are never uploaded.",
+      "Export a theme to a file to share it, or import one someone sent you.",
+    ],
+  },
+  {
     version: "4.7",
     date: "2026-10-22",
     title: "Desktop app: automatic updates and a splash screen",

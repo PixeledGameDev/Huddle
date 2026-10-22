@@ -156,7 +156,7 @@ export function ProfileCard({ userId, serverId, meId, onClose, onEdit, onMessage
   );
 }
 
-export function MyProfileModal({ me, onClose, onUser, onDeleted, onError }: { me: User; onClose: () => void; onUser: (u: User) => void; onDeleted: () => void; onError: (e: unknown) => void }) {
+export function MyProfileModal({ me, onClose, onUser, onDeleted, onError, onOpenThemes }: { me: User; onClose: () => void; onUser: (u: User) => void; onDeleted: () => void; onError: (e: unknown) => void; onOpenThemes: () => void }) {
   const [displayName, setDisplayName] = useState(me.displayName ?? "");
   const [statusText, setStatusText] = useState(me.statusText);
   const [bio, setBio] = useState(me.bio);
@@ -264,6 +264,12 @@ export function MyProfileModal({ me, onClose, onUser, onDeleted, onError }: { me
           </select>
         </label>
       </div>
+      {window.huddleDesktop && (
+        <div className="stack tight">
+          <button type="button" onClick={onOpenThemes}>Custom themes…</button>
+          <small className="muted">Design your own colors and background pictures (desktop app only). While a custom theme is on, the Theme setting above is paused.</small>
+        </div>
+      )}
       <hr />
       <NotificationSettings />
       <hr />

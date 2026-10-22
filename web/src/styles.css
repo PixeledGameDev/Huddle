@@ -595,3 +595,24 @@ img.sticker { display: block; width: 160px; height: 160px; object-fit: contain; 
 .sticker-grid img { width: 96px; height: 96px; object-fit: contain; }
 .asset-name { font-size: 12px; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--dim); }
 .asset-tools { display: flex; gap: 8px; font-size: 12px; }
+
+/* ---- custom themes (desktop app) ---- */
+.theme-bar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.theme-bar select { flex: 1; min-width: 160px; }
+.color-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 8px; }
+.color-cell { display: flex; align-items: center; gap: 10px; border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; background: var(--surface2); }
+.color-cell input[type="color"] { width: 34px; height: 34px; padding: 0; border: 0; background: none; flex: none; }
+.color-cell span { display: grid; line-height: 1.2; font-size: 13px; }
+.image-slot { display: flex; gap: 12px; align-items: center; }
+.image-slot .thumb { width: 120px; height: 68px; border-radius: 8px; border: 1px solid var(--line); background: var(--surface2) center / cover no-repeat; display: grid; place-items: center; color: var(--dim); font-size: 12px; flex: none; }
+.grid input[type="range"] { width: 100%; }
+
+/* Pictures: the window-wide one shows through slightly see-through panels; the chat and sidebar ones sit under a tint. */
+html[data-bg-app] body { background-color: var(--bg); background-image: var(--theme-image-app); background-size: cover; background-position: center; background-attachment: fixed; }
+html[data-bg-app] .app { background: transparent; }
+html[data-bg-app] .rail { background: color-mix(in srgb, var(--rail) var(--theme-panel-opacity), transparent); backdrop-filter: blur(var(--theme-blur)); }
+html[data-bg-app] .side { background: color-mix(in srgb, var(--side) var(--theme-panel-opacity), transparent); backdrop-filter: blur(var(--theme-blur)); }
+html[data-bg-app] .main { background: color-mix(in srgb, var(--panel) var(--theme-panel-opacity), transparent); backdrop-filter: blur(var(--theme-blur)); }
+html[data-bg-app] .members { background: color-mix(in srgb, var(--surface2) var(--theme-panel-opacity), transparent); backdrop-filter: blur(var(--theme-blur)); }
+html[data-bg-chat] .main { background: linear-gradient(color-mix(in srgb, var(--panel) var(--theme-tint), transparent), color-mix(in srgb, var(--panel) var(--theme-tint), transparent)), var(--theme-image-chat) center / cover no-repeat; backdrop-filter: none; }
+html[data-bg-side] .side { background: linear-gradient(color-mix(in srgb, var(--side) var(--theme-tint), transparent), color-mix(in srgb, var(--side) var(--theme-tint), transparent)), var(--theme-image-side) center / cover no-repeat; backdrop-filter: none; }

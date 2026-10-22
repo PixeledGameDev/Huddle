@@ -1,3 +1,4 @@
+import { activeThemeBase } from "./themes";
 export type Theme = "system" | "light" | "dark";
 export type Density = "cozy" | "compact";
 export interface Prefs { theme: Theme; density: Density }
@@ -14,7 +15,8 @@ export function loadPrefs(): Prefs {
 }
 
 export function applyPrefs(p: Prefs) {
-  const dark = p.theme === "dark" || (p.theme === "system" && window.matchMedia("(prefers-color-scheme: dark)").matches);
+  const custom = activeThemeBase(); // a custom theme (desktop app) decides light or dark itself
+  const dark = custom ? custom === "dark" : p.theme === "dark" || (p.theme === "system" && window.matchMedia("(prefers-color-scheme: dark)").matches);
   document.documentElement.dataset.theme = dark ? "dark" : "light";
   document.documentElement.dataset.density = p.density;
 }
