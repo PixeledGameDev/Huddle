@@ -27,7 +27,7 @@ export interface ServerSummary { id: string; name: string; iconVersion: number; 
 export interface Channel { id: string; name: string }
 /** The base membership role. "admin" only exists on servers that haven't converted their old admins to a role yet. */
 export type Role = "owner" | "admin" | "member";
-export type Permission = "manage_server" | "manage_channels" | "manage_roles" | "manage_messages" | "kick_members" | "ban_members" | "timeout_members" | "mention_everyone" | "view_audit_log";
+export type Permission = "manage_server" | "manage_channels" | "manage_roles" | "manage_messages" | "kick_members" | "ban_members" | "timeout_members" | "mention_everyone" | "view_audit_log" | "manage_emojis";
 export interface ServerRole { id: string; name: string; color: string | null; permissions: Permission[]; position: number; memberCount: number }
 export type VoteAction = "kick" | "timeout" | "ban";
 
@@ -91,6 +91,8 @@ export interface ServerDetail {
   /** Only sent to the owner: how many people still have the old admin rank. */
   legacyAdminCount: number;
   roles: ServerRole[];
+  emojis: { id: string; name: string }[];
+  stickers: { id: string; name: string }[];
   myTimeoutUntil: string | null;
   channels: Channel[];
   members: Member[];
@@ -129,6 +131,7 @@ export interface Message {
   gif: string | null;
   /** The status text this message is a reply to (direct messages only). */
   statusReply: string | null;
+  sticker: { id: string; name: string } | null;
   replyTo: ReplyRef | null;
   attachments: Attachment[];
   reactions: Reaction[];

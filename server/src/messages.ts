@@ -8,6 +8,7 @@ import { isAllowedGif } from "./gifs";
 import { getMessageDto, hydrate, messageSelect } from "./hydrate";
 import { HttpError, h, rateLimit } from "./http";
 import { assertCanWrite, channelServer, requireMember } from "./perms";
+import { cleanCustomEmoji } from "./emojis";
 import { emitServer } from "./realtime";
 import { deleteObject, putObject, r2Enabled } from "./storage";
 
@@ -48,6 +49,7 @@ const sendSchema = z.object({
   attachmentIds: z.array(z.string().uuid()).max(MAX_ATTACHMENTS).default([]),
   replyTo: z.string().regex(/^\d+$/).nullish(),
   gifUrl: z.string().max(500).nullish(),
+  stickerId: z.string().uuid().nullish(),
 });
 
 messagesRouter.post("/channels/:channelId/messages", h(async (req, res) => {
@@ -60,8 +62,10 @@ messagesRouter.post("/channels/:channelId/messages", h(async (req, res) => {
   const attachmentIds = [...new Set(body.attachmentIds)];
   const gifUrl = body.gifUrl ?? null;
   if (gifUrl && !isAllowedGif(gifUrl)) throw new HttpError(400, "That GIF source isn't supported.");
-  if (!body.content && !attachmentIds.length && !gifUrl) throw new HttpError(400, "Write a message, attach a file, or pick a GIF.");
+  if (!body.content && !attachmentIds.length && !gifUrl && !body.stickerId) throw new HttpError(400, "Write a message, attach a file, or pick a GIF.");
   await assertCanWrite(serverId, user.id);
+  if (body.stickerId && !(await one(`select 1 from server_stickers where id = $1 and server_id = $2`, [body.stickerId, serverId]))) throw new HttpError(400, "That sticker isn't available in this server.");
+  body.content = await cleanCustomEmoji(serverId, body.content);
 
   let replyAuthor: string | null = null;
   if (body.replyTo) {
@@ -74,9 +78,9 @@ messagesRouter.post("/channels/:channelId/messages", h(async (req, res) => {
 
   const messageId = await tx(async (c) => {
     const row = await one<{ id: string }>(
-      `insert into messages(channel_id, author_id, content, reply_to, mentions, mentions_everyone, gif_url)
-       values ($1, $2, $3, $4::bigint, $5::uuid[], $6, $7) returning id::text as id`,
-      [channelId, user.id, body.content, body.replyTo ?? null, notify, everyone, gifUrl],
+      `insert into messages(channel_id, author_id, content, reply_to, mentions, mentions_everyone, gif_url, sticker_id)
+       values ($1, $2, $3, $4::bigint, $5::uuid[], $6, $7, $8) returning id::text as id`,
+      [channelId, user.id, body.content, body.replyTo ?? null, notify, everyone, gifUrl, body.stickerId ?? null],
       c
     );
     if (attachmentIds.length) {
@@ -100,7 +104,7 @@ const messageParam = (p: Record<string, string>) => z.string().regex(/^\d+$/, "M
 
 async function messageContext(messageId: string) {
   const m = await one<any>(
-    `select m.id::text as id, m.author_id, m.channel_id, m.content, m.gif_url, m.reply_to, c.server_id, s.is_dm,
+    `select m.id::text as id, m.author_id, m.channel_id, m.content, m.gif_url, m.sticker_id, m.reply_to, c.server_id, s.is_dm,
             (select count(*) from attachments a where a.message_id = m.id)::int as files,
             exists(select 1 from polls p where p.message_id = m.id) as is_poll
        from messages m join channels c on c.id = m.channel_id join servers s on s.id = c.server_id where m.id = $1::bigint`,
@@ -119,8 +123,9 @@ messagesRouter.patch("/messages/:messageId", h(async (req, res) => {
   if (m.author_id !== user.id) throw new HttpError(403, "You can only edit your own messages.");
   if (m.is_poll) throw new HttpError(400, "Polls can't be edited.");
   await assertCanWrite(m.server_id, user.id);
-  const { content } = z.object({ content: z.string().trim().max(2000) }).parse(req.body);
-  if (!content && !m.files && !m.gif_url) throw new HttpError(400, "A message can't be empty. Delete it instead.");
+  const parsed = z.object({ content: z.string().trim().max(2000) }).parse(req.body);
+  const content = await cleanCustomEmoji(m.server_id, parsed.content);
+  if (!content && !m.files && !m.gif_url && !m.sticker_id) throw new HttpError(400, "A message can't be empty. Delete it instead.");
   if (content !== m.content) {
     const { ids, everyone } = await resolveMentions(m.server_id, content, me.perms.has("mention_everyone"));
     let replyAuthor: string | null = null;
@@ -239,14 +244,22 @@ async function reactionContext(messageId: string, userId: string) {
 }
 const reactionParams = (p: Record<string, string>) => ({
   messageId: z.string().regex(/^\d+$/, "Message not found.").parse(p.messageId),
-  emoji: z.string().regex(EMOJI_RE, "That isn't an emoji.").parse(p.emoji),
+  emoji: z.string().refine((e) => EMOJI_RE.test(e) || CUSTOM_REACTION_RE.test(e), "That isn't an emoji.").parse(p.emoji),
 });
+const CUSTOM_REACTION_RE = /^<:[A-Za-z0-9_]{2,32}:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}>$/;
+/** Custom emoji can only be used as reactions in the server they belong to. */
+async function assertEmojiUsable(serverId: string, emoji: string) {
+  if (!CUSTOM_REACTION_RE.test(emoji)) return;
+  const id = emoji.split(":")[2].slice(0, -1);
+  if (!(await one(`select 1 from server_emojis where id = $1 and server_id = $2`, [id, serverId]))) throw new HttpError(400, "That emoji isn't available in this server.");
+}
 
 messagesRouter.put("/messages/:messageId/reactions/:emoji", h(async (req, res) => {
   const user = req.user!;
   rateLimit(`react:${user.id}`, 30, 10_000);
   const { messageId, emoji } = reactionParams(req.params);
   const m = await reactionContext(messageId, user.id);
+  await assertEmojiUsable(m.server_id, emoji);
   const stats = await one<{ n: number; has: boolean }>(
     `select count(distinct emoji)::int as n, coalesce(bool_or(emoji = $2), false) as has from reactions where message_id = $1::bigint`,
     [messageId, emoji]

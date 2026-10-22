@@ -99,6 +99,34 @@ downloadsRouter.get("/download/:name", h(async (req: Request, res: Response) => 
   toNodeStream(upstream.body as ReadableStream<Uint8Array>).on("error", () => res.destroy()).pipe(res);
 }));
 
+/**
+ * Files the desktop app's updater reads (electron-updater, "generic" provider): latest.yml, latest-mac.yml and
+ * latest-linux.yml describe the newest version, and the installers they name sit next to them. They come from the same
+ * "desktop/" folder as the downloads. The app has no sign-in when it asks, so only these file types and plain names are served.
+ */
+const UPDATE_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,120}\.(yml|exe|dmg|zip|AppImage|blockmap)$/;
+downloadsRouter.get("/desktop-updates/:name", h(async (req: Request, res: Response) => {
+  const name = req.params.name;
+  if (!UPDATE_NAME.test(name) || name.includes("..")) throw new HttpError(404, "Not found.");
+  const isYml = name.endsWith(".yml");
+  res.setHeader("Content-Type", isYml ? "text/yaml; charset=utf-8" : "application/octet-stream");
+  res.setHeader("Cache-Control", isYml ? "no-cache" : "public, max-age=3600");
+  if (!r2Enabled) {
+    const p = path.join(dir, name);
+    if (!fs.existsSync(p)) throw new HttpError(404, "Not found.");
+    res.setHeader("Content-Length", String(fs.statSync(p).size));
+    return void fs.createReadStream(p).pipe(res);
+  }
+  const upstream = await getObject(`desktop/${name}`);
+  if (!upstream.ok || !upstream.body) {
+    await upstream.arrayBuffer().catch(() => {});
+    throw new HttpError(404, "Not found.");
+  }
+  const len = upstream.headers.get("content-length");
+  if (len) res.setHeader("Content-Length", len);
+  toNodeStream(upstream.body as ReadableStream<Uint8Array>).on("error", () => res.destroy()).pipe(res);
+}));
+
 // ---------- the download page (plain HTML, no scripts) ----------
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
 const mb = (n: number) => `${Math.max(1, Math.round(n / 1048576))} MB`;

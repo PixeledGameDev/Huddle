@@ -13,6 +13,7 @@ import { messagesRouter } from "./messages";
 import { ADMIN_TOP, OWNER_TOP, assertNotDm, requireMember, requirePerm, timeoutUntil, type Role } from "./perms";
 import { deletionRouter } from "./deletion";
 import { dmsRouter } from "./dms";
+import { emojisRouter } from "./emojis";
 import { friendsRouter } from "./friends";
 import { pollsRouter } from "./polls";
 import { rolesRouter } from "./roles";
@@ -21,7 +22,7 @@ import { emitServer, isOnline, joinHuddleAdmins, joinServerRooms, leaveServerRoo
 import { listOpenVotes, voteRouter } from "./votes";
 
 export const api = Router();
-api.use(voteRouter, messagesRouter, pollsRouter, profilesRouter, adminRouter, gifsRouter, embedsRouter, dmsRouter, huddleAdminRouter, deletionRouter, securityRouter, suggestionsRouter, rolesRouter, friendsRouter);
+api.use(voteRouter, messagesRouter, pollsRouter, profilesRouter, adminRouter, gifsRouter, embedsRouter, dmsRouter, huddleAdminRouter, deletionRouter, securityRouter, suggestionsRouter, rolesRouter, friendsRouter, emojisRouter);
 
 const settingsColumns = {
   voteEnabled: "vote_enabled",
@@ -60,6 +61,8 @@ async function serverDetail(serverId: string, userId: string) {
   const assigned = await q<{ user_id: string; role_id: string }>(`select user_id, role_id from member_roles where server_id = $1`, [serverId]);
   const positionOf = new Map<string, number>(roles.map((r) => [r.id as string, r.position as number]));
   const roleIdsOf = (userId: string) => assigned.filter((a) => a.user_id === userId).map((a) => a.role_id).sort((a, b) => (positionOf.get(b) ?? 0) - (positionOf.get(a) ?? 0));
+  const emojis = await q<{ id: string; name: string; mime: string }>(`select id, name, mime from server_emojis where server_id = $1 order by lower(name)`, [serverId]);
+  const stickers = await q<{ id: string; name: string }>(`select id, name from server_stickers where server_id = $1 order by lower(name)`, [serverId]);
   const legacyAdminCount = me.role === "owner" ? (await one<{ n: number }>(`select count(*)::int as n from memberships where server_id = $1 and role = 'admin'`, [serverId]))!.n : 0;
   const members = (
     await q<any>(
@@ -85,6 +88,8 @@ async function serverDetail(serverId: string, userId: string) {
     isDm: s.is_dm as boolean,
     ownerId: s.owner_id,
     myRole: me.role,
+    emojis: emojis.map((e) => ({ id: e.id, name: e.name })),
+    stickers: stickers.map((s) => ({ id: s.id, name: s.name })),
     myPermissions: [...me.perms],
     myTop: me.top,
     legacyAdminCount,
@@ -219,7 +224,7 @@ const AUDIT_CATEGORIES: Record<string, string[]> = {
   channels: ["channel."],
   members: ["member."],
   messages: ["message."],
-  settings: ["settings.", "server."],
+  settings: ["settings.", "server.", "emoji.", "sticker."],
 };
 
 api.get("/servers/:serverId/audit", h(async (req, res) => {

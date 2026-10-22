@@ -121,6 +121,7 @@ export default function MessageRow(p: Props) {
           )}
           {inviteCodesIn(m.content).map((code) => <InviteEmbed key={code} code={code} onJoin={p.onJoinInvite} onOpen={p.onOpenServer} />)}
           {!p.editing && embedUrls.map((url) => <LinkEmbed key={url} url={url} onLayout={p.onImageLoad} />)}
+          {m.sticker && <img className="sticker" src={`/api/stickers/${m.sticker.id}`} alt={m.sticker.name} title={m.sticker.name} loading="lazy" onLoad={p.onImageLoad} />}
           {m.gif && <img className="gif" src={m.gif} alt="GIF" loading="lazy" onLoad={p.onImageLoad} />}
           {m.attachments.length > 0 && (
             <div className="atts">

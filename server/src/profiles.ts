@@ -130,7 +130,7 @@ profilesRouter.patch("/me/profile", h(async (req, res) => {
 const IMAGE_LIMIT = 1024 * 1024;
 const imageBody = express.raw({ type: "application/octet-stream", limit: IMAGE_LIMIT });
 
-function readImage(body: unknown) {
+export function readImage(body: unknown) {
   if (!Buffer.isBuffer(body) || body.length === 0) throw new HttpError(400, "That image is empty.");
   const mime = sniffImage(body);
   if (!mime) throw new HttpError(400, "Use a PNG, JPEG, GIF, or WebP image.");

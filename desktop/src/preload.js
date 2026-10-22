@@ -10,6 +10,15 @@ contextBridge.exposeInMainWorld("huddleDesktop", {
   version,
   notify: (n) => ipcRenderer.send("notify", n),
   setBadge: (count, iconDataUrl) => ipcRenderer.send("badge", { count, iconDataUrl }),
+  // Automatic updates (see update.js). The page may only read the state, ask for a check, or restart to install.
+  getUpdateState: () => ipcRenderer.invoke("update:state"),
+  onUpdateState: (cb) => {
+    const handler = (_event, state) => cb(state);
+    ipcRenderer.on("update:state", handler);
+    return () => ipcRenderer.removeListener("update:state", handler);
+  },
+  checkForUpdates: () => ipcRenderer.invoke("update:check"),
+  installUpdate: () => ipcRenderer.send("update:install"),
   onNotificationClick: (cb) => {
     const handler = (_event, target) => cb(target);
     ipcRenderer.on("notification-click", handler);

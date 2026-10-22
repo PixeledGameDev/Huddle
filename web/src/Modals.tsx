@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { api, uploadRaw } from "./api";
 import { can, isOwner } from "./permissions";
+import { EmojiTab } from "./EmojiSettings";
 import { RolesTab } from "./Roles";
 import type { BanEntry, DeletedMessage, ServerDetail, ServerSummary, Settings } from "./types";
 import { dateTimeOf, extractInviteCode, fmtDuration, fmtSize, hue, squareImage } from "./util";
@@ -96,17 +97,24 @@ const AUDIT_TEXT: Record<string, (e: any) => string> = {
   "channel.rename": (e) => `${e.actor} renamed #${e.detail?.from} to #${e.detail?.to}`,
   "channel.delete": (e) => `${e.actor} deleted #${e.detail?.name}`,
   "server.icon": (e) => (e.detail?.removed ? `${e.actor} removed the server icon` : `${e.actor} changed the server icon`),
+  "emoji.add": (e) => `${e.actor} added the emoji :${e.detail?.name}:`,
+  "emoji.rename": (e) => `${e.actor} renamed the emoji :${e.detail?.from}: to :${e.detail?.to}:`,
+  "emoji.delete": (e) => `${e.actor} deleted the emoji :${e.detail?.name}:`,
+  "sticker.add": (e) => `${e.actor} added the sticker ${e.detail?.name}`,
+  "sticker.rename": (e) => `${e.actor} renamed the sticker ${e.detail?.from} to ${e.detail?.to}`,
+  "sticker.delete": (e) => `${e.actor} deleted the sticker ${e.detail?.name}`,
   "member.join": (e) => `${e.actor} joined the server`,
   "member.leave": (e) => `${e.actor} left the server`,
   "message.delete": (e) => `${e.actor} deleted a message by ${e.target}`,
 };
 
-type Tab = "general" | "roles" | "bans" | "deleted" | "activity" | "danger";
+type Tab = "general" | "roles" | "emojis" | "bans" | "deleted" | "activity" | "danger";
 
 export function SettingsModal({ server, onClose, onSaved, onDeleted, onError }: { server: ServerDetail; onClose: () => void; onSaved: () => void; onDeleted: () => void; onError: (e: unknown) => void }) {
   const tabs: [Tab, string][] = [];
   if (can(server, "manage_server")) tabs.push(["general", "General"]);
   if (can(server, "manage_roles") || server.roles.length > 0) tabs.push(["roles", "Roles"]);
+  if (can(server, "manage_emojis")) tabs.push(["emojis", "Emoji & stickers"]);
   if (can(server, "ban_members")) tabs.push(["bans", "Bans"]);
   if (can(server, "manage_messages")) tabs.push(["deleted", "Deleted messages"]);
   if (can(server, "view_audit_log")) tabs.push(["activity", "Activity"]);
@@ -215,6 +223,8 @@ export function SettingsModal({ server, onClose, onSaved, onDeleted, onError }: 
       )}
 
       {tab === "roles" && <RolesTab server={server} onError={onError} />}
+
+      {tab === "emojis" && <EmojiTab server={server} onError={onError} />}
 
       {tab === "bans" && (
         <ul className="rows">

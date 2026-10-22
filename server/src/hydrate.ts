@@ -49,7 +49,8 @@ export async function pollDtos(pollIds: string[], viewerId: string | null): Prom
 
 export const messageSelect = `select m.id::text as id, m.channel_id, c.server_id, m.author_id,
          coalesce(u.display_name, u.username) as author_name, u.avatar_version as author_avatar,
-         m.content, m.created_at, m.edited_at, m.reply_to::text as reply_to, m.mentions, m.mentions_everyone, m.gif_url, m.status_reply
+         m.content, m.created_at, m.edited_at, m.reply_to::text as reply_to, m.mentions, m.mentions_everyone, m.gif_url, m.status_reply, m.sticker_id::text as sticker_id,
+         (select name from server_stickers st where st.id = m.sticker_id) as sticker_name
     from messages m join users u on u.id = m.author_id join channels c on c.id = m.channel_id`;
 
 /** Attach files, reactions, reply previews, and polls to a batch of message rows (a fixed number of queries). */
@@ -91,6 +92,7 @@ export async function hydrate(rows: any[], viewerId: string | null) {
       mentions: (r.mentions ?? []) as string[],
       mentionsEveryone: !!r.mentions_everyone,
       gif: (r.gif_url ?? null) as string | null,
+      sticker: r.sticker_id ? { id: r.sticker_id as string, name: r.sticker_name as string } : null,
       statusReply: (r.status_reply ?? null) as string | null,
       replyTo: reply ? { id: reply.id as string, authorId: reply.author_id as string, authorName: reply.author_name as string, snippet: reply.snippet as string, hasExtra: !!reply.has_extra } : null,
       attachments: atts.filter((a) => a.message_id === r.id).map((a) => ({ id: a.id as string, name: a.name as string, mime: a.mime as string, size: a.size as number })),

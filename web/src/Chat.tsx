@@ -19,7 +19,7 @@ interface Props {
   gifsEnabled: boolean;
   replyTo: Message | null;
   onReply: (m: Message | null) => void;
-  onSend: (content: string, attachmentIds: string[], extra: { replyTo?: string; gifUrl?: string }) => Promise<boolean>;
+  onSend: (content: string, attachmentIds: string[], extra: { replyTo?: string; gifUrl?: string; stickerId?: string }) => Promise<boolean>;
   onUpload: (file: File) => Promise<Attachment>;
   onReact: (m: Message, emoji: string) => void;
   onEdit: (m: Message, content: string) => Promise<boolean>;

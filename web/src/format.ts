@@ -74,6 +74,9 @@ function matchUrl(src: string, at: number): string | null {
   return /^https?:\/\/[^\s/?#]/i.test(url) ? url : null;
 }
 
+/** Custom server emoji are written <:name:id>. */
+export const CUSTOM_EMOJI = /^<:([A-Za-z0-9_]{2,32}):([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})>/;
+
 export function parseFormat(src: string): FNode[] {
   const out: FNode[] = [];
   let buf = "";
@@ -90,6 +93,15 @@ export function parseFormat(src: string): FNode[] {
         flush();
         out.push({ t: "url", v: url });
         i += url.length;
+        continue;
+      }
+    }
+    if (ch === "<" && src[i + 1] === ":") {
+      const m = CUSTOM_EMOJI.exec(src.slice(i, i + 80));
+      if (m) {
+        flush();
+        out.push({ t: "emoji", v: m[0], name: m[1] });
+        i += m[0].length;
         continue;
       }
     }
@@ -142,7 +154,7 @@ export function parseFormat(src: string): FNode[] {
  */
 export function plainPreview(text: string): string {
   const closed = ((text.match(/\|\|/g) ?? []).length) % 2 === 1 ? `${text}||` : text;
-  const flat = (nodes: FNode[]): string => nodes.map((n) => (n.t === "text" || n.t === "url" || n.t === "emoji" ? n.v : n.t === "s" ? "[spoiler]" : flat(n.c))).join("");
+  const flat = (nodes: FNode[]): string => nodes.map((n) => (n.t === "text" || n.t === "url" ? n.v : n.t === "emoji" ? (n.v.startsWith("<:") ? `:${n.name}:` : n.v) : n.t === "s" ? "[spoiler]" : flat(n.c))).join("");
   return flat(parseFormat(closed)).replace(/\s+/g, " ").trim();
 }
 

@@ -53,6 +53,25 @@ the files from the finished run (or push a tag such as `desktop-v1.0.0`).
 macOS you'll need to right-click the app → Open the first time. Removing those warnings needs paid code-signing
 certificates (and, for macOS, an Apple Developer account); electron-builder supports both once you have them.
 
+## Automatic updates and the splash screen
+
+Installed copies update themselves. When you open the app it shows a splash screen ("Checking for updates…"), looks at
+`<your server>/desktop-updates`, and if a newer version is there it downloads it (with a progress bar) and installs it
+before Huddle opens. While the app is running it checks again every few hours; a finished download shows a *Restart now*
+banner in Huddle plus a notification, and installs by itself the next time you quit. **Huddle → Check for updates…** (and
+the tray menu) checks on demand. If your server can't be reached the app just opens as normal.
+
+To ship an update: bump `version` in `package.json` (or push a tag such as `desktop-v1.2.0`, which the workflow uses as the
+version) and run the **Desktop app** workflow. It publishes the installers *and* the update files (`latest*.yml`, `.zip`)
+to the same R2 `desktop/` folder, and your server hands them to the apps. Notes:
+
+- **Windows** (installer): updates work with unsigned builds.
+- **Linux**: the **AppImage** updates itself; a `.deb` doesn't (install the newer `.deb` from `/download`).
+- **macOS**: automatic updates only work once the app is **code-signed** (an Apple rule). Unsigned Macs keep working but
+  need the new `.dmg` from `/download`.
+- Apps older than 1.1 don't have the updater; they need one manual reinstall from `/download`, after which they update themselves.
+- Set `HUDDLE_NO_AUTO_UPDATE=1` to turn automatic updates off. `npm start` never updates.
+
 ## What it does
 
 - **Notifications** for direct messages, @mentions and @everyone, with a chime. They appear only when Huddle isn't the

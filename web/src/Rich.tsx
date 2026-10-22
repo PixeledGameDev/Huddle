@@ -1,6 +1,6 @@
 import { Fragment, useMemo, useState, type ReactNode } from "react";
 import { parse } from "@twemoji/parser";
-import { parseFormat, type FNode } from "./format";
+import { parseFormat, type FNode, CUSTOM_EMOJI } from "./format";
 import type { Member } from "./types";
 import { INVITE_URL_RE, isOwnInviteUrl, nameOfUser } from "./util";
 
@@ -16,6 +16,11 @@ function twemojiFile(emoji: string): string | null {
 /** Twemoji image, served by this app. Falls back to the native glyph for emoji newer than the bundled set. */
 export function Emoji({ emoji, big }: { emoji: string; big?: boolean }) {
   const [bad, setBad] = useState(false);
+  const custom = CUSTOM_EMOJI.exec(emoji);
+  if (custom) {
+    if (bad) return <span className="emoji-native">:{custom[1]}:</span>;
+    return <img className={big ? "emoji custom-emoji big" : "emoji custom-emoji"} src={`/api/emojis/${custom[2]}`} alt={`:${custom[1]}:`} title={`:${custom[1]}:`} draggable={false} loading="lazy" onError={() => setBad(true)} />;
+  }
   const file = twemojiFile(emoji);
   if (!file || bad) return <span className={big ? "emoji-native big" : "emoji-native"}>{emoji}</span>;
   return <img className={big ? "emoji big" : "emoji"} src={`/twemoji/${file}`} alt={emoji} draggable={false} loading="lazy" onError={() => setBad(true)} />;

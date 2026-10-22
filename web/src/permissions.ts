@@ -10,6 +10,7 @@ export const PERMISSION_INFO: { key: Permission; label: string; help: string }[]
   { key: "timeout_members", label: "Time out members", help: "Stop people from chatting for a while." },
   { key: "mention_everyone", label: "Mention @everyone", help: "Notify every member at once." },
   { key: "view_audit_log", label: "View activity log", help: "See the server's moderation and settings history." },
+  { key: "manage_emojis", label: "Manage emoji and stickers", help: "Add, rename and delete the server's custom emoji and stickers." },
 ];
 
 export const can = (server: ServerDetail | null | undefined, perm: Permission) => !!server && server.myPermissions.includes(perm);

@@ -30,8 +30,13 @@ jobs:
           node -e "require('fs').writeFileSync('app.config.json', JSON.stringify({ defaultUrl: process.env.HUDDLE_URL }, null, 2))"
         env:
           HUDDLE_URL: ${{ vars.HUDDLE_URL }}
+      - name: Use the version from the tag (desktop-v1.2.0 becomes 1.2.0)
+        if: ${{ startsWith(github.ref, 'refs/tags/desktop-v') }}
+        shell: bash
+        run: npm pkg set version="${GITHUB_REF_NAME#desktop-v}"
       - run: npm install
       - run: npm test
+      # The generic update feed is what lets installed apps update themselves; the app swaps in its own server's address when it runs.
       - run: npx electron-builder --publish never
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: "false" # unsigned builds; see desktop/README.md
@@ -44,6 +49,9 @@ jobs:
             desktop/dist/*.dmg
             desktop/dist/*.AppImage
             desktop/dist/*.deb
+            desktop/dist/*.zip
+            desktop/dist/*.blockmap
+            desktop/dist/latest*.yml
 
   publish:
     needs: build

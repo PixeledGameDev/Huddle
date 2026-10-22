@@ -14,11 +14,12 @@ export const PERMISSIONS = [
   "timeout_members",
   "mention_everyone",
   "view_audit_log",
+  "manage_emojis",
 ] as const;
 export type Permission = (typeof PERMISSIONS)[number];
 const isPermission = (p: string): p is Permission => (PERMISSIONS as readonly string[]).includes(p);
 /** Anyone holding one of these counts as staff: they can't be voted on. */
-export const STAFF_PERMISSIONS: Permission[] = PERMISSIONS.filter((p) => p !== "mention_everyone" && p !== "view_audit_log");
+export const STAFF_PERMISSIONS: Permission[] = PERMISSIONS.filter((p) => p !== "mention_everyone" && p !== "view_audit_log" && p !== "manage_emojis");
 
 /** Rank used to decide who can act on whom. Higher outranks lower; role positions sit far below both. */
 export const OWNER_TOP = 1_000_000_000;

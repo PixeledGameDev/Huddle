@@ -5,6 +5,7 @@ import type { Attachment, Channel, Member, Message, User } from "./types";
 import { plainPreview } from "./format";
 import { Emoji } from "./Rich";
 import { searchShortcodes } from "./shortcodes";
+import { useServerAssets } from "./ServerAssets";
 import { fmtSize, looksLikeVideo, MAX_ATTACHMENTS, MAX_FILE_BYTES, MAX_VIDEO_BYTES, nameOfUser, timeOf } from "./util";
 
 export interface ComposerHandle { addFiles: (files: FileList | File[]) => void }
@@ -19,7 +20,7 @@ interface Props {
   replyTo: Message | null;
   gifsEnabled: boolean;
   onCancelReply: () => void;
-  onSend: (content: string, attachmentIds: string[], extra: { replyTo?: string; gifUrl?: string }) => Promise<boolean>;
+  onSend: (content: string, attachmentIds: string[], extra: { replyTo?: string; gifUrl?: string; stickerId?: string }) => Promise<boolean>;
   onUpload: (file: File) => Promise<Attachment>;
   onTyping: () => void;
   onOpenPoll: () => void;
@@ -29,14 +30,17 @@ interface Props {
 interface Pending { key: string; name: string; size: number; status: "uploading" | "ready" | "error"; error?: string; attachment?: Attachment }
 interface Suggestion { key: string; username: string; label: string; emoji?: string }
 
+const STICKER_PANEL = "sticker";
+
 const Composer = forwardRef<ComposerHandle, Props>(function Composer(props, ref) {
+  const assets = useServerAssets();
   const { channel, me, members, canEveryone, timedOut, timeoutUntil, replyTo, gifsEnabled, onCancelReply, onSend, onUpload, onTyping, onOpenPoll, placeholder } = props;
   const [text, setText] = useState("");
   const [caret, setCaret] = useState(0);
   const [sel, setSel] = useState(0);
   const [dismissed, setDismissed] = useState<string | null>(null);
   const [pending, setPending] = useState<Pending[]>([]);
-  const [panel, setPanel] = useState<"emoji" | "gif" | null>(null);
+  const [panel, setPanel] = useState<"emoji" | "gif" | "sticker" | null>(null);
   const taRef = useRef<HTMLTextAreaElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const pendingRef = useRef<Pending[]>([]);
@@ -102,10 +106,12 @@ const Composer = forwardRef<ComposerHandle, Props>(function Composer(props, ref)
       return list;
     }
     if (emojiQuery && dismissed !== `:${emojiQuery.start}:${emojiQuery.query}`) {
-      return searchShortcodes(emojiQuery.query).map((e) => ({ key: `emoji:${e.name}`, username: "", label: `:${e.name}:`, emoji: e.glyph }));
+      const ql = emojiQuery.query.toLowerCase();
+      const custom = assets.emojis.filter((e) => e.name.toLowerCase().includes(ql)).slice(0, 5).map((e) => ({ key: `custom:${e.id}`, username: "", label: `:${e.name}:`, emoji: `<:${e.name}:${e.id}>` }));
+      return [...custom, ...searchShortcodes(emojiQuery.query).map((e) => ({ key: `emoji:${e.name}`, username: "", label: `:${e.name}:`, emoji: e.glyph }))].slice(0, 8);
     }
     return [];
-  }, [mentionQuery, emojiQuery, dismissed, members, me.id, canEveryone]);
+  }, [mentionQuery, emojiQuery, dismissed, members, me.id, canEveryone, assets.emojis]);
 
   useEffect(() => setSel(0), [mentionQuery?.query, emojiQuery?.query]);
 
@@ -258,6 +264,20 @@ const Composer = forwardRef<ComposerHandle, Props>(function Composer(props, ref)
           </div>
         )}
         <div className="tool-wrap" onClick={(e) => e.stopPropagation()}>
+          {assets.stickers.length > 0 && (
+            <span className="tool-wrap" onClick={(e) => e.stopPropagation()}>
+              <button className="tool" aria-label="Send a sticker" title="Stickers" aria-expanded={panel === STICKER_PANEL} onClick={() => setPanel(panel === STICKER_PANEL ? null : STICKER_PANEL)}>🏷</button>
+              {panel === STICKER_PANEL && (
+                <div className="picker up sticker-picker" role="menu">
+                  {assets.stickers.map((s) => (
+                    <button key={s.id} role="menuitem" title={s.name} aria-label={s.name} onClick={async () => { setPanel(null); await onSend("", [], { stickerId: s.id, replyTo: replyTo?.id }); }}>
+                      <img src={`/api/stickers/${s.id}`} alt={s.name} loading="lazy" />
+                    </button>
+                  ))}
+                </div>
+              )}
+            </span>
+          )}
           <button className="tool" aria-label="Add emoji" aria-expanded={panel === "emoji"} onClick={() => setPanel(panel === "emoji" ? null : "emoji")}>☺</button>
           {panel === "emoji" && <EmojiPicker className="up" onPick={insertEmoji} />}
         </div>

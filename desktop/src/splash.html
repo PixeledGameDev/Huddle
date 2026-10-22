@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'self'; img-src 'self'" />
+  <title>Huddle</title>
+  <style>
+    html, body { margin: 0; height: 100%; overflow: hidden; user-select: none; -webkit-user-select: none; }
+    body {
+      display: grid; place-items: center; text-align: center; color: #e6e9f2;
+      font: 14px "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+      background: radial-gradient(120% 90% at 50% 0%, #2a3560 0%, #1a2036 55%, #11141f 100%);
+      -webkit-app-region: drag;
+    }
+    main { display: grid; gap: 14px; justify-items: center; padding: 0 32px; }
+    img { width: 88px; height: 88px; border-radius: 22px; box-shadow: 0 10px 30px rgba(0, 0, 0, .45); animation: pop .5s ease-out both; }
+    h1 { margin: 4px 0 0; font-size: 26px; letter-spacing: .02em; }
+    #status { margin: 0; min-height: 1.3em; color: #9aa3bd; }
+    .bar { width: 220px; height: 5px; border-radius: 3px; background: rgba(255, 255, 255, .12); overflow: hidden; }
+    .bar > i { display: block; height: 100%; width: 40%; border-radius: 3px; background: #5d7af0; animation: slide 1.2s ease-in-out infinite; }
+    .bar.known > i { animation: none; width: 0; transition: width .25s ease; }
+    @keyframes slide { 0% { transform: translateX(-120%); } 100% { transform: translateX(300%); } }
+    @keyframes pop { from { opacity: 0; transform: scale(.85); } to { opacity: 1; transform: none; } }
+    @media (prefers-reduced-motion: reduce) { img { animation: none; } .bar > i { animation: none; width: 100%; opacity: .6; } }
+  </style>
+</head>
+<body>
+  <main>
+    <img src="../build/icon.png" alt="" />
+    <h1>Huddle</h1>
+    <p id="status" role="status" aria-live="polite">Starting…</p>
+    <div class="bar" id="bar" aria-hidden="true"><i id="fill"></i></div>
+  </main>
+  <script src="splash.js"></script>
+</body>
+</html>

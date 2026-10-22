@@ -1,8 +1,9 @@
-const { app, BrowserWindow, Menu, Tray, Notification, ipcMain, nativeImage, net, screen, session, shell } = require("electron");
+const { app, BrowserWindow, Menu, Tray, Notification, dialog, ipcMain, nativeImage, net, screen, session, shell } = require("electron");
 const fs = require("node:fs");
 const path = require("node:path");
 const { fileURLToPath } = require("node:url");
 const { normalizeServerUrl, sameOrigin, isSafeExternal } = require("./url");
+const { updateFeedUrl, canAutoUpdate, createUpdater } = require("./update");
 
 /**
  * Huddle desktop: a window onto your Huddle server, plus the desktop extras (system notifications, an unread badge,
@@ -52,6 +53,125 @@ function serverUrl() {
   return normalizeServerUrl(process.env.HUDDLE_URL) ?? normalizeServerUrl(configured);
 }
 
+// ---------- splash screen ----------
+const SPLASH_PAGE = path.join(__dirname, "splash.html");
+const SPLASH_MIN_MS = 1200; // long enough to read, short enough not to feel slow
+let splash = null;
+let splashShownAt = 0;
+let splashStatus = { text: "Starting…" };
+
+function showSplash() {
+  splash = new BrowserWindow({
+    width: 380,
+    height: 340,
+    frame: false,
+    resizable: false,
+    maximizable: false,
+    minimizable: false,
+    fullscreenable: false,
+    show: false,
+    center: true,
+    skipTaskbar: true,
+    title: "Huddle",
+    backgroundColor: "#1a2036",
+    icon: fs.existsSync(ICON) ? ICON : undefined,
+    webPreferences: { preload: path.join(__dirname, "splash-preload.js"), contextIsolation: true, sandbox: true, nodeIntegration: false },
+  });
+  splash.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
+  splash.webContents.on("will-navigate", (e) => e.preventDefault());
+  splash.once("ready-to-show", () => {
+    splashShownAt = Date.now();
+    splash?.show();
+  });
+  splash.on("closed", () => { splash = null; });
+  void splash.loadFile(SPLASH_PAGE);
+}
+function setSplash(text, percent) {
+  splashStatus = { text, percent };
+  splash?.webContents.send("splash:status", splashStatus);
+}
+ipcMain.on("splash:ready", (e) => {
+  if (splash && e.sender === splash.webContents) e.sender.send("splash:status", splashStatus);
+});
+/** Closes the splash once it has been on screen long enough. */
+function closeSplash() {
+  if (!splash) return;
+  const wait = Math.max(0, SPLASH_MIN_MS - (Date.now() - splashShownAt));
+  setTimeout(() => { if (splash && !splash.isDestroyed()) splash.close(); }, splashShownAt ? wait : 0);
+}
+
+// ---------- automatic updates ----------
+let updater = null;
+const UPDATE_CHECK_EVERY_MS = 4 * 60 * 60 * 1000;
+
+function initUpdater() {
+  if (!canAutoUpdate({ isPackaged: app.isPackaged, platform: process.platform, env: process.env })) return;
+  try {
+    const { autoUpdater } = require("electron-updater");
+    updater = createUpdater({
+      autoUpdater,
+      log: (...a) => console.error(...a),
+      onState: (state) => {
+        buildMenus();
+        for (const w of BrowserWindow.getAllWindows()) if (w !== splash && !w.isDestroyed()) w.webContents.send("update:state", state);
+        if (state.status === "ready") announceUpdate(state);
+      },
+    });
+  } catch (e) {
+    console.error("Automatic updates are unavailable", e);
+  }
+}
+const feedUrl = () => updateFeedUrl(serverUrl());
+let announcedVersion = null;
+/** Tells the person (once per version) that an update is waiting, even if the window is closed to the tray. */
+function announceUpdate(state) {
+  if (announcedVersion === state.version || !Notification.isSupported()) return;
+  announcedVersion = state.version;
+  const note = new Notification({ title: "Huddle update ready", body: `Version ${state.version} is downloaded. Click to restart and install it.`, silent: true, icon: fs.existsSync(ICON) ? ICON : undefined });
+  note.on("click", installUpdate);
+  note.show();
+}
+function installUpdate() {
+  if (updater?.getState().status !== "ready") return;
+  quitting = true;
+  updater.installNow();
+}
+async function checkNow() {
+  if (!updater) {
+    await dialog.showMessageBox(win ?? undefined, { type: "info", message: "Automatic updates aren't available for this copy of Huddle.", detail: "Installed copies of the app update themselves. Linux .deb users should install the newer .deb from your server's download page." });
+    return;
+  }
+  const state = await updater.check(feedUrl());
+  const current = app.getVersion();
+  if (state.status === "ready") {
+    const r = await dialog.showMessageBox(win ?? undefined, { type: "info", message: `Huddle ${state.version} is ready to install.`, buttons: ["Restart now", "Later"], defaultId: 0, cancelId: 1 });
+    if (r.response === 0) installUpdate();
+  } else if (state.status === "downloading") {
+    await dialog.showMessageBox(win ?? undefined, { type: "info", message: `Downloading Huddle ${state.version}…`, detail: "You'll get a notification when it's ready to install." });
+  } else if (state.status === "error") {
+    await dialog.showMessageBox(win ?? undefined, { type: "warning", message: "Couldn't check for updates.", detail: state.message });
+  } else {
+    await dialog.showMessageBox(win ?? undefined, { type: "info", message: "You're up to date.", detail: `Huddle ${current}` });
+  }
+}
+ipcMain.handle("update:state", (e) => (fromHuddle(e) ? updater?.getState() ?? { status: "unsupported" } : null));
+ipcMain.handle("update:check", async (e) => (fromHuddle(e) && updater ? updater.check(feedUrl()) : null));
+ipcMain.on("update:install", (e) => fromHuddle(e) && installUpdate());
+
+/** Splash step: look for an update before opening Huddle, and install it straight away if there is one. */
+async function startupUpdate() {
+  if (!updater || !feedUrl()) return "none";
+  setSplash("Checking for updates…");
+  const result = await updater.startupCheck(feedUrl(), {
+    onProgress: (s) => setSplash(`Downloading update${s.version ? ` ${s.version}` : ""}…`, s.percent),
+  });
+  if (result !== "ready") return "none";
+  setSplash("Installing update…");
+  await new Promise((r) => setTimeout(r, 600));
+  installUpdate();
+  return "installing";
+}
+
 // ---------- the window ----------
 let win = null;
 let tray = null;
@@ -90,6 +210,7 @@ function createWindow() {
   win.once("ready-to-show", () => {
     if (settings.maximized) win.maximize();
     win.show();
+    closeSplash();
   });
   const remember = () => {
     if (!win || win.isMinimized() || win.isFullScreen()) return;
@@ -192,6 +313,7 @@ ipcMain.handle("setup:save", async (e, input) => {
   settings.serverUrl = url;
   saveSettings();
   loadApp();
+  if (updater) void updater.check(feedUrl());
   return { ok: true };
 });
 ipcMain.on("setup:retry", (e) => fromSetupPage(e) && loadApp());
@@ -241,11 +363,20 @@ function changeServer() {
   showWindow();
   showSetup();
 }
+function updateMenuItems() {
+  const s = updater?.getState();
+  const items = [{ type: "separator" }];
+  if (s?.status === "ready") items.push({ label: `Restart to update to ${s.version}`, click: installUpdate });
+  else if (s?.status === "downloading") items.push({ label: `Downloading update${s.percent ? ` (${s.percent}%)` : ""}…`, enabled: false });
+  else items.push({ label: "Check for updates…", click: () => void checkNow() });
+  return items;
+}
 function buildMenus() {
   const trayItems = [
     { label: "Open Huddle", click: showWindow },
     { label: "Keep running in the tray when closed", type: "checkbox", checked: settings.closeToTray, click: toggleCloseToTray },
     { label: "Change server…", click: changeServer },
+    ...updateMenuItems(),
     { type: "separator" },
     { label: "Quit Huddle", click: () => { quitting = true; app.quit(); } },
   ];
@@ -256,6 +387,7 @@ function buildMenus() {
     submenu: [
       { label: "Change server…", click: changeServer },
       { label: "Keep running in the tray when closed", type: "checkbox", checked: settings.closeToTray, click: toggleCloseToTray },
+      ...updateMenuItems(),
       ...(isMac ? [] : [{ type: "separator" }, { role: "quit" }]),
     ],
   };
@@ -285,9 +417,21 @@ if (!app.requestSingleInstanceLock()) {
     session.defaultSession.setPermissionRequestHandler((_wc, permission, callback) => callback(allowed.has(permission)));
     session.defaultSession.setPermissionCheckHandler((_wc, permission) => allowed.has(permission));
     createTray();
+    initUpdater();
     buildMenus();
-    createWindow();
-    app.on("activate", showWindow);
+    showSplash();
+    setSplash("Starting…");
+    startupUpdate()
+      .catch((e) => { console.error("Startup update check failed", e); return "none"; })
+      .then((outcome) => {
+        if (outcome === "installing") return; // the installer takes over from here
+        setSplash("Opening Huddle…");
+        if (!win) createWindow();
+        app.on("activate", showWindow);
+        if (updater) {
+          setInterval(() => void updater.check(feedUrl()), UPDATE_CHECK_EVERY_MS).unref();
+        }
+      });
   });
   app.on("before-quit", () => { quitting = true; });
   app.on("window-all-closed", () => { if (!isMac) app.quit(); });

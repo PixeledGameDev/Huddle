@@ -349,4 +349,27 @@ create table if not exists user_banners (
 
 -- v23: verified servers (only Huddle Admins can set this)
 alter table servers add column if not exists verified boolean not null default false;
+
+-- v24: server emojis and stickers
+create table if not exists server_emojis (
+  id uuid primary key default gen_random_uuid(),
+  server_id uuid not null references servers(id) on delete cascade,
+  name text not null,
+  mime text not null,
+  data bytea not null,
+  created_by uuid references users(id) on delete set null,
+  created_at timestamptz not null default now()
+);
+create unique index if not exists server_emojis_name on server_emojis(server_id, lower(name));
+create table if not exists server_stickers (
+  id uuid primary key default gen_random_uuid(),
+  server_id uuid not null references servers(id) on delete cascade,
+  name text not null,
+  mime text not null,
+  data bytea not null,
+  created_by uuid references users(id) on delete set null,
+  created_at timestamptz not null default now()
+);
+create unique index if not exists server_stickers_name on server_stickers(server_id, lower(name));
+alter table messages add column if not exists sticker_id uuid references server_stickers(id) on delete set null;
 `;

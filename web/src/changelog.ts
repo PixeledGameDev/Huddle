@@ -11,6 +11,24 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "4.7",
+    date: "2026-10-22",
+    title: "Desktop app: automatic updates and a splash screen",
+    changes: [
+      "The desktop app (1.1 and newer) shows a splash screen while it starts, and checks for updates first: if there is one it downloads and installs it before opening Huddle.",
+      "While it's open it keeps checking, and tells you when an update is ready (Restart now). Huddle → Check for updates… checks on demand.",
+    ],
+  },
+  {
+    version: "4.6",
+    date: "2026-10-22",
+    title: "Server emoji and stickers",
+    changes: [
+      "Servers can have their own emoji (up to 50) and stickers (up to 20). People with the new Manage emoji and stickers permission add them in Settings → Emoji & stickers.",
+      "Use custom emoji in messages (type : and the name) and as reactions. Stickers are sent from the sticker button next to the message box. They only work in the server they belong to.",
+    ],
+  },
+  {
     version: "4.5",
     date: "2026-10-22",
     title: "Verified servers and audit logs",

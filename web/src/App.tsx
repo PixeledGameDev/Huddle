@@ -11,6 +11,8 @@ import DmPanel from "./DmPanel";
 import { HuddleAdminModal } from "./HuddleAdmin";
 import { SuggestionsModal } from "./Suggestions";
 import { Name } from "./Name";
+import { UpdateBanner } from "./UpdateBanner";
+import { ServerAssetsContext } from "./ServerAssets";
 import { VerifiedBadge } from "./Verified";
 import { StatusDot, StatusMenu } from "./Status";
 import { FriendsModal, useFriends } from "./Friends";
@@ -373,10 +375,10 @@ function Main({ me, initialServerId, onUser, onLogout }: { me: User; initialServ
   }, [addMessage, applyReaction, loadMessages, loadServer, onUser, patchMessage, push, refreshDms, removeMessage]);
 
   // ---- actions
-  async function send(content: string, attachmentIds: string[], extra: { replyTo?: string; gifUrl?: string }) {
+  async function send(content: string, attachmentIds: string[], extra: { replyTo?: string; gifUrl?: string; stickerId?: string }) {
     if (!channelId) return false;
     try {
-      const { message } = await api<{ message: Message }>(`/channels/${channelId}/messages`, "POST", { content, attachmentIds, replyTo: extra.replyTo, gifUrl: extra.gifUrl });
+      const { message } = await api<{ message: Message }>(`/channels/${channelId}/messages`, "POST", { content, attachmentIds, replyTo: extra.replyTo, gifUrl: extra.gifUrl, stickerId: extra.stickerId });
       addMessage(message);
       setReplyTo(null);
       return true;
@@ -581,6 +583,7 @@ function Main({ me, initialServerId, onUser, onLogout }: { me: User; initialServ
   const dmUnread = dms.reduce((n, d) => n + (unread.servers[d.id] ?? 0), 0);
 
   return (
+    <ServerAssetsContext.Provider value={{ emojis: detail?.emojis ?? [], stickers: detail?.stickers ?? [] }}>
     <div className="app">
       <nav className="rail" aria-label="Servers">
         <button className={inDm ? "srv dm-btn active" : "srv dm-btn"} aria-label="Direct messages" title="Direct messages" onClick={openDms}>
@@ -694,6 +697,7 @@ function Main({ me, initialServerId, onUser, onLogout }: { me: User; initialServ
           </div>
         ) : (
           <>
+            <UpdateBanner />
             {!activeDm && detail && detail.legacyAdminCount > 0 && (
               <div className="notice-bar">
                 <span>{detail.legacyAdminCount} {detail.legacyAdminCount === 1 ? "person here still has" : "people here still have"} the old admin rank. Give them a role so you choose what they can do.</span>
@@ -799,5 +803,6 @@ function Main({ me, initialServerId, onUser, onLogout }: { me: User; initialServ
         {toasts.map((t) => <div key={t.id} className={t.error ? "toast err" : "toast"}>{t.text}</div>)}
       </div>
     </div>
+    </ServerAssetsContext.Provider>
   );
 }
