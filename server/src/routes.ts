@@ -81,6 +81,7 @@ async function serverDetail(serverId: string, userId: string) {
     id: s.id,
     name: s.name,
     iconVersion: s.icon_version as number,
+    verified: s.verified as boolean,
     isDm: s.is_dm as boolean,
     ownerId: s.owner_id,
     myRole: me.role,
@@ -99,7 +100,7 @@ async function serverDetail(serverId: string, userId: string) {
 api.get("/servers", h(async (req, res) => {
   res.json({
     servers: await q(
-      `select s.id, s.name, s.icon_version as "iconVersion" from servers s
+      `select s.id, s.name, s.icon_version as "iconVersion", s.verified from servers s
         where not s.is_dm and (exists (select 1 from memberships m where m.server_id = s.id and m.user_id = $1)
                             or exists (select 1 from users u where u.id = $1 and u.huddle_admin))
         order by s.created_at`,
@@ -136,6 +137,7 @@ api.post("/servers/:serverId/channels", h(async (req, res) => {
   const count = await one<{ n: number }>(`select count(*)::int as n from channels where server_id = $1`, [serverId]);
   if (count!.n >= 50) throw new HttpError(400, "This server has reached the 50 channel limit.");
   const channel = await one(`insert into channels(server_id, name) values ($1, $2) returning id, name`, [serverId, name]);
+  await q(`insert into audit_log(server_id, actor_id, action, detail) values ($1, $2, 'channel.create', $3)`, [serverId, req.user!.id, JSON.stringify({ name })]);
   emitServer(serverId, "channel.create", { serverId, channel });
   res.json({ channel });
 }));
@@ -189,10 +191,11 @@ api.post("/join", h(async (req, res) => {
   if (!inv) throw new HttpError(404, "That invite code isn't valid.");
   const ban = await one(`select 1 from server_bans where server_id = $1 and user_id = $2 and until > now()`, [inv.server_id, user.id]);
   if (ban) throw new HttpError(403, "You're banned from this server.");
-  await q(`insert into memberships(server_id, user_id) values ($1, $2) on conflict do nothing`, [inv.server_id, user.id]);
+  const fresh = await q(`insert into memberships(server_id, user_id) values ($1, $2) on conflict do nothing returning 1`, [inv.server_id, user.id]);
   joinServerRooms(user.id, inv.server_id);
   emitServer(inv.server_id, "member.join", { serverId: inv.server_id, userId: user.id });
-  res.json({ server: await one(`select id, name, icon_version as "iconVersion" from servers where id = $1`, [inv.server_id]) });
+  if (fresh.length) await q(`insert into audit_log(server_id, actor_id, action) values ($1, $2, 'member.join')`, [inv.server_id, user.id]);
+  res.json({ server: await one(`select id, name, icon_version as "iconVersion", verified from servers where id = $1`, [inv.server_id]) });
 }));
 
 api.post("/servers/:serverId/leave", h(async (req, res) => {
@@ -204,18 +207,34 @@ api.post("/servers/:serverId/leave", h(async (req, res) => {
   if (!(await one(`select 1 from memberships where server_id = $1 and user_id = $2`, [serverId, user.id])))
     throw new HttpError(400, "You haven't joined this server.");
   await q(`delete from memberships where server_id = $1 and user_id = $2`, [serverId, user.id]);
+  await q(`insert into audit_log(server_id, actor_id, action) values ($1, $2, 'member.leave')`, [serverId, user.id]);
   leaveServerRooms(user.id, serverId);
   emitServer(serverId, "member.leave", { serverId, userId: user.id });
   res.json({ ok: true });
 }));
 
+const AUDIT_CATEGORIES: Record<string, string[]> = {
+  moderation: ["mod.", "vote."],
+  roles: ["role."],
+  channels: ["channel."],
+  members: ["member."],
+  messages: ["message."],
+  settings: ["settings.", "server."],
+};
+
 api.get("/servers/:serverId/audit", h(async (req, res) => {
   await requirePerm(req.params.serverId, req.user!.id, "view_audit_log");
+  const { before, category } = z.object({ before: z.coerce.number().int().positive().optional(), category: z.enum(["moderation", "roles", "channels", "members", "messages", "settings"]).optional() }).parse(req.query);
+  const prefixes = category ? AUDIT_CATEGORIES[category].map((p) => `${p}%`) : null;
   const rows = await q<any>(
     `select a.id, a.action, a.detail, a.created_at, actor.username as actor, target.username as target
        from audit_log a left join users actor on actor.id = a.actor_id left join users target on target.id = a.target_id
-      where a.server_id = $1 order by a.id desc limit 50`,
-    [req.params.serverId]
+      where a.server_id = $1 and ($2::bigint is null or a.id < $2::bigint) and ($3::text[] is null or a.action like any($3::text[]))
+      order by a.id desc limit 51`,
+    [req.params.serverId, before ?? null, prefixes]
   );
-  res.json({ entries: rows.map((r) => ({ id: r.id, action: r.action, detail: r.detail, createdAt: r.created_at, actor: r.actor, target: r.target })) });
+  res.json({
+    entries: rows.slice(0, 50).map((r) => ({ id: r.id, action: r.action, detail: r.detail, createdAt: r.created_at, actor: r.actor, target: r.target })),
+    hasMore: rows.length > 50,
+  });
 }));

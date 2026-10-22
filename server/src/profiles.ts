@@ -73,7 +73,7 @@ profilesRouter.get("/users/:userId/profile", h(async (req, res) => {
   if (userId !== me) {
     const blockedEither = !!(await one(`select 1 from user_blocks where (blocker = $1 and blocked = $2) or (blocker = $2 and blocked = $1)`, [me, userId]));
     const mutualServers = await q<any>(
-      `select s.id, s.name, s.icon_version from servers s
+      `select s.id, s.name, s.icon_version, s.verified from servers s
          join memberships a on a.server_id = s.id and a.user_id = $1 join memberships b on b.server_id = s.id and b.user_id = $2
         where not s.is_dm order by s.name limit 50`,
       [me, userId]
@@ -93,7 +93,7 @@ profilesRouter.get("/users/:userId/profile", h(async (req, res) => {
     extra = {
       friendship: await friendshipState(me, userId),
       canMessage,
-      mutualServers: mutualServers.map((s) => ({ id: s.id, name: s.name, iconVersion: s.icon_version })),
+      mutualServers: mutualServers.map((s) => ({ id: s.id, name: s.name, iconVersion: s.icon_version, verified: s.verified as boolean })),
       mutualFriends: mutualFriends.map((u) => ({ id: u.id, username: u.username, displayName: u.display_name ?? null, avatarVersion: u.avatar_version, accent: u.accent ?? null })),
     };
   }
@@ -208,6 +208,7 @@ profilesRouter.put("/servers/:serverId/icon", imageBody, h(async (req, res) => {
   await tx(async (c) => {
     await q(`insert into server_icons(server_id, mime, data) values ($1, $2, $3) on conflict (server_id) do update set mime = excluded.mime, data = excluded.data`, [serverId, mime, data], c);
     await q(`update servers set icon_version = icon_version + 1 where id = $1`, [serverId], c);
+    await q(`insert into audit_log(server_id, actor_id, action, detail) values ($1, $2, 'server.icon', '{"removed":false}')`, [serverId, req.user!.id], c);
   });
   emitServer(serverId, "server.update", { serverId });
   res.json({ ok: true });
@@ -219,6 +220,7 @@ profilesRouter.delete("/servers/:serverId/icon", h(async (req, res) => {
   await tx(async (c) => {
     await q(`delete from server_icons where server_id = $1`, [serverId], c);
     await q(`update servers set icon_version = 0 where id = $1`, [serverId], c);
+    await q(`insert into audit_log(server_id, actor_id, action, detail) values ($1, $2, 'server.icon', '{"removed":true}')`, [serverId, req.user!.id], c);
   });
   emitServer(serverId, "server.update", { serverId });
   res.json({ ok: true });

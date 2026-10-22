@@ -346,4 +346,7 @@ create table if not exists user_banners (
   mime text not null,
   data bytea not null
 );
+
+-- v23: verified servers (only Huddle Admins can set this)
+alter table servers add column if not exists verified boolean not null default false;
 `;

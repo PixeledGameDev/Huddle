@@ -566,3 +566,10 @@ a.srv.download { color: #fff; }
 .nf-techno { font-family: "Orbitron", sans-serif; }
 .nf-elegant { font-family: "Playfair Display", Georgia, serif; }
 .nf-impact { font-family: "Bebas Neue", Impact, sans-serif; font-size: 1.1em; letter-spacing: .03em; }
+
+/* ---- verified & audit ---- */
+.verified { color: var(--accent); vertical-align: -3px; margin-left: 4px; flex: none; }
+.side-head strong .verified { color: #6f8cff; }
+.audit-filter { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.audit-filter select { width: auto; }
+.center-btn { display: block; margin: 8px auto; }

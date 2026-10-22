@@ -1,13 +1,35 @@
 import { useCallback, useEffect, useState } from "react";
 import { api } from "./api";
 import { Modal } from "./Modals";
+import { VerifiedBadge } from "./Verified";
 
 interface Overview {
   admins: { id: string; username: string; displayName: string | null; locked: boolean }[];
-  servers: { id: string; name: string; members: number; channels: { id: string; name: string }[] }[];
+  servers: { id: string; name: string; verified: boolean; members: number; channels: { id: string; name: string }[] }[];
   people: number;
   broadcasting: boolean;
   bans: { id: string; username: string; reason: string | null; permanent: boolean; until: string | null }[];
+}
+
+const dur = (s?: number | null) => (s ? ` for ${s >= 86400 ? `${Math.round(s / 86400)} day(s)` : `${Math.round(s / 3600)} hour(s)`}` : " permanently");
+function adminAuditText(e: { action: string; detail: any; actor: string | null }) {
+  const who = `@${e.actor ?? "someone"}`;
+  const d = e.detail ?? {};
+  switch (e.action) {
+    case "send.server": return `${who} sent a message as Huddle to a server`;
+    case "broadcast.dms": return `${who} started a broadcast to ${d.recipients} people`;
+    case "broadcast.dms.done": return `Broadcast finished: ${d.sent} sent, ${d.skipped} skipped, ${d.failed} failed`;
+    case "grant": return `${who} gave Huddle Admin to @${d.username}`;
+    case "revoke": return `${who} removed Huddle Admin from @${d.username}`;
+    case "ban": return `${who} banned @${d.username}${dur(d.durationSeconds)}${d.reason ? ` (${d.reason})` : ""}`;
+    case "unban": return `${who} unbanned @${d.username}`;
+    case "delete.account": return `${who} deleted the account @${d.username}${d.deleteMessages ? " and their messages" : ""}${d.deletedServers?.length ? `, plus servers: ${d.deletedServers.join(", ")}` : ""}`;
+    case "reset-code": return `${who} created a password reset code for @${d.username}`;
+    case "disable-2fa": return `${who} turned off two-factor for @${d.username}`;
+    case "server.verify": return `${who} verified ${d.name}`;
+    case "server.unverify": return `${who} removed verification from ${d.name}`;
+    default: return `${who}: ${e.action}`;
+  }
 }
 
 const BAN_LENGTHS: [string, string][] = [["3600", "1 hour"], ["86400", "1 day"], ["604800", "1 week"], ["2592000", "30 days"], ["", "Permanent"]];
@@ -29,6 +51,24 @@ export function HuddleAdminModal({ meId, onClose, onNotice, onError }: { meId: s
   const [wipeServers, setWipeServers] = useState(false);
   const [helpWho, setHelpWho] = useState("");
   const [issued, setIssued] = useState<{ username: string; code: string; minutes: number } | null>(null);
+
+  const [audit, setAudit] = useState<{ id: number; action: string; detail: any; createdAt: string; actor: string | null }[]>([]);
+  const [auditMore, setAuditMore] = useState(false);
+  const loadAudit = useCallback((more: boolean, last?: number) => {
+    api<{ entries: typeof audit; hasMore: boolean }>(`/huddle/audit${more && last ? `?before=${last}` : ""}`).then((r) => {
+      setAudit((cur) => (more ? [...cur, ...r.entries] : r.entries));
+      setAuditMore(r.hasMore);
+    }, onError);
+  }, [onError]);
+  useEffect(() => loadAudit(false), [loadAudit]);
+
+  async function setVerified(id: string, verified: boolean) {
+    try {
+      await api(`/huddle/servers/${id}/verified`, "POST", { verified });
+      load();
+      loadAudit(false);
+    } catch (err) { onError(err); }
+  }
 
   const load = useCallback(() => {
     api<Overview>("/huddle/overview").then((o) => {
@@ -234,6 +274,19 @@ export function HuddleAdminModal({ meId, onClose, onNotice, onError }: { meId: s
             )}
           </div>
           <hr />
+          <div className="stack">
+            <h3>Verified servers</h3>
+            <small className="hint">Verified servers get a check mark next to their name everywhere. Nothing in a server's own activity log shows who verified it.</small>
+            <ul className="plain-list">
+              {data.servers.map((s) => (
+                <li key={s.id}>
+                  <span>{s.name} <small className="hint">{s.members} {s.members === 1 ? "member" : "members"}</small>{s.verified && <VerifiedBadge />}</span>
+                  <button type="button" className="icon" onClick={() => void setVerified(s.id, !s.verified)}>{s.verified ? "Remove verification" : "Verify"}</button>
+                </li>
+              ))}
+            </ul>
+          </div>
+          <hr />
           {data.bans.length > 0 && (
             <div className="stack">
               <h3>Banned</h3>
@@ -263,6 +316,16 @@ export function HuddleAdminModal({ meId, onClose, onNotice, onError }: { meId: s
               <input value={username} onChange={(e) => setUsername(e.target.value)} placeholder="Username to give Huddle Admin" maxLength={40} required aria-label="Username" />
               <button className="primary">Give</button>
             </form>
+          </div>
+          <hr />
+          <div className="stack">
+            <h3>Audit log</h3>
+            <small className="hint">Everything Huddle Admins have done, newest first.</small>
+            <ul className="audit">
+              {audit.length === 0 && <li className="hint">Nothing yet.</li>}
+              {audit.map((e) => <li key={e.id}><time>{new Date(e.createdAt).toLocaleString()}</time>{adminAuditText(e)}</li>)}
+            </ul>
+            {auditMore && <button type="button" className="link center-btn" onClick={() => loadAudit(true, audit[audit.length - 1]?.id)}>Load older entries</button>}
           </div>
         </>
       )}

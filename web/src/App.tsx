@@ -11,6 +11,7 @@ import DmPanel from "./DmPanel";
 import { HuddleAdminModal } from "./HuddleAdmin";
 import { SuggestionsModal } from "./Suggestions";
 import { Name } from "./Name";
+import { VerifiedBadge } from "./Verified";
 import { StatusDot, StatusMenu } from "./Status";
 import { FriendsModal, useFriends } from "./Friends";
 import { notifyIncoming, setNotificationOpener, updateBadge } from "./notify";
@@ -121,7 +122,7 @@ function Main({ me, initialServerId, onUser, onLogout }: { me: User; initialServ
       const wanted = pendingChannelRef.current; // set when a notification asked for a particular channel
       pendingChannelRef.current = null;
       setChannelId((cur) => (wanted && server.channels.some((c) => c.id === wanted) ? wanted : cur && server.channels.some((c) => c.id === cur) ? cur : server.channels[0]?.id ?? null));
-      setServers((prev) => prev.map((s) => (s.id === id && (s.name !== server.name || s.iconVersion !== server.iconVersion) ? { ...s, name: server.name, iconVersion: server.iconVersion } : s)));
+      setServers((prev) => prev.map((s) => (s.id === id && (s.name !== server.name || s.iconVersion !== server.iconVersion || !!s.verified !== !!server.verified) ? { ...s, name: server.name, iconVersion: server.iconVersion, verified: server.verified } : s)));
     } catch (e) {
       fail(e);
     }
@@ -590,7 +591,7 @@ function Main({ me, initialServerId, onUser, onLogout }: { me: User; initialServ
           <button
             key={s.id}
             className={s.id === activeId ? "srv active" : "srv"}
-            title={s.name}
+            title={s.verified ? `${s.name} (verified)` : s.name}
             aria-label={s.name}
             aria-current={s.id === activeId}
             style={s.iconVersion > 0 ? undefined : { background: `hsl(${hue(s.name)} 38% 40%)` }}
@@ -634,7 +635,7 @@ function Main({ me, initialServerId, onUser, onLogout }: { me: User; initialServ
         ) : detail ? (
           <>
             <header className="side-head">
-              <strong title={detail.name}>{detail.name}</strong>
+              <strong title={detail.name}>{detail.name}{detail.verified && <VerifiedBadge />}</strong>
               <span>
                 <button className="icon" title="Copy an invite code" onClick={invite}>Invite</button>
                 {hasSettings && <button className="icon" title="Server settings" onClick={() => setModal("settings")}>Settings</button>}

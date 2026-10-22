@@ -16,11 +16,11 @@ const CODE = /^[A-Za-z0-9_-]{6,32}$/;
 export async function inviteMeta(code: string) {
   if (!CODE.test(code)) return null;
   const s = await one<any>(
-    `select s.id, s.name, s.icon_version, (select count(*)::int from memberships m where m.server_id = s.id) as member_count
+    `select s.id, s.name, s.icon_version, s.verified, (select count(*)::int from memberships m where m.server_id = s.id) as member_count
        from invites i join servers s on s.id = i.server_id where i.code = $1 and not s.is_dm`,
     [code]
   );
-  return s ? { id: s.id as string, name: s.name as string, iconVersion: s.icon_version as number, memberCount: s.member_count as number } : null;
+  return s ? { id: s.id as string, name: s.name as string, iconVersion: s.icon_version as number, verified: s.verified as boolean, memberCount: s.member_count as number } : null;
 }
 
 invitesRouter.get("/invites/:code", h(async (req, res) => {
@@ -33,6 +33,7 @@ invitesRouter.get("/invites/:code", h(async (req, res) => {
   res.json({
     name: meta.name,
     iconVersion: meta.iconVersion,
+    verified: meta.verified,
     memberCount: meta.memberCount,
     onlineCount: members.filter((m) => isOnline(m.user_id)).length,
     joined,

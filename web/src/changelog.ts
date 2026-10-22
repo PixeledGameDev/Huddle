@@ -11,6 +11,16 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "4.5",
+    date: "2026-10-22",
+    title: "Verified servers and audit logs",
+    changes: [
+      "Servers Huddle has verified show a check mark next to their name, on invites and in mutual servers.",
+      "A server's Activity tab now covers joins and leaves, channel changes, icon changes and role changes, can be filtered by type, and loads older entries.",
+      "Huddle Admins get an audit log of everything they have done, and can verify servers from their panel.",
+    ],
+  },
+  {
     version: "4.4",
     date: "2026-10-21",
     title: "Banners and name fonts",

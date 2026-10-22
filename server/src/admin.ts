@@ -106,8 +106,10 @@ adminRouter.patch("/servers/:serverId/channels/:channelId", h(async (req, res) =
   await requirePerm(serverId, req.user!.id, "manage_channels");
   const name = channelSlug(z.object({ name: z.string().trim().min(1).max(30) }).parse(req.body).name);
   if (!name) throw new HttpError(400, "Channel names need letters or numbers.");
+  const before = await one<{ name: string }>(`select name from channels where id = $1 and server_id = $2`, [channelId, serverId]);
   const ch = await one(`update channels set name = $3 where id = $1 and server_id = $2 returning id, name`, [channelId, serverId, name]);
   if (!ch) throw new HttpError(404, "Channel not found.");
+  if (before && before.name !== name) await q(`insert into audit_log(server_id, actor_id, action, detail) values ($1, $2, 'channel.rename', $3)`, [serverId, req.user!.id, JSON.stringify({ from: before.name, to: name })]);
   emitServer(serverId, "channel.update", { serverId });
   res.json({ channel: ch });
 }));

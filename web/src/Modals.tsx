@@ -92,7 +92,12 @@ const AUDIT_TEXT: Record<string, (e: any) => string> = {
   "mod.unban": (e) => `${e.actor} unbanned ${e.target}`,
   "mod.timeout": (e) => `${e.actor} timed out ${e.target}${durationText(e.detail)}${reasonText(e.detail)}`,
   "mod.untimeout": (e) => `${e.actor} removed ${e.target}'s timeout`,
+  "channel.create": (e) => `${e.actor} created #${e.detail?.name}`,
+  "channel.rename": (e) => `${e.actor} renamed #${e.detail?.from} to #${e.detail?.to}`,
   "channel.delete": (e) => `${e.actor} deleted #${e.detail?.name}`,
+  "server.icon": (e) => (e.detail?.removed ? `${e.actor} removed the server icon` : `${e.actor} changed the server icon`),
+  "member.join": (e) => `${e.actor} joined the server`,
+  "member.leave": (e) => `${e.actor} left the server`,
   "message.delete": (e) => `${e.actor} deleted a message by ${e.target}`,
 };
 
@@ -109,15 +114,26 @@ export function SettingsModal({ server, onClose, onSaved, onDeleted, onError }: 
   const [tab, setTab] = useState<Tab>(tabs[0]?.[0] ?? "general");
   const [s, setS] = useState<Settings>(server.settings);
   const [audit, setAudit] = useState<any[]>([]);
+  const [auditMore, setAuditMore] = useState(false);
+  const [auditCategory, setAuditCategory] = useState("");
   const [bans, setBans] = useState<BanEntry[]>([]);
   const [deleted, setDeleted] = useState<DeletedMessage[]>([]);
   const [confirmName, setConfirmName] = useState("");
   const [newName, setNewName] = useState(server.name);
   const set = <K extends keyof Settings>(k: K, v: Settings[K]) => setS((p) => ({ ...p, [k]: v }));
 
+  const loadAudit = (more: boolean, category = auditCategory) => {
+    const params = new URLSearchParams();
+    if (category) params.set("category", category);
+    if (more && audit.length) params.set("before", String(audit[audit.length - 1].id));
+    return api<{ entries: any[]; hasMore: boolean }>(`/servers/${server.id}/audit?${params}`).then((r) => {
+      setAudit((cur) => (more ? [...cur, ...r.entries] : r.entries));
+      setAuditMore(r.hasMore);
+    }, onError);
+  };
   const loadBans = () => api<{ bans: BanEntry[] }>(`/servers/${server.id}/bans`).then((r) => setBans(r.bans), onError);
   useEffect(() => {
-    if (tab === "activity") api<{ entries: any[] }>(`/servers/${server.id}/audit`).then((r) => setAudit(r.entries), onError);
+    if (tab === "activity") void loadAudit(false);
     if (tab === "bans") void loadBans();
     if (tab === "deleted") api<{ messages: DeletedMessage[] }>(`/servers/${server.id}/deleted`).then((r) => setDeleted(r.messages), onError);
   }, [tab, server.id]);
@@ -249,6 +265,18 @@ export function SettingsModal({ server, onClose, onSaved, onDeleted, onError }: 
       )}
 
       {tab === "activity" && (
+        <>
+        <label className="audit-filter">Show
+          <select value={auditCategory} onChange={(e) => { setAuditCategory(e.target.value); void loadAudit(false, e.target.value); }}>
+            <option value="">Everything</option>
+            <option value="moderation">Moderation and votes</option>
+            <option value="roles">Roles</option>
+            <option value="channels">Channels</option>
+            <option value="members">Joins and leaves</option>
+            <option value="messages">Deleted messages</option>
+            <option value="settings">Settings and icon</option>
+          </select>
+        </label>
         <ul className="audit">
           {audit.length === 0 && <li className="muted">Nothing yet.</li>}
           {audit.map((e) => (
@@ -258,6 +286,8 @@ export function SettingsModal({ server, onClose, onSaved, onDeleted, onError }: 
             </li>
           ))}
         </ul>
+        {auditMore && <button className="link center-btn" onClick={() => void loadAudit(true)}>Load older entries</button>}
+        </>
       )}
     </Modal>
   );

@@ -1,10 +1,11 @@
+import { VerifiedBadge } from "./Verified";
 import { useEffect, useState, type ReactNode } from "react";
 import { api } from "./api";
 import Auth from "./Auth";
 import { hue } from "./util";
 import type { ServerSummary, User } from "./types";
 
-export interface InviteInfo { name: string; iconVersion: number; memberCount: number; onlineCount: number; joined: boolean; serverId?: string }
+export interface InviteInfo { name: string; verified?: boolean; iconVersion: number; memberCount: number; onlineCount: number; joined: boolean; serverId?: string }
 
 const cache = new Map<string, { at: number; p: Promise<InviteInfo> }>();
 export function fetchInvite(code: string, fresh = false): Promise<InviteInfo> {
@@ -29,7 +30,7 @@ export function InviteCard({ info, code, action, label = "You've been invited to
           <span className="invite-icon" style={{ background: `hsl(${hue(info.name)} 38% 40%)` }}>{info.name[0]?.toUpperCase()}</span>
         )}
         <div className="invite-text">
-          <strong title={info.name}>{info.name}</strong>
+          <strong title={info.name}>{info.name}{info.verified && <VerifiedBadge />}</strong>
           <small className="muted">
             {info.onlineCount > 0 && <><span className="dot on inline" /> {info.onlineCount} online · </>}
             {info.memberCount} {info.memberCount === 1 ? "member" : "members"}

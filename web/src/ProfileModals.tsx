@@ -5,6 +5,7 @@ import { api, ApiError, uploadRaw } from "./api";
 import { Avatar } from "./Avatar";
 import { NAME_FONTS, type NameFont } from "./fonts";
 import { Name } from "./Name";
+import { VerifiedBadge } from "./Verified";
 import { StatusDot } from "./Status";
 import { Modal } from "./Modals";
 import { loadPrefs, savePrefs, type Prefs } from "./prefs";
@@ -18,7 +19,7 @@ interface ProfileData {
   blockedByMe: boolean;
   friendship?: Friendship;
   canMessage?: boolean;
-  mutualServers?: { id: string; name: string; iconVersion: number }[];
+  mutualServers?: { id: string; name: string; iconVersion: number; verified?: boolean }[];
   mutualFriends?: Mutual[];
 }
 
@@ -117,7 +118,7 @@ export function ProfileCard({ userId, serverId, meId, onClose, onEdit, onMessage
                     {data!.mutualServers!.map((s) => (
                       <li key={s.id} title={s.name}>
                         {s.iconVersion > 0 ? <img className="mutual-icon" src={`/api/servers/${s.id}/icon?v=${s.iconVersion}`} alt="" /> : <span className="mutual-icon" style={{ background: `hsl(${hue(s.name)} 38% 40%)` }}>{s.name[0].toUpperCase()}</span>}
-                        <span>{s.name}</span>
+                        <span>{s.name}</span>{s.verified && <VerifiedBadge />}
                       </li>
                     ))}
                   </ul>
