@@ -11,6 +11,19 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "5.0",
+    date: "2026-10-22",
+    title: "A whole new look",
+    changes: [
+      "Servers, channels, messages and friends now live in one navigation panel that you can show or hide with the menu button. It scales with your screen: pinned on a computer, a slide-over on a tablet and a full-height drawer on a phone.",
+      "The member list groups people by role (owner, then each role that has Show members with this role separately switched on). Names slide in and out as people come online or go offline.",
+      "Click anyone to open their profile: their roles and every moderation action (time out, kick, ban, vote) now live there.",
+      "You can give yourself roles you're allowed to, the owner can hold roles too, and roles can be made self-service so anyone can pick them for themselves.",
+      "Buttons get a soft shine when you hover them, and the whole interface follows your theme.",
+      "Desktop app 1.2: no more File/Edit/View bar. Huddle has its own title bar, and the logo opens the Huddle menu. The splash screen is new too.",
+    ],
+  },
+  {
     version: "4.8",
     date: "2026-10-22",
     title: "Custom themes (desktop app)",

@@ -21,9 +21,10 @@ import { notifyIncoming, setNotificationOpener, updateBadge } from "./notify";
 import Members from "./Members";
 import { AddServerModal, SettingsModal } from "./Modals";
 import { PollModal } from "./Polls";
-import { ModerateModal, MyProfileModal, ProfileCard } from "./ProfileModals";
+import { MyProfileModal, ProfileCard } from "./ProfileModals";
 import { can, canAny, isOwner } from "./permissions";
-import { LegacyAdminsModal, MemberRolesModal } from "./Roles";
+import { LegacyAdminsModal } from "./Roles";
+import { FriendsPanel, MoreMenu } from "./NavParts";
 import type { Channel, DmSummary, Member, Message, Poll, Reaction, ServerDetail, ServerSummary, User, Vote, PublicStatus } from "./types";
 import { actionVerb, fmtDuration, hue, nameOfUser } from "./util";
 import VoteBanner from "./VoteBanner";
@@ -72,8 +73,6 @@ function Main({ me, initialServerId, onUser, onLogout }: { me: User; initialServ
   // /suggestions in the address bar opens the board, so it can be linked to
   const [modal, setModal] = useState<Modal>(() => (window.location.pathname === "/suggestions" ? "suggestions" : null));
   const [profileId, setProfileId] = useState<string | null>(null);
-  const [moderating, setModerating] = useState<Member | null>(null);
-  const [roleMember, setRoleMember] = useState<Member | null>(null);
   const [friendsTick, setFriendsTick] = useState(0);
   const { data: friendsData } = useFriends(friendsTick);
   const legacyPromptedRef = useRef<Set<string>>(new Set());
@@ -89,6 +88,12 @@ function Main({ me, initialServerId, onUser, onLogout }: { me: User; initialServ
     api<{ desktop: unknown }>("/desktop").then((r) => setAppAvailable(!!r.desktop), () => {});
   }, []);
   const [sideMode, setSideMode] = useState<"server" | "dms">("server");
+  // Navigation panel (servers, channels, messages, friends) and the member list can each be tucked away. Wide screens start with both open.
+  const wide = () => window.matchMedia("(min-width: 1100px)").matches;
+  const [navOpen, setNavOpen] = useState(() => (wide() ? localStorage.getItem("huddle.nav") !== "closed" : false));
+  const [membersOpen, setMembersOpen] = useState(() => (wide() ? localStorage.getItem("huddle.members") !== "closed" : false));
+  const [showFriends, setShowFriends] = useState(false);
+  const lastServerRef = useRef<string | null>(null);
 
   const socketRef = useRef<Socket | null>(null);
   const onLogoutRef = useRef(onLogout);
@@ -548,8 +553,10 @@ function Main({ me, initialServerId, onUser, onLogout }: { me: User; initialServ
       const { dm } = await api<{ dm: DmSummary }>("/dms", "POST", { userId });
       setDms((prev) => (prev.some((x) => x.id === dm.id) ? prev.map((x) => (x.id === dm.id ? dm : x)) : [dm, ...prev]));
       setProfileId(null);
+      setShowFriends(false);
       setSideMode("dms");
       setActiveId(dm.id);
+      closeNavIfSmall();
     } catch (e) {
       fail(e);
     }
@@ -559,6 +566,26 @@ function Main({ me, initialServerId, onUser, onLogout }: { me: User; initialServ
     setSideMode("dms");
     if (!dms.some((d) => d.id === activeId)) setActiveId(dms[0]?.id ?? null);
   }
+
+  const closeNavIfSmall = () => { if (!wide()) setNavOpen(false); };
+
+  // Remember the layout on wide screens; tuck both panels away when the window shrinks, bring them back when it grows.
+  useEffect(() => { if (wide()) { localStorage.setItem("huddle.nav", navOpen ? "open" : "closed"); localStorage.setItem("huddle.members", membersOpen ? "open" : "closed"); } }, [navOpen, membersOpen]);
+  useEffect(() => {
+    const mq = window.matchMedia("(min-width: 1100px)");
+    const onChange = () => {
+      if (mq.matches) { setNavOpen(localStorage.getItem("huddle.nav") !== "closed"); setMembersOpen(localStorage.getItem("huddle.members") !== "closed"); }
+      else { setNavOpen(false); setMembersOpen(false); }
+    };
+    mq.addEventListener("change", onChange);
+    return () => mq.removeEventListener("change", onChange);
+  }, []);
+  useEffect(() => {
+    const esc = (e: KeyboardEvent) => { if (e.key === "Escape" && !wide() && !document.querySelector(".modal")) { setNavOpen(false); setMembersOpen(false); } };
+    window.addEventListener("keydown", esc);
+    return () => window.removeEventListener("keydown", esc);
+  }, []);
+  useEffect(() => { if (sideMode === "server" && activeId) lastServerRef.current = activeId; }, [sideMode, activeId]);
 
   async function logout() {
     await api("/auth/logout", "POST").catch(() => {});
@@ -583,83 +610,89 @@ function Main({ me, initialServerId, onUser, onLogout }: { me: User; initialServ
   const activeDm = inDm ? dms.find((d) => d.id === activeId) : undefined;
   const dmUnread = dms.reduce((n, d) => n + (unread.servers[d.id] ?? 0), 0);
 
+  // The desktop title bar shows where you are.
+  useEffect(() => {
+    const here = activeDm ? nameOfUser(activeDm.user) : channel && detail ? `#${channel.name} · ${detail.name}` : "";
+    document.documentElement.dataset.context = here;
+    return () => { delete document.documentElement.dataset.context; };
+  }, [activeDm?.id, activeDm?.user.displayName, activeDm?.user.username, channel?.name, detail?.name]);
+
   return (
     <ServerAssetsContext.Provider value={{ emojis: detail?.emojis ?? [], stickers: detail?.stickers ?? [] }}>
-    <div className="app">
-      <nav className="rail" aria-label="Servers">
-        <button className={inDm ? "srv dm-btn active" : "srv dm-btn"} aria-label="Direct messages" title="Direct messages" onClick={openDms}>
-          💬{dmUnread + friendsData.incoming.length > 0 && <span className="badge" aria-label={`${dmUnread + friendsData.incoming.length} unread`}>{dmUnread + friendsData.incoming.length}</span>}
-        </button>
-        <span className="rail-sep" />
-        {servers.map((s) => (
-          <button
-            key={s.id}
-            className={s.id === activeId ? "srv active" : "srv"}
-            title={s.verified ? `${s.name} (verified)` : s.name}
-            aria-label={s.name}
-            aria-current={s.id === activeId}
-            style={s.iconVersion > 0 ? undefined : { background: `hsl(${hue(s.name)} 38% 40%)` }}
-            onClick={() => { setSideMode("server"); setActiveId(s.id); }}
-          >
-            {s.iconVersion > 0 ? <img src={`/api/servers/${s.id}/icon?v=${s.iconVersion}`} alt="" /> : s.name[0].toUpperCase()}
-            {(unread.servers[s.id] ?? 0) > 0 && <span className="badge" aria-label={`${unread.servers[s.id]} mentions`}>{unread.servers[s.id]}</span>}
-          </button>
-        ))}
-        <button className="srv add" aria-label="Add a server" title="Add a server" onClick={() => setModal("add")}>+</button>
-        <span className="rail-spacer" />
-        <button className="srv util" aria-label="Suggestions" title="Suggestions: ideas for Huddle" onClick={() => setModal("suggestions")}>💡</button>
-        {appAvailable && (
-          <a className="srv util download" href="/download" target="_blank" rel="noopener" aria-label="Download the desktop app" title="Download the desktop app">
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M12 3v12m0 0-5-5m5 5 5-5M5 21h14" /></svg>
-          </a>
-        )}
-      </nav>
+    <div className={`app nav-${navOpen ? "open" : "closed"} members-${membersOpen ? "open" : "closed"}`}>
+      <aside className="nav" aria-label="Navigation">
+        <header className="nav-top">
+          <div className="brand"><span className="logo shine" aria-hidden="true">H</span><strong>Huddle</strong></div>
+          <button className="icon ghost show-sm" onClick={() => setNavOpen(false)} aria-label="Hide navigation">✕</button>
+        </header>
 
-      <aside className="side">
-        {inDm ? (
-          <>
-            <header className="side-head">
-              <strong>Direct messages</strong>
-              <button className="icon" title="Friends" onClick={() => setModal("friends")}>Friends{friendsData.incoming.length > 0 && <span className="badge inline">{friendsData.incoming.length}</span>}</button>
-            </header>
-            <div className="channels">
-              {dms.length === 0 && <p className="side-empty">No conversations yet. Open someone's profile or hit Message next to a member to start one.</p>}
-              {dms.map((d) => (
-                <button key={d.id} className={d.id === activeId ? "chan dm-item active" : "chan dm-item"} onClick={() => setActiveId(d.id)}>
-                  <span className="dm-avatar">
-                    <Avatar id={d.user.id} name={nameOfUser(d.user)} version={d.user.avatarVersion} accent={d.user.accent} size={28} />
-                    <StatusDot status={d.status ?? (d.online ? "online" : "offline")} />
-                  </span>
-                  <span className="chan-name"><Name user={d.user} /></span>
-                  {(unread.servers[d.id] ?? 0) > 0 && <span className="badge inline" aria-label={`${unread.servers[d.id]} unread`}>{unread.servers[d.id]}</span>}
-                </button>
-              ))}
-            </div>
-          </>
+        <div className="servers" aria-label="Servers">
+          {servers.map((s) => (
+            <button
+              key={s.id}
+              className={s.id === activeId && !inDm ? "srv active" : "srv"}
+              title={s.verified ? `${s.name} (verified)` : s.name}
+              aria-label={s.name}
+              aria-current={s.id === activeId && !inDm}
+              style={s.iconVersion > 0 ? undefined : { background: `linear-gradient(135deg, hsl(${hue(s.name)} 50% 48%), hsl(${hue(s.name)} 45% 32%))` }}
+              onClick={() => { setShowFriends(false); openServer(s.id); }}
+            >
+              {s.iconVersion > 0 ? <img src={`/api/servers/${s.id}/icon?v=${s.iconVersion}`} alt="" /> : s.name[0].toUpperCase()}
+              {(unread.servers[s.id] ?? 0) > 0 && <span className="badge" aria-label={`${unread.servers[s.id]} mentions`}>{unread.servers[s.id]}</span>}
+            </button>
+          ))}
+          <button className="srv add" aria-label="Add a server" title="Add a server" onClick={() => setModal("add")}>+</button>
+        </div>
+
+        <div className="seg" role="tablist" aria-label="Lists">
+          <button role="tab" aria-selected={!showFriends && !inDm} className={!showFriends && !inDm ? "on" : ""} onClick={() => { setShowFriends(false); setSideMode("server"); setActiveId(lastServerRef.current ?? servers[0]?.id ?? null); }}>Channels</button>
+          <button role="tab" aria-selected={!showFriends && inDm} className={!showFriends && inDm ? "on" : ""} onClick={() => { setShowFriends(false); openDms(); }}>Messages{dmUnread > 0 && <b className="badge sm">{dmUnread}</b>}</button>
+          <button role="tab" aria-selected={showFriends} className={showFriends ? "on" : ""} onClick={() => setShowFriends(true)}>Friends{friendsData.incoming.length > 0 && <b className="badge sm">{friendsData.incoming.length}</b>}</button>
+        </div>
+
+        {showFriends ? (
+          <FriendsPanel data={friendsData} onOpenProfile={setProfileId} onMessage={startDm} onError={fail} onOpenFull={() => setModal("friends")} />
+        ) : inDm ? (
+          <div className="channels">
+            {dms.length === 0 && <p className="side-empty">No conversations yet. Open someone's profile and choose Message to start one.</p>}
+            {dms.map((d) => (
+              <button key={d.id} className={d.id === activeId ? "chan dm-item active" : "chan dm-item"} onClick={() => { setActiveId(d.id); closeNavIfSmall(); }}>
+                <span className="avatar-wrap">
+                  <Avatar id={d.user.id} name={nameOfUser(d.user)} version={d.user.avatarVersion} accent={d.user.accent} size={30} />
+                  <StatusDot status={d.status ?? (d.online ? "online" : "offline")} />
+                </span>
+                <span className="chan-name"><Name user={d.user} /></span>
+                {(unread.servers[d.id] ?? 0) > 0 && <span className="badge inline" aria-label={`${unread.servers[d.id]} unread`}>{unread.servers[d.id]}</span>}
+              </button>
+            ))}
+          </div>
         ) : detail ? (
           <>
-            <header className="side-head">
-              <strong title={detail.name}>{detail.name}{detail.verified && <VerifiedBadge />}</strong>
-              <span>
-                <button className="icon" title="Copy an invite code" onClick={invite}>Invite</button>
-                {hasSettings && <button className="icon" title="Server settings" onClick={() => setModal("settings")}>Settings</button>}
+            <div className="server-head">
+              <div className="server-title">
+                <h2 title={detail.name}>{detail.name}{detail.verified && <VerifiedBadge />}</h2>
+                <small>{detail.members.length} {detail.members.length === 1 ? "member" : "members"} · {detail.members.filter((m) => m.online).length} online</small>
+              </div>
+              <span className="server-actions">
+                <button className="pill sm shine" title="Copy an invite link" onClick={invite}>Invite</button>
+                {hasSettings && <button className="icon ghost" aria-label="Server settings" title="Server settings" onClick={() => setModal("settings")}>⚙</button>}
               </span>
-            </header>
+            </div>
             <div className="channels">
               <div className="side-label">
                 Channels
-                {canChannels && <button className="icon" aria-label="New channel" onClick={addChannel}>+</button>}
+                {canChannels && <button className="icon ghost" aria-label="New channel" onClick={addChannel}>+</button>}
               </div>
               {detail.channels.map((c) => (
                 <div key={c.id} className="chan-row">
-                  <button className={c.id === channelId ? "chan active" : "chan"} onClick={() => setChannelId(c.id)}>
+                  <button className={c.id === channelId ? "chan active" : (unread.channels[c.id] ?? 0) > 0 ? "chan unread" : "chan"} onClick={() => { setChannelId(c.id); closeNavIfSmall(); }}>
                     <span className="hash">#</span><span className="chan-name">{c.name}</span>
                     {(unread.channels[c.id] ?? 0) > 0 && <span className="badge inline" aria-label={`${unread.channels[c.id]} mentions`}>{unread.channels[c.id]}</span>}
                   </button>
                   {canChannels && (
                     <span className="chan-tools">
-                      <button className="icon" aria-label={`Rename #${c.name}`} title="Rename channel" onClick={() => renameChannel(c)}>✎</button>
-                      <button className="icon" aria-label={`Delete #${c.name}`} title="Delete channel" onClick={() => deleteChannel(c)}>✕</button>
+                      <button className="icon ghost" aria-label={`Rename #${c.name}`} title="Rename channel" onClick={() => renameChannel(c)}>✎</button>
+                      <button className="icon ghost" aria-label={`Delete #${c.name}`} title="Delete channel" onClick={() => deleteChannel(c)}>✕</button>
                     </span>
                   )}
                 </div>
@@ -667,35 +700,49 @@ function Main({ me, initialServerId, onUser, onLogout }: { me: User; initialServ
             </div>
           </>
         ) : (
-          <div className="side-head"><strong>{servers.length ? "Loading…" : "Huddle"}</strong></div>
+          <div className="server-head"><div className="server-title"><h2>{servers.length ? "Loading…" : "Huddle"}</h2></div></div>
         )}
-        <footer className="me">
+
+        <footer className="me-card">
           <button className="me-id" onClick={() => setModal("myprofile")} title="Profile & appearance">
-            <Avatar id={me.id} name={myName} version={me.avatarVersion} accent={me.accent} size={28} />
-            <span className="me-name">{myName}</span>
+            <span className="avatar-wrap"><Avatar id={me.id} name={myName} version={me.avatarVersion} accent={me.accent} size={34} /><StatusDot status={me.presence === "invisible" ? "offline" : me.presence ?? "online"} /></span>
+            <span className="who"><strong>{myName}</strong><small>{me.statusText || "Profile & appearance"}</small></span>
           </button>
           <StatusMenu me={me} onUser={onUser} onError={fail} />
-          <button className="icon whatsnew" aria-label={unseenUpdates ? "What's new (new updates)" : "What's new"} title="What's new" onClick={() => { markUpdatesSeen(); setUnseenUpdates(false); setModal("changelog"); }}>
-            ✨{unseenUpdates && <span className="new-dot" />}
-          </button>
-          {me.huddleAdmin && <button className="icon" title="Huddle Admin" onClick={() => setModal("huddle")}>Huddle Admin</button>}
-          {!inDm && detail && detail.myRole !== "owner" && <button className="icon" onClick={leave}>Leave</button>}
-          <button className="icon" onClick={logout}>Sign out</button>
+          <MoreMenu
+            badge={unseenUpdates}
+            items={[
+              { label: "Profile & appearance", onClick: () => setModal("myprofile") },
+              { label: "What's new", hint: unseenUpdates ? "New updates" : undefined, onClick: () => { markUpdatesSeen(); setUnseenUpdates(false); setModal("changelog"); } },
+              { label: "Suggestions", hint: "Ideas for Huddle", onClick: () => setModal("suggestions") },
+              ...(appAvailable ? [{ label: "Download the desktop app", href: "/download" }] : []),
+              ...(me.huddleAdmin ? [{ label: "Huddle Admin", onClick: () => setModal("huddle") }] : []),
+              ...(!inDm && detail && detail.myRole !== "owner" ? [{ label: "Leave this server", danger: true, onClick: leave }] : []),
+              { label: "Sign out", danger: true, onClick: logout },
+            ]}
+          />
         </footer>
       </aside>
+      <div className="scrim" onClick={() => { setNavOpen(false); setMembersOpen(false); }} />
 
       <main className="main">
         {inDm && !activeDm ? (
+          <>
+          <header className="chat-head topbar"><button className="icon ghost menu-btn" onClick={() => setNavOpen((o) => !o)} aria-label={navOpen ? "Hide navigation" : "Show navigation"} aria-expanded={navOpen}>☰</button></header>
           <div className="welcome">
             <h2>Direct messages</h2>
-            <p className="muted">{dms.length ? "Pick a conversation on the left." : "Open someone's profile in a server and choose Message to start a conversation."}</p>
+            <p className="muted">{dms.length ? "Pick a conversation from the Messages tab." : "Open someone's profile in a server and choose Message to start a conversation."}</p>
           </div>
+          </>
         ) : !inDm && !activeId && servers.length === 0 ? (
+          <>
+          <header className="chat-head topbar"><button className="icon ghost menu-btn" onClick={() => setNavOpen((o) => !o)} aria-label={navOpen ? "Hide navigation" : "Show navigation"} aria-expanded={navOpen}>☰</button></header>
           <div className="welcome">
             <h2>Welcome, {myName}</h2>
             <p className="muted">Create a server for your friends, or join one with an invite code.</p>
-            <button className="primary" onClick={() => setModal("add")}>Add a server</button>
+            <button className="primary shine" onClick={() => setModal("add")}>Add a server</button>
           </div>
+          </>
         ) : (
           <>
             <UpdateBanner />
@@ -711,6 +758,11 @@ function Main({ me, initialServerId, onUser, onLogout }: { me: User; initialServ
               dm={activeDm}
               me={me}
               members={members}
+              navOpen={navOpen}
+              onToggleNav={() => setNavOpen((o) => !o)}
+              showMembersToggle={!inDm}
+              membersOpen={membersOpen}
+              onToggleMembers={() => setMembersOpen((o) => !o)}
               canManageMessages={canManageMessages}
               canEveryone={canEveryone}
               items={channelId ? msgs[channelId]?.items ?? [] : []}
@@ -741,7 +793,7 @@ function Main({ me, initialServerId, onUser, onLogout }: { me: User; initialServ
       {activeDm ? (
         <DmPanel dm={activeDm} onChanged={refreshDms} onError={fail} />
       ) : (
-        !inDm && detail && <Members server={detail} me={me} votes={votes} onStartVote={startVote} onRoles={setRoleMember} onOpenProfile={setProfileId} onModerate={setModerating} onMessage={startDm} />
+        !inDm && detail && <Members server={detail} onOpenProfile={setProfileId} onClose={() => setMembersOpen(false)} />
       )}
 
       {modal === "add" && (
@@ -760,7 +812,6 @@ function Main({ me, initialServerId, onUser, onLogout }: { me: User; initialServ
       {modal === "legacy" && detail && detail.legacyAdminCount > 0 && (
         <LegacyAdminsModal server={detail} onClose={() => setModal(null)} onError={fail} onDone={() => { setModal(null); push("Done. Your admins now have a role."); void loadServer(detail.id); }} />
       )}
-      {roleMember && detail && <MemberRolesModal server={detail} member={roleMember} onClose={() => setRoleMember(null)} onError={fail} />}
       {modal === "friends" && (
         <FriendsModal
           data={friendsData}
@@ -789,18 +840,8 @@ function Main({ me, initialServerId, onUser, onLogout }: { me: User; initialServ
       {modal === "myprofile" && <MyProfileModal me={me} onClose={() => setModal(null)} onUser={onUser} onDeleted={() => { socketRef.current?.disconnect(); onLogout(); }} onError={fail} onOpenThemes={() => setModal("themes")} />}
       {modal === "themes" && window.huddleDesktop && <ThemeEditorModal onClose={() => setModal(null)} onError={fail} onNotice={push} />}
       {profileId && detail && (
-        <ProfileCard userId={profileId} serverId={detail.id} meId={me.id} onClose={() => setProfileId(null)} onEdit={() => { setProfileId(null); setModal("myprofile"); }} onMessage={startDm} onChanged={refreshDms} />
+        <ProfileCard userId={profileId} serverId={detail.id} server={detail} meId={me.id} onClose={() => setProfileId(null)} onEdit={() => { setProfileId(null); setModal("myprofile"); }} onMessage={startDm} onChanged={refreshDms} onStartVote={(m) => void startVote(m)} onServerChanged={() => void loadServer(detail.id)} />
       )}
-      {moderating && detail && (
-        <ModerateModal
-          server={detail}
-          target={moderating}
-          onClose={() => setModerating(null)}
-          onError={fail}
-          onDone={() => { setModerating(null); push("Done."); void loadServer(detail.id); }}
-        />
-      )}
-
       <div className="toasts" role="status" aria-live="polite">
         {toasts.map((t) => <div key={t.id} className={t.error ? "toast err" : "toast"}>{t.text}</div>)}
       </div>

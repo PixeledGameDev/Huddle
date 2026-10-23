@@ -53,6 +53,14 @@ the files from the finished run (or push a tag such as `desktop-v1.0.0`).
 macOS you'll need to right-click the app → Open the first time. Removing those warnings needs paid code-signing
 certificates (and, for macOS, an Apple Developer account); electron-builder supports both once you have them.
 
+## Title bar and menu
+
+Huddle draws its own title bar (version 1.2 and newer): there is no "File Edit View Window" bar. Click the **logo** at the top left
+for the Huddle menu (change server, keep running in the tray, check for updates, zoom, reload, developer tools, quit). The
+empty part of the bar drags the window, and the minimize/maximize/close buttons are the system's own, so Windows snap
+layouts still work. The usual shortcuts work without a menu: Ctrl+R reload, Ctrl +/-/0 zoom, F11 full screen, F12 developer tools.
+On macOS the normal menu bar at the top of the screen stays, as the system requires.
+
 ## Automatic updates and the splash screen
 
 Installed copies update themselves. When you open the app it shows a splash screen ("Checking for updates…"), looks at

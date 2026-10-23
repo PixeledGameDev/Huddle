@@ -6,6 +6,8 @@ interface HuddleDesktopBridge {
   notify(n: { title: string; body: string; tag?: string; target?: { serverId: string; channelId: string } }): void;
   setBadge(count: number, iconDataUrl: string | null): void;
   onNotificationClick(cb: (target: { serverId: string; channelId: string } | null) => void): () => void;
+  /** Present from desktop app 1.2 on: Huddle draws its own title bar and the logo opens the Huddle menu. */
+  titleBar?: { height: number; openMenu(x: number, y: number): void; setColors(color: string, symbolColor: string): void };
   /** Present from desktop app 1.1 on (older installs don't have them). */
   getUpdateState?(): Promise<DesktopUpdateState | null>;
   onUpdateState?(cb: (state: DesktopUpdateState) => void): () => void;

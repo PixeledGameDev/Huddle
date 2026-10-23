@@ -372,4 +372,8 @@ create table if not exists server_stickers (
 );
 create unique index if not exists server_stickers_name on server_stickers(server_id, lower(name));
 alter table messages add column if not exists sticker_id uuid references server_stickers(id) on delete set null;
+
+-- v25: roles can get their own section in the member list, and some roles can be taken by anyone for themselves
+alter table server_roles add column if not exists hoist boolean not null default false;
+alter table server_roles add column if not exists self_assignable boolean not null default false;
 `;

@@ -7,6 +7,12 @@ const version = (process.argv.find((a) => a.startsWith("--huddle-version=")) ?? 
 contextBridge.exposeInMainWorld("huddleDesktop", {
   isDesktop: true,
   platform: process.platform,
+  // Present from desktop 1.2: Huddle draws its own title bar instead of the system one.
+  titleBar: {
+    height: 40,
+    openMenu: (x, y) => ipcRenderer.send("menu:popup", { x, y }),
+    setColors: (color, symbolColor) => ipcRenderer.send("titlebar:colors", { color, symbolColor }),
+  },
   version,
   notify: (n) => ipcRenderer.send("notify", n),
   setBadge: (count, iconDataUrl) => ipcRenderer.send("badge", { count, iconDataUrl }),

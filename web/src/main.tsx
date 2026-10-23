@@ -2,6 +2,7 @@ import "./fonts";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import App from "./App";
+import { TitleBar } from "./TitleBar";
 import { applyPrefs, loadPrefs } from "./prefs";
 import { applyActiveTheme } from "./themes";
 import "./styles.css";
@@ -12,6 +13,7 @@ window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () 
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
+    <TitleBar />
     <App />
   </StrictMode>
 );

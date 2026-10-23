@@ -2,12 +2,11 @@ import { useState } from "react";
 import { api } from "./api";
 import { Modal } from "./Modals";
 import { PERMISSION_INFO, canEditRole, can, isOwner } from "./permissions";
-import type { Member, Permission, ServerDetail, ServerRole } from "./types";
-import { nameOfUser } from "./util";
+import type { Permission, ServerDetail } from "./types";
 
 const PRESET_COLORS = ["#e74c3c", "#e67e22", "#f1c40f", "#2ecc71", "#1abc9c", "#3498db", "#9b59b6", "#e84393"];
 
-interface Draft { name: string; color: string | null; permissions: Permission[] }
+interface Draft { name: string; color: string | null; permissions: Permission[]; hoist: boolean; selfAssignable: boolean }
 
 /** Name, color and permission checkboxes. Permissions you don't hold yourself are locked (the owner holds all of them). */
 function RoleForm({ server, initial, submitLabel, onSubmit, onCancel }: { server: ServerDetail; initial: Draft; submitLabel: string; onSubmit: (d: Draft) => Promise<void>; onCancel?: () => void }) {
@@ -32,7 +31,15 @@ function RoleForm({ server, initial, submitLabel, onSubmit, onCancel }: { server
           <input type="color" className="swatch-input" value={d.color ?? "#99aab5"} onChange={(e) => setD({ ...d, color: e.target.value })} aria-label="Custom color" />
         </div>
       </div>
-      <fieldset className="perm-list">
+      <label className="check perm">
+        <input type="checkbox" checked={d.hoist} onChange={(e) => setD({ ...d, hoist: e.target.checked })} />
+        <span><strong>Show members with this role separately</strong><small className="muted">People who are online get their own section in the member list.</small></span>
+      </label>
+      <label className="check perm">
+        <input type="checkbox" checked={d.selfAssignable} onChange={(e) => setD({ ...d, selfAssignable: e.target.checked, permissions: e.target.checked ? [] : d.permissions })} />
+        <span><strong>Anyone can give themselves this role</strong><small className="muted">Handy for pick-your-own roles like pronouns or interests. Turns off the permissions below, since anyone could take it.</small></span>
+      </label>
+      <fieldset className="perm-list" disabled={d.selfAssignable}>
         <legend className="label-text">Permissions</legend>
         {PERMISSION_INFO.map((p) => {
           const held = server.myPermissions.includes(p.key);
@@ -69,7 +76,7 @@ export function RolesTab({ server, onError }: { server: ServerDetail; onError: (
       {editing === "new" && (
         <RoleForm
           server={server}
-          initial={{ name: "", color: null, permissions: [] }}
+          initial={{ name: "", color: null, permissions: [], hoist: true, selfAssignable: false }}
           submitLabel="Create role"
           onCancel={() => setEditing(null)}
           onSubmit={async (d) => run(async () => { await api(`/servers/${server.id}/roles`, "POST", d); setEditing(null); })}
@@ -98,7 +105,7 @@ export function RolesTab({ server, onError }: { server: ServerDetail; onError: (
               {editing === r.id && (
                 <RoleForm
                   server={server}
-                  initial={{ name: r.name, color: r.color, permissions: r.permissions }}
+                  initial={{ name: r.name, color: r.color, permissions: r.permissions, hoist: r.hoist, selfAssignable: r.selfAssignable }}
                   submitLabel="Save role"
                   onSubmit={async (d) => run(async () => { await api(`/servers/${server.id}/roles/${r.id}`, "PATCH", d); setEditing(null); })}
                 />
@@ -108,38 +115,6 @@ export function RolesTab({ server, onError }: { server: ServerDetail; onError: (
         })}
       </ul>
     </div>
-  );
-}
-
-/** Pick which roles one member has. Only roles ranked below you are offered. */
-export function MemberRolesModal({ server, member, onClose, onError }: { server: ServerDetail; member: Member; onClose: () => void; onError: (e: unknown) => void }) {
-  const [busy, setBusy] = useState<string | null>(null);
-  // Re-read from the live server data so the checkboxes follow the socket updates.
-  const live = server.members.find((m) => m.id === member.id) ?? member;
-  async function toggle(r: ServerRole, has: boolean) {
-    setBusy(r.id);
-    try { await api(`/servers/${server.id}/members/${member.id}/roles/${r.id}`, has ? "DELETE" : "PUT"); } catch (e) { onError(e); }
-    setBusy(null);
-  }
-  return (
-    <Modal title={`Roles for ${nameOfUser(member)}`} onClose={onClose}>
-      <ul className="rows">
-        {server.roles.length === 0 && <li className="muted">This server has no roles yet. Create some in Settings → Roles.</li>}
-        {server.roles.map((r) => {
-          const has = live.roleIds.includes(r.id);
-          const editable = canEditRole(server, r);
-          return (
-            <li key={r.id}>
-              <label className="check">
-                <input type="checkbox" checked={has} disabled={!editable || busy === r.id} onChange={() => void toggle(r, has)} />
-                <span className="role-name"><i className="role-dot big" style={{ background: r.color ?? "var(--dim)" }} />{r.name}</span>
-              </label>
-              {!editable && <small className="muted">Ranked above you</small>}
-            </li>
-          );
-        })}
-      </ul>
-    </Modal>
   );
 }
 
@@ -160,7 +135,7 @@ export function LegacyAdminsModal({ server, onClose, onDone, onError }: { server
       </p>
       <RoleForm
         server={server}
-        initial={{ name: "Admin", color: "#3498db", permissions: all }}
+        initial={{ name: "Admin", color: "#3498db", permissions: all, hoist: true, selfAssignable: false }}
         submitLabel={`Create role and give it to ${n === 1 ? "them" : `all ${n}`}`}
         onSubmit={(d) => resolve({ mode: "role", role: d })}
       />

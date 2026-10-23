@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import Composer, { type ComposerHandle } from "./Composer";
 import MessageRow from "./MessageRow";
 import { Avatar } from "./Avatar";
+import { Name } from "./Name";
 import type { Attachment, Channel, DmSummary, Member, Message, ServerSummary, User } from "./types";
 import { nameOfUser } from "./util";
 
@@ -32,6 +33,11 @@ interface Props {
   onLoadOlder: () => void;
   onJoinInvite: (code: string) => Promise<ServerSummary | null>;
   onOpenServer: (serverId: string) => void;
+  navOpen: boolean;
+  onToggleNav: () => void;
+  showMembersToggle: boolean;
+  membersOpen: boolean;
+  onToggleMembers: () => void;
 }
 
 export default function Chat(p: Props) {
@@ -104,16 +110,22 @@ export default function Chat(p: Props) {
         composerRef.current?.addFiles(e.dataTransfer.files);
       }}
     >
-      <header className="chat-head">
-        {p.dm ? (
-          <span className="dm-head">
-            <Avatar id={p.dm.user.id} name={nameOfUser(p.dm.user)} version={p.dm.user.avatarVersion} accent={p.dm.user.accent} size={26} />
-            {nameOfUser(p.dm.user)}
-            <span className={p.dm.online ? "dot on" : "dot"} title={p.dm.online ? "Online" : "Offline"} />
-          </span>
-        ) : (
-          <><span className="hash">#</span>{channel.name}</>
-        )}
+      <header className="chat-head topbar">
+        <button className="icon ghost menu-btn" onClick={p.onToggleNav} aria-label={p.navOpen ? "Hide navigation" : "Show navigation"} aria-expanded={p.navOpen}>☰</button>
+        <div className="title">
+          {p.dm ? (
+            <span className="dm-head">
+              <Avatar id={p.dm.user.id} name={nameOfUser(p.dm.user)} version={p.dm.user.avatarVersion} accent={p.dm.user.accent} size={26} />
+              <h1><Name user={p.dm.user} /></h1>
+              <span className={p.dm.online ? "dot on" : "dot"} title={p.dm.online ? "Online" : "Offline"} />
+            </span>
+          ) : (
+            <><span className="hash">#</span><h1>{channel.name}</h1></>
+          )}
+        </div>
+        <div className="top-actions">
+          {p.showMembersToggle && <button className="icon ghost" onClick={p.onToggleMembers} aria-label={p.membersOpen ? "Hide member list" : "Show member list"} aria-expanded={p.membersOpen} title="Members">👥</button>}
+        </div>
       </header>
       {dragging && <div className="drop-hint">Drop files to attach them to {p.dm ? nameOfUser(p.dm.user) : `#${channel.name}`}</div>}
       <div

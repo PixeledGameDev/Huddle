@@ -54,6 +54,7 @@ function serverUrl() {
 }
 
 // ---------- splash screen ----------
+const TITLEBAR_H = 40; // the web page draws the title bar; this is its height
 const SPLASH_PAGE = path.join(__dirname, "splash.html");
 const SPLASH_MIN_MS = 1200; // long enough to read, short enough not to feel slow
 let splash = null;
@@ -62,8 +63,8 @@ let splashStatus = { text: "Starting…" };
 
 function showSplash() {
   splash = new BrowserWindow({
-    width: 380,
-    height: 340,
+    width: 420,
+    height: 380,
     frame: false,
     resizable: false,
     maximizable: false,
@@ -193,8 +194,11 @@ function createWindow() {
     minHeight: 520,
     show: false,
     title: "Huddle",
-    backgroundColor: "#ffffff",
+    backgroundColor: "#0f1322",
     icon: fs.existsSync(ICON) ? ICON : undefined,
+    // No native title bar or menu bar: Huddle draws its own (logo menu, title, window buttons from the system).
+    titleBarStyle: "hidden",
+    ...(isMac ? { trafficLightPosition: { x: 16, y: 13 } } : { titleBarOverlay: { color: "#0f1322", symbolColor: "#e8ecf8", height: TITLEBAR_H } }),
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
@@ -206,6 +210,19 @@ function createWindow() {
   });
   const wc = win.webContents;
   wc.setUserAgent(`${wc.getUserAgent()} HuddleDesktop/${app.getVersion()}`);
+  if (!isMac) win.setMenuBarVisibility(false);
+  // Without a menu bar the usual shortcuts have to be handled here.
+  wc.on("before-input-event", (e, input) => {
+    if (input.type !== "keyDown") return;
+    const ctrl = input.control || input.meta;
+    const key = input.key.toLowerCase();
+    if (key === "f12" || (ctrl && input.shift && key === "i")) { wc.toggleDevTools(); e.preventDefault(); }
+    else if (key === "f5" || (ctrl && key === "r")) { input.shift ? wc.reloadIgnoringCache() : wc.reload(); e.preventDefault(); }
+    else if (ctrl && (key === "=" || key === "+")) { wc.setZoomLevel(wc.getZoomLevel() + 0.5); e.preventDefault(); }
+    else if (ctrl && key === "-") { wc.setZoomLevel(wc.getZoomLevel() - 0.5); e.preventDefault(); }
+    else if (ctrl && key === "0") { wc.setZoomLevel(0); e.preventDefault(); }
+    else if (key === "f11") { win.setFullScreen(!win.isFullScreen()); e.preventDefault(); }
+  });
 
   win.once("ready-to-show", () => {
     if (settings.maximized) win.maximize();
@@ -371,6 +388,39 @@ function updateMenuItems() {
   else items.push({ label: "Check for updates…", click: () => void checkNow() });
   return items;
 }
+/** The Huddle menu: opened from the logo in the title bar (and used for the macOS menu bar). */
+function huddleMenuTemplate() {
+  const zoom = (d) => win?.webContents.setZoomLevel(d === 0 ? 0 : win.webContents.getZoomLevel() + d);
+  return [
+    { label: "Change server…", click: changeServer },
+    { label: "Keep running in the tray when closed", type: "checkbox", checked: settings.closeToTray, click: toggleCloseToTray },
+    ...updateMenuItems(),
+    { type: "separator" },
+    { label: "Zoom in", accelerator: "CmdOrCtrl+=", click: () => zoom(0.5) },
+    { label: "Zoom out", accelerator: "CmdOrCtrl+-", click: () => zoom(-0.5) },
+    { label: "Actual size", accelerator: "CmdOrCtrl+0", click: () => zoom(0) },
+    { label: "Full screen", accelerator: "F11", click: () => win?.setFullScreen(!win.isFullScreen()) },
+    { label: "Reload", accelerator: "CmdOrCtrl+R", click: () => win?.webContents.reload() },
+    { label: "Developer tools", accelerator: "F12", click: () => win?.webContents.toggleDevTools() },
+    { type: "separator" },
+    { label: "Quit Huddle", click: () => { quitting = true; app.quit(); } },
+  ];
+}
+ipcMain.on("menu:popup", (e, pos) => {
+  if (!fromHuddle(e) || !win) return;
+  const z = win.webContents.getZoomFactor();
+  const x = Number.isFinite(pos?.x) ? Math.max(0, Math.round(pos.x * z)) : 0;
+  const y = Number.isFinite(pos?.y) ? Math.max(0, Math.round(pos.y * z)) : TITLEBAR_H;
+  Menu.buildFromTemplate(huddleMenuTemplate()).popup({ window: win, x, y });
+});
+/** The title bar follows the app's colors so the window buttons blend in. */
+ipcMain.on("titlebar:colors", (e, c) => {
+  if (!fromHuddle(e) || !win || isMac) return;
+  const hex = /^#[0-9a-f]{6}$/i;
+  if (!hex.test(c?.color) || !hex.test(c?.symbolColor)) return;
+  try { win.setTitleBarOverlay({ color: c.color, symbolColor: c.symbolColor, height: TITLEBAR_H }); } catch { /* not supported here */ }
+});
+
 function buildMenus() {
   const trayItems = [
     { label: "Open Huddle", click: showWindow },
@@ -382,16 +432,13 @@ function buildMenus() {
   ];
   tray?.setContextMenu(Menu.buildFromTemplate(trayItems));
 
-  const huddleMenu = {
-    label: "Huddle",
-    submenu: [
-      { label: "Change server…", click: changeServer },
-      { label: "Keep running in the tray when closed", type: "checkbox", checked: settings.closeToTray, click: toggleCloseToTray },
-      ...updateMenuItems(),
-      ...(isMac ? [] : [{ type: "separator" }, { role: "quit" }]),
-    ],
-  };
-  Menu.setApplicationMenu(Menu.buildFromTemplate([...(isMac ? [{ role: "appMenu" }] : []), huddleMenu, { role: "editMenu" }, { role: "viewMenu" }, { role: "windowMenu" }]));
+  if (isMac) {
+    // macOS always has a menu bar at the top of the screen, so keep a normal one there.
+    const huddleMenu = { label: "Huddle", submenu: huddleMenuTemplate().filter((i) => i.label !== "Quit Huddle" && i.label !== "Developer tools") };
+    Menu.setApplicationMenu(Menu.buildFromTemplate([{ role: "appMenu" }, huddleMenu, { role: "editMenu" }, { role: "viewMenu" }, { role: "windowMenu" }]));
+  } else {
+    Menu.setApplicationMenu(null); // no "File Edit View Window" bar: the logo in the title bar opens the Huddle menu
+  }
 }
 function createTray() {
   const img = nativeImage.createFromPath(TRAY_ICON);

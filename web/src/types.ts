@@ -28,7 +28,7 @@ export interface Channel { id: string; name: string }
 /** The base membership role. "admin" only exists on servers that haven't converted their old admins to a role yet. */
 export type Role = "owner" | "admin" | "member";
 export type Permission = "manage_server" | "manage_channels" | "manage_roles" | "manage_messages" | "kick_members" | "ban_members" | "timeout_members" | "mention_everyone" | "view_audit_log" | "manage_emojis";
-export interface ServerRole { id: string; name: string; color: string | null; permissions: Permission[]; position: number; memberCount: number }
+export interface ServerRole { id: string; name: string; color: string | null; permissions: Permission[]; position: number; hoist: boolean; selfAssignable: boolean; memberCount: number }
 export type VoteAction = "kick" | "timeout" | "ban";
 
 export interface Member {

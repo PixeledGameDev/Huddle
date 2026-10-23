@@ -7,26 +7,38 @@
   <style>
     html, body { margin: 0; height: 100%; overflow: hidden; user-select: none; -webkit-user-select: none; }
     body {
-      display: grid; place-items: center; text-align: center; color: #e6e9f2;
+      display: grid; place-items: center; text-align: center; color: #eaeefc;
       font: 14px "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
-      background: radial-gradient(120% 90% at 50% 0%, #2a3560 0%, #1a2036 55%, #11141f 100%);
+      background:
+        radial-gradient(70% 55% at 15% 0%, rgba(124, 140, 255, .42), transparent 70%),
+        radial-gradient(60% 50% at 100% 100%, rgba(181, 140, 255, .32), transparent 70%),
+        #0b0e19;
       -webkit-app-region: drag;
     }
-    main { display: grid; gap: 14px; justify-items: center; padding: 0 32px; }
-    img { width: 88px; height: 88px; border-radius: 22px; box-shadow: 0 10px 30px rgba(0, 0, 0, .45); animation: pop .5s ease-out both; }
-    h1 { margin: 4px 0 0; font-size: 26px; letter-spacing: .02em; }
-    #status { margin: 0; min-height: 1.3em; color: #9aa3bd; }
-    .bar { width: 220px; height: 5px; border-radius: 3px; background: rgba(255, 255, 255, .12); overflow: hidden; }
-    .bar > i { display: block; height: 100%; width: 40%; border-radius: 3px; background: #5d7af0; animation: slide 1.2s ease-in-out infinite; }
+    /* soft drifting light behind the card */
+    body::before, body::after { content: ""; position: absolute; width: 220px; height: 220px; border-radius: 50%; filter: blur(60px); opacity: .5; animation: drift 9s ease-in-out infinite alternate; }
+    body::before { background: #7c8cff; left: -50px; top: -40px; }
+    body::after { background: #c58cff; right: -60px; bottom: -50px; animation-delay: -4s; }
+    @keyframes drift { to { transform: translate(40px, 30px) scale(1.15); } }
+    main { position: relative; z-index: 1; display: grid; gap: 16px; justify-items: center; padding: 34px 40px; width: 300px; border-radius: 24px; border: 1px solid rgba(255, 255, 255, .1); background: rgba(22, 27, 46, .62); backdrop-filter: blur(20px); box-shadow: 0 24px 60px rgba(0, 0, 0, .5); animation: rise .6s cubic-bezier(.2, .8, .2, 1) both; }
+    .logo { position: relative; width: 84px; height: 84px; border-radius: 24px; overflow: hidden; box-shadow: 0 12px 34px rgba(124, 140, 255, .55); animation: float 3.2s ease-in-out infinite; }
+    .logo img { width: 100%; height: 100%; display: block; }
+    .logo::after { content: ""; position: absolute; inset: 0; background: linear-gradient(105deg, transparent 38%, rgba(255, 255, 255, .6) 50%, transparent 62%); background-size: 300% 100%; animation: shine 2.6s ease-in-out infinite; }
+    h1 { margin: 2px 0 0; font-size: 28px; letter-spacing: .02em; background: linear-gradient(135deg, #fff, #b9c2ff 70%); -webkit-background-clip: text; background-clip: text; color: transparent; }
+    #status { margin: 0; min-height: 1.3em; color: #9aa6cc; }
+    .bar { width: 100%; height: 6px; border-radius: 3px; background: rgba(255, 255, 255, .1); overflow: hidden; }
+    .bar > i { display: block; height: 100%; width: 38%; border-radius: 3px; background: linear-gradient(90deg, #7c8cff, #c58cff); box-shadow: 0 0 14px rgba(124, 140, 255, .8); animation: slide 1.3s ease-in-out infinite; }
     .bar.known > i { animation: none; width: 0; transition: width .25s ease; }
-    @keyframes slide { 0% { transform: translateX(-120%); } 100% { transform: translateX(300%); } }
-    @keyframes pop { from { opacity: 0; transform: scale(.85); } to { opacity: 1; transform: none; } }
-    @media (prefers-reduced-motion: reduce) { img { animation: none; } .bar > i { animation: none; width: 100%; opacity: .6; } }
+    @keyframes slide { 0% { transform: translateX(-130%); } 100% { transform: translateX(320%); } }
+    @keyframes shine { 0%, 55% { background-position: 160% 0; } 100% { background-position: -60% 0; } }
+    @keyframes float { 50% { transform: translateY(-5px); } }
+    @keyframes rise { from { opacity: 0; transform: translateY(14px) scale(.96); } }
+    @media (prefers-reduced-motion: reduce) { * { animation: none !important; } .bar > i { width: 100%; opacity: .6; } }
   </style>
 </head>
 <body>
   <main>
-    <img src="../build/icon.png" alt="" />
+    <div class="logo"><img src="../build/icon.png" alt="" /></div>
     <h1>Huddle</h1>
     <p id="status" role="status" aria-live="polite">Starting…</p>
     <div class="bar" id="bar" aria-hidden="true"><i id="fill"></i></div>

@@ -9,8 +9,9 @@ import { VerifiedBadge } from "./Verified";
 import { StatusDot } from "./Status";
 import { Modal } from "./Modals";
 import { loadPrefs, savePrefs, type Prefs } from "./prefs";
-import type { DmPrivacy, Friendship, Member, ServerDetail, User } from "./types";
-import { bannerImage, hue, nameOfUser, squareImage } from "./util";
+import { can, canModerateMember } from "./permissions";
+import type { DmPrivacy, Friendship, Member, Permission, ServerDetail, ServerRole, User } from "./types";
+import { actionVerb, bannerImage, hue, nameOfUser, squareImage } from "./util";
 
 interface Mutual { id: string; username: string; displayName: string | null; avatarVersion: number; accent: string | null }
 interface ProfileData {
@@ -23,11 +24,12 @@ interface ProfileData {
   mutualFriends?: Mutual[];
 }
 
-export function ProfileCard({ userId, serverId, meId, onClose, onEdit, onMessage, onChanged }: { userId: string; serverId: string; meId: string; onClose: () => void; onEdit: () => void; onMessage: (userId: string) => void; onChanged: () => void }) {
+export function ProfileCard({ userId, serverId, server, meId, onClose, onEdit, onMessage, onChanged, onStartVote, onServerChanged }: { userId: string; serverId: string; server: ServerDetail | null; meId: string; onClose: () => void; onEdit: () => void; onMessage: (userId: string) => void; onChanged: () => void; onStartVote: (m: Member) => void; onServerChanged: () => void }) {
   const [data, setData] = useState<ProfileData | null>(null);
   const [error, setError] = useState("");
   const [replying, setReplying] = useState(false);
   const [reply, setReply] = useState("");
+  const [tab, setTab] = useState<"about" | "roles" | "moderation">("about");
   useEffect(() => {
     api<ProfileData>(`/users/${userId}/profile?serverId=${serverId}`).then(setData, (e) => setError(e.message));
   }, [userId, serverId]);
@@ -77,6 +79,30 @@ export function ProfileCard({ userId, serverId, meId, onClose, onEdit, onMessage
     }
   }
 
+  // Everything you can do to this person in this server lives in their profile: their roles, and every moderation action.
+  const member = server && !server.isDm ? server.members.find((m) => m.id === userId) ?? null : null;
+  const roleEditable = (r: ServerRole) => {
+    if (!server || !member) return false;
+    const self = member.id === meId;
+    if (self && r.selfAssignable && r.permissions.length === 0) return true;
+    return can(server, "manage_roles") && server.myTop > r.position && (self || server.myTop > member.top);
+  };
+  const editableRoles = member && server ? server.roles.filter(roleEditable) : [];
+  const canMod = !!(server && member && canModerateMember(server, meId, member));
+  const staffTarget = !!member && !!server && (member.role !== "member" || member.roleIds.some((id) => server.roles.find((r) => r.id === id)?.permissions.some((x) => x !== "mention_everyone" && x !== "view_audit_log" && x !== "manage_emojis")));
+  const canVote = !!(server && member && member.id !== meId && server.settings.voteEnabled && !staffTarget);
+  const showRoles = editableRoles.length > 0;
+  const showMod = canMod || canVote;
+  const activeTab = tab === "roles" && !showRoles ? "about" : tab === "moderation" && !showMod ? "about" : tab;
+  async function toggleRole(r: ServerRole, has: boolean) {
+    if (!server || !member) return;
+    try {
+      await api(`/servers/${server.id}/members/${member.id}/roles/${r.id}`, has ? "DELETE" : "PUT");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Something went wrong.");
+    }
+  }
+
   const p = data?.profile;
   const name = p ? nameOfUser(p) : "";
   return (
@@ -104,6 +130,40 @@ export function ProfileCard({ userId, serverId, meId, onClose, onEdit, onMessage
               </form>
             ) : <button className="link" onClick={() => setReplying(true)}>Reply to status</button>
           )}
+          {(showRoles || showMod) && (
+            <div className="card-tabs" role="tablist">
+              <button role="tab" aria-selected={activeTab === "about"} className={activeTab === "about" ? "on" : ""} onClick={() => setTab("about")}>About</button>
+              {showRoles && <button role="tab" aria-selected={activeTab === "roles"} className={activeTab === "roles" ? "on" : ""} onClick={() => setTab("roles")}>Roles</button>}
+              {showMod && <button role="tab" aria-selected={activeTab === "moderation"} className={activeTab === "moderation" ? "danger-tab on" : "danger-tab"} onClick={() => setTab("moderation")}>Moderation</button>}
+            </div>
+          )}
+          {activeTab === "roles" && member && server && (
+            <div className="panel-body stack">
+              <p className="muted">{member.id === meId ? "Give yourself or take off any role you're allowed to." : `Roles for ${name}. You can only change roles ranked below your own.`}</p>
+              <div className="chips">
+                {editableRoles.map((r) => {
+                  const has = member.roleIds.includes(r.id);
+                  return (
+                    <label key={r.id} className={has ? "role-pick on" : "role-pick"} style={{ ["--c" as string]: r.color ?? "var(--accent)" }}>
+                      <input type="checkbox" checked={has} onChange={() => void toggleRole(r, has)} />{r.name}
+                    </label>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+          {activeTab === "moderation" && member && server && (
+            <div className="panel-body stack">
+              {canMod && <ModerationForm server={server} target={member} onError={(e) => setError(e instanceof Error ? e.message : "Something went wrong.")} onDone={(kind) => { onServerChanged(); if (kind === "kick" || kind === "ban") onClose(); }} />}
+              {canVote && (
+                <div className="vote-row">
+                  <button type="button" onClick={() => { onStartVote(member); onClose(); }}>Start a vote to {actionVerb(server.settings.voteAction)}</button>
+                  <small className="muted">Lets everyone decide instead of acting on your own.</small>
+                </div>
+              )}
+            </div>
+          )}
+          {activeTab === "about" && (<>
           {p.bio && <p className="profile-bio">{p.bio}</p>}
           <dl className="profile-meta">
             {p.createdAt && (<><dt>On Huddle since</dt><dd>{new Date(p.createdAt).toLocaleDateString([], { year: "numeric", month: "short", day: "numeric" })}</dd></>)}
@@ -136,6 +196,7 @@ export function ProfileCard({ userId, serverId, meId, onClose, onEdit, onMessage
               )}
             </div>
           )}
+          </>)}
           {p.id === meId ? (
             <button className="primary" onClick={onEdit}>Edit profile</button>
           ) : (
@@ -316,52 +377,49 @@ export function MyProfileModal({ me, onClose, onUser, onDeleted, onError, onOpen
 const TIMEOUT_LENGTHS: [string, string][] = [["60", "1 minute"], ["300", "5 minutes"], ["600", "10 minutes"], ["3600", "1 hour"], ["86400", "1 day"], ["604800", "1 week"]];
 const BAN_LENGTHS: [string, string][] = [["3600", "1 hour"], ["86400", "1 day"], ["604800", "1 week"], ["2592000", "30 days"], ["", "Permanent"]];
 
-export function ModerateModal({ server, target, onClose, onDone, onError }: { server: ServerDetail; target: Member; onClose: () => void; onDone: () => void; onError: (e: unknown) => void }) {
+/** Time out, kick or ban: every moderation action for a person, shown inside their profile. */
+export function ModerationForm({ server, target, onDone, onError }: { server: ServerDetail; target: Member; onDone: (kind: "timeout" | "untimeout" | "kick" | "ban") => void; onError: (e: unknown) => void }) {
   const [action, setAction] = useState<"timeout" | "kick" | "ban">("timeout");
   const [duration, setDuration] = useState("600");
   const [reason, setReason] = useState("");
   const [busy, setBusy] = useState(false);
   const name = nameOfUser(target);
   const isTimedOut = !!target.timeoutUntil && new Date(target.timeoutUntil) > new Date();
+  const has = (p: Permission) => server.myPermissions.includes(p);
+  const allowed = (["timeout", "kick", "ban"] as const).filter((a) => has(a === "timeout" ? "timeout_members" : a === "kick" ? "kick_members" : "ban_members"));
 
-  async function run(act: string, durationSeconds?: number | null) {
+  async function run(act: "timeout" | "untimeout" | "kick" | "ban", durationSeconds?: number | null) {
     setBusy(true);
     try {
       await api(`/servers/${server.id}/moderation`, "POST", { targetId: target.id, action: act, durationSeconds, reason: reason.trim() || undefined });
-      onDone();
+      onDone(act);
     } catch (err) {
       onError(err);
-      setBusy(false);
     }
+    setBusy(false);
   }
 
+  const pick = allowed.includes(action) ? action : allowed[0];
   const changeAction = (a: typeof action) => { setAction(a); setDuration(a === "timeout" ? "600" : a === "ban" ? "86400" : ""); };
-  const lengths = action === "timeout" ? TIMEOUT_LENGTHS : BAN_LENGTHS;
+  const lengths = pick === "timeout" ? TIMEOUT_LENGTHS : BAN_LENGTHS;
+  if (!pick) return <p className="muted">You don't have a moderation permission.</p>;
 
   return (
-    <Modal title={`Moderate ${name}`} onClose={onClose}>
-      <form className="stack" onSubmit={(e) => { e.preventDefault(); void run(action, action === "kick" ? undefined : duration ? Number(duration) : null); }}>
-        <fieldset className="radio-row">
-          <legend className="label-text">Action (applies immediately, no vote)</legend>
-          {(["timeout", "kick", "ban"] as const).map((a) => (
-            <label key={a} className="check"><input type="radio" name="action" checked={action === a} onChange={() => changeAction(a)} />{a === "timeout" ? "Time out" : a === "kick" ? "Kick" : "Ban"}</label>
-          ))}
-        </fieldset>
-        {action !== "kick" && (
-          <label>{action === "timeout" ? "Timeout length" : "Ban length"}
+    <div className="stack">
+      <form className="stack" onSubmit={(e) => { e.preventDefault(); void run(pick, pick === "kick" ? undefined : duration ? Number(duration) : null); }}>
+        <div className="seg" role="group" aria-label="Action (applies immediately, no vote)">
+          {allowed.map((a) => <button type="button" key={a} className={pick === a ? "on" : ""} onClick={() => changeAction(a)}>{a === "timeout" ? "Time out" : a === "kick" ? "Kick" : "Ban"}</button>)}
+        </div>
+        {pick !== "kick" && (
+          <label>{pick === "timeout" ? "Timeout length" : "Ban length"}
             <select value={duration} onChange={(e) => setDuration(e.target.value)}>{lengths.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select>
           </label>
         )}
-        <label>Reason (saved to the activity log)<input value={reason} maxLength={200} onChange={(e) => setReason(e.target.value)} /></label>
-        {action === "kick" && <p className="muted">They can rejoin with an invite code.</p>}
-        <button className="primary danger-fill" disabled={busy}>{action === "timeout" ? "Time out" : action === "kick" ? "Kick" : "Ban"} {name}</button>
+        <label>Reason (saved to the activity log)<input value={reason} maxLength={200} onChange={(e) => setReason(e.target.value)} placeholder="Optional" /></label>
+        {pick === "kick" && <p className="muted">They can rejoin with an invite code.</p>}
+        <button className="primary danger-fill" disabled={busy}>{pick === "timeout" ? "Time out" : pick === "kick" ? "Kick" : "Ban"} {name}</button>
       </form>
-      {isTimedOut && (
-        <>
-          <hr />
-          <button disabled={busy} onClick={() => void run("untimeout")}>Remove {name}'s timeout</button>
-        </>
-      )}
-    </Modal>
+      {isTimedOut && has("timeout_members") && <button disabled={busy} onClick={() => void run("untimeout")}>Remove {name}'s timeout</button>}
+    </div>
   );
 }

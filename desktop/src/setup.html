@@ -6,13 +6,20 @@
   <title>Huddle</title>
   <style>
     :root { color-scheme: light dark; --accent: #3556d8; }
-    body { margin: 0; min-height: 100vh; display: grid; place-items: center; font: 15px system-ui, sans-serif; background: Canvas; color: CanvasText; }
-    main { width: min(420px, 90vw); display: grid; gap: 14px; }
+    body { margin: 0; min-height: 100vh; display: grid; place-items: center; font: 15px "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif; color: CanvasText;
+      background: radial-gradient(60% 50% at 8% 0%, rgba(124, 140, 255, .28), transparent 70%), radial-gradient(50% 45% at 100% 100%, rgba(181, 140, 255, .2), transparent 70%), Canvas; }
+    /* The system title bar is gone, so the top edge drags the window (the window buttons are drawn over the right-hand end). */
+    body::before { content: ""; position: fixed; inset: 0 0 auto 0; height: 40px; -webkit-app-region: drag; }
+    main { width: min(440px, 90vw); display: grid; gap: 14px; padding: 28px; border-radius: 20px; border: 1px solid #8884; background: color-mix(in srgb, Canvas 78%, transparent); backdrop-filter: blur(18px); box-shadow: 0 20px 60px rgba(0, 0, 0, .25); }
     h1 { margin: 0; font-size: 22px; }
     p { margin: 0; opacity: .75; line-height: 1.45; }
     input { font: inherit; padding: 10px 12px; border-radius: 8px; border: 1px solid #8886; background: transparent; color: inherit; }
     button { font: inherit; padding: 10px 14px; border-radius: 8px; border: 1px solid #8886; background: transparent; color: inherit; cursor: pointer; }
-    button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+    button { transition: transform .15s, box-shadow .15s; }
+    button:hover:not(:disabled) { transform: translateY(-1px); }
+    button.primary { background: linear-gradient(135deg, #7c8cff, #a78bfa); border-color: transparent; color: #fff; position: relative; overflow: hidden; box-shadow: 0 6px 18px rgba(124, 140, 255, .4); }
+    button.primary::after { content: ""; position: absolute; inset: 0; background: linear-gradient(105deg, transparent 38%, rgba(255, 255, 255, .55) 50%, transparent 62%); background-size: 300% 100%; background-position: 160% 0; transition: background-position .75s; pointer-events: none; }
+    button.primary:hover::after { background-position: -60% 0; }
     button:disabled { opacity: .5; cursor: default; }
     .row { display: flex; gap: 10px; }
     .error { color: #d93025; min-height: 1.2em; }
