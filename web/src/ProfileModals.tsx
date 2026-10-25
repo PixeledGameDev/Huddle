@@ -29,7 +29,7 @@ export function ProfileCard({ userId, serverId, server, meId, onClose, onEdit, o
   const [error, setError] = useState("");
   const [replying, setReplying] = useState(false);
   const [reply, setReply] = useState("");
-  const [tab, setTab] = useState<"about" | "roles" | "moderation">("about");
+  const [tab, setTab] = useState<"about" | "mutuals" | "roles" | "moderation">("about");
   useEffect(() => {
     api<ProfileData>(`/users/${userId}/profile?serverId=${serverId}`).then(setData, (e) => setError(e.message));
   }, [userId, serverId]);
@@ -93,7 +93,6 @@ export function ProfileCard({ userId, serverId, server, meId, onClose, onEdit, o
   const canVote = !!(server && member && member.id !== meId && server.settings.voteEnabled && !staffTarget);
   const showRoles = editableRoles.length > 0;
   const showMod = canMod || canVote;
-  const activeTab = tab === "roles" && !showRoles ? "about" : tab === "moderation" && !showMod ? "about" : tab;
   async function toggleRole(r: ServerRole, has: boolean) {
     if (!server || !member) return;
     try {
@@ -105,112 +104,143 @@ export function ProfileCard({ userId, serverId, server, meId, onClose, onEdit, o
 
   const p = data?.profile;
   const name = p ? nameOfUser(p) : "";
+  const other = !!p && p.id !== meId;
+  const hasMutuals = other && ((data?.mutualFriends?.length ?? 0) > 0 || (data?.mutualServers?.length ?? 0) > 0);
+  const tabs: { id: "about" | "mutuals" | "roles" | "moderation"; label: string; danger?: boolean }[] = [{ id: "about", label: "About" }];
+  if (other) tabs.push({ id: "mutuals", label: "Mutuals" });
+  if (showRoles) tabs.push({ id: "roles", label: "Roles" });
+  if (showMod) tabs.push({ id: "moderation", label: "Moderation", danger: true });
+  const current = tabs.some((t) => t.id === tab) ? tab : "about";
+  const joined = (iso: string) => new Date(iso).toLocaleDateString([], { year: "numeric", month: "short", day: "numeric" });
+
   return (
-    <Modal title={p ? name : "Profile"} onClose={onClose}>
-      {error && <p className="error">{error}</p>}
+    <Modal title={p ? name : "Profile"} onClose={onClose} variant="profile">
+      {error && <p className="error card-error">{error}</p>}
+      {!p && !error && <p className="muted card-loading">Loading…</p>}
       {p && (
-        <div className="profile-card">
+        <div className="pcard">
           <div
-            className="profile-banner"
-            style={p.bannerVersion ? { backgroundImage: `url(/api/users/${p.id}/banner?v=${p.bannerVersion})`, backgroundSize: "cover", backgroundPosition: "center" } : { background: p.accent ?? `hsl(${hue(p.username)} 45% 42%)` }}
+            className="pcard-banner"
+            style={p.bannerVersion ? { backgroundImage: `url(/api/users/${p.id}/banner?v=${p.bannerVersion})` } : { background: `linear-gradient(120deg, ${p.accent ?? `hsl(${hue(p.username)} 70% 62%)`}, color-mix(in srgb, ${p.accent ?? `hsl(${hue(p.username)} 70% 62%)`} 40%, #b58cff))` }}
           />
-          <div className="profile-avatar"><Avatar id={p.id} name={name} version={p.avatarVersion} accent={p.accent} size={84} /></div>
-          <h3><Name user={p} /></h3>
-          <p className="muted">@{p.username}{data?.server && data.server.role !== "member" && <em className="tag">{data.server.role}</em>}</p>
-          {data?.server && data.server.roles.length > 0 && (
-            <p className="profile-roles">{data.server.roles.map((r) => <em key={r.id} className="tag role-tag"><i className="role-dot" style={{ background: r.color ?? "var(--dim)" }} />{r.name}</em>)}</p>
+          <div className="pcard-head">
+            <span className="pcard-avatar">
+              <Avatar id={p.id} name={name} version={p.avatarVersion} accent={p.accent} size={84} />
+              {p.status && <StatusDot status={p.status} />}
+            </span>
+            <div className="pcard-id">
+              <h2>
+                <Name user={p} />
+                {data?.server && data.server.role !== "member" && <em className="role-chip">{data.server.role}</em>}
+                {data?.server?.roles.map((r) => <em key={r.id} className="role-chip" style={{ ["--c" as string]: r.color ?? "var(--dim)" }}>{r.name}</em>)}
+              </h2>
+              <small className="muted">@{p.username}{data?.server ? ` · Joined ${joined(data.server.joinedAt)}` : ""}</small>
+            </div>
+          </div>
+
+          {p.statusText && <p className="pcard-status">{p.statusText}</p>}
+          {replying && (
+            <form className="status-reply" onSubmit={(e) => { e.preventDefault(); void sendStatusReply(); }}>
+              <input autoFocus value={reply} maxLength={2000} placeholder="Reply to their status…" onChange={(e) => setReply(e.target.value)} />
+              <button className="primary" disabled={!reply.trim()}>Send</button>
+            </form>
           )}
-          {p.status && <p className="muted profile-presence"><StatusDot status={p.status} className="inline" /> {p.status === "dnd" ? "Do not disturb" : p.status[0].toUpperCase() + p.status.slice(1)}</p>}
-          {p.statusText && <p className="profile-status">{p.statusText}</p>}
-          {p.statusText && p.id !== meId && !data?.blockedByMe && (
-            replying ? (
-              <form className="status-reply" onSubmit={(e) => { e.preventDefault(); void sendStatusReply(); }}>
-                <input autoFocus value={reply} maxLength={2000} placeholder="Reply to their status…" onChange={(e) => setReply(e.target.value)} />
-                <button className="primary" disabled={!reply.trim()}>Send</button>
-              </form>
-            ) : <button className="link" onClick={() => setReplying(true)}>Reply to status</button>
-          )}
-          {(showRoles || showMod) && (
+
+          <div className="pcard-actions">
+            {p.id === meId ? (
+              <button className="pill primary" onClick={onEdit}>Edit profile</button>
+            ) : (
+              <>
+                {!data?.blockedByMe && (
+                  <button className="pill primary" disabled={data?.canMessage === false} title={data?.canMessage === false ? "This person isn't accepting new direct messages from you." : undefined} onClick={() => onMessage(p.id)}>Message</button>
+                )}
+                {!data?.blockedByMe && data?.friendship === "none" && <button className="pill" onClick={() => void friendAction("add")}>Add friend</button>}
+                {data?.friendship === "outgoing" && <button className="pill" onClick={() => void friendAction("cancel")}>Cancel request</button>}
+                {data?.friendship === "incoming" && <button className="pill" onClick={() => void friendAction("accept")}>Accept request</button>}
+                {data?.friendship === "friends" && <button className="pill" onClick={() => void friendAction("remove")}>Friends ✓</button>}
+                {p.statusText && !data?.blockedByMe && !replying && <button className="pill" onClick={() => setReplying(true)}>Reply to status</button>}
+                <button className="pill danger" onClick={() => void toggleBlock()}>{data?.blockedByMe ? "Unblock" : "Block"}</button>
+              </>
+            )}
+          </div>
+
+          {tabs.length > 1 && (
             <div className="card-tabs" role="tablist">
-              <button role="tab" aria-selected={activeTab === "about"} className={activeTab === "about" ? "on" : ""} onClick={() => setTab("about")}>About</button>
-              {showRoles && <button role="tab" aria-selected={activeTab === "roles"} className={activeTab === "roles" ? "on" : ""} onClick={() => setTab("roles")}>Roles</button>}
-              {showMod && <button role="tab" aria-selected={activeTab === "moderation"} className={activeTab === "moderation" ? "danger-tab on" : "danger-tab"} onClick={() => setTab("moderation")}>Moderation</button>}
+              {tabs.map((t) => (
+                <button key={t.id} role="tab" aria-selected={current === t.id} className={`${current === t.id ? "on" : ""} ${t.danger ? "danger-tab" : ""}`.trim()} onClick={() => setTab(t.id)}>{t.label}</button>
+              ))}
             </div>
           )}
-          {activeTab === "roles" && member && server && (
-            <div className="panel-body stack">
-              <p className="muted">{member.id === meId ? "Give yourself or take off any role you're allowed to." : `Roles for ${name}. You can only change roles ranked below your own.`}</p>
-              <div className="chips">
-                {editableRoles.map((r) => {
-                  const has = member.roleIds.includes(r.id);
-                  return (
-                    <label key={r.id} className={has ? "role-pick on" : "role-pick"} style={{ ["--c" as string]: r.color ?? "var(--accent)" }}>
-                      <input type="checkbox" checked={has} onChange={() => void toggleRole(r, has)} />{r.name}
-                    </label>
-                  );
-                })}
+
+          <div className="pcard-panel">
+            {current === "about" && (
+              <div className="stack">
+                {p.bio ? <p className="profile-bio">{p.bio}</p> : <p className="muted">{p.id === meId ? "You haven't written a bio yet." : "No bio yet."}</p>}
+                <dl className="profile-meta">
+                  {p.status && (<><dt>Status</dt><dd>{p.status === "dnd" ? "Do not disturb" : p.status[0].toUpperCase() + p.status.slice(1)}</dd></>)}
+                  {p.createdAt && (<><dt>On Huddle since</dt><dd>{joined(p.createdAt)}</dd></>)}
+                  {data?.server && (<><dt>Joined this server</dt><dd>{joined(data.server.joinedAt)}</dd></>)}
+                </dl>
               </div>
-            </div>
-          )}
-          {activeTab === "moderation" && member && server && (
-            <div className="panel-body stack">
-              {canMod && <ModerationForm server={server} target={member} onError={(e) => setError(e instanceof Error ? e.message : "Something went wrong.")} onDone={(kind) => { onServerChanged(); if (kind === "kick" || kind === "ban") onClose(); }} />}
-              {canVote && (
-                <div className="vote-row">
-                  <button type="button" onClick={() => { onStartVote(member); onClose(); }}>Start a vote to {actionVerb(server.settings.voteAction)}</button>
-                  <small className="muted">Lets everyone decide instead of acting on your own.</small>
+            )}
+
+            {current === "mutuals" && (
+              <div className="stack">
+                {!hasMutuals && <p className="muted">No mutual servers or friends yet.</p>}
+                {(data?.mutualServers?.length ?? 0) > 0 && (
+                  <section>
+                    <h4>Mutual servers · {data!.mutualServers!.length}</h4>
+                    <ul className="mutual-list">
+                      {data!.mutualServers!.map((s) => (
+                        <li key={s.id} title={s.name}>
+                          {s.iconVersion > 0 ? <img className="mutual-icon" src={`/api/servers/${s.id}/icon?v=${s.iconVersion}`} alt="" /> : <span className="mutual-icon" style={{ background: `hsl(${hue(s.name)} 38% 40%)` }}>{s.name[0].toUpperCase()}</span>}
+                          <span>{s.name}</span>{s.verified && <VerifiedBadge />}
+                        </li>
+                      ))}
+                    </ul>
+                  </section>
+                )}
+                {(data?.mutualFriends?.length ?? 0) > 0 && (
+                  <section>
+                    <h4>Mutual friends · {data!.mutualFriends!.length}</h4>
+                    <ul className="mutual-list">
+                      {data!.mutualFriends!.map((f) => (
+                        <li key={f.id} title={`@${f.username}`}><Avatar id={f.id} name={nameOfUser(f)} version={f.avatarVersion} accent={f.accent} size={22} /><span>{nameOfUser(f)}</span></li>
+                      ))}
+                    </ul>
+                  </section>
+                )}
+              </div>
+            )}
+
+            {current === "roles" && member && server && (
+              <div className="stack">
+                <p className="muted">{member.id === meId ? "Give yourself or take off any role you're allowed to." : `Roles for ${name}. You can only change roles ranked below your own.`}</p>
+                <div className="chips">
+                  {editableRoles.map((r) => {
+                    const has = member.roleIds.includes(r.id);
+                    return (
+                      <label key={r.id} className={has ? "role-pick on" : "role-pick"} style={{ ["--c" as string]: r.color ?? "var(--accent)" }}>
+                        <input type="checkbox" checked={has} onChange={() => void toggleRole(r, has)} />{r.name}
+                      </label>
+                    );
+                  })}
                 </div>
-              )}
-            </div>
-          )}
-          {activeTab === "about" && (<>
-          {p.bio && <p className="profile-bio">{p.bio}</p>}
-          <dl className="profile-meta">
-            {p.createdAt && (<><dt>On Huddle since</dt><dd>{new Date(p.createdAt).toLocaleDateString([], { year: "numeric", month: "short", day: "numeric" })}</dd></>)}
-            {data?.server && (<><dt>Joined this server</dt><dd>{new Date(data.server.joinedAt).toLocaleDateString([], { year: "numeric", month: "short", day: "numeric" })}</dd></>)}
-          </dl>
-          {p.id !== meId && ((data?.mutualFriends?.length ?? 0) > 0 || (data?.mutualServers?.length ?? 0) > 0) && (
-            <div className="mutuals">
-              {(data?.mutualServers?.length ?? 0) > 0 && (
-                <section>
-                  <h4>Mutual servers · {data!.mutualServers!.length}</h4>
-                  <ul className="mutual-list">
-                    {data!.mutualServers!.map((s) => (
-                      <li key={s.id} title={s.name}>
-                        {s.iconVersion > 0 ? <img className="mutual-icon" src={`/api/servers/${s.id}/icon?v=${s.iconVersion}`} alt="" /> : <span className="mutual-icon" style={{ background: `hsl(${hue(s.name)} 38% 40%)` }}>{s.name[0].toUpperCase()}</span>}
-                        <span>{s.name}</span>{s.verified && <VerifiedBadge />}
-                      </li>
-                    ))}
-                  </ul>
-                </section>
-              )}
-              {(data?.mutualFriends?.length ?? 0) > 0 && (
-                <section>
-                  <h4>Mutual friends · {data!.mutualFriends!.length}</h4>
-                  <ul className="mutual-list">
-                    {data!.mutualFriends!.map((f) => (
-                      <li key={f.id} title={`@${f.username}`}><Avatar id={f.id} name={nameOfUser(f)} version={f.avatarVersion} accent={f.accent} size={22} /><span>{nameOfUser(f)}</span></li>
-                    ))}
-                  </ul>
-                </section>
-              )}
-            </div>
-          )}
-          </>)}
-          {p.id === meId ? (
-            <button className="primary" onClick={onEdit}>Edit profile</button>
-          ) : (
-            <div className="profile-actions">
-              {!data?.blockedByMe && (
-                <button className="primary" disabled={data?.canMessage === false} title={data?.canMessage === false ? "This person isn't accepting new direct messages from you." : undefined} onClick={() => onMessage(p.id)}>Message</button>
-              )}
-              {!data?.blockedByMe && data?.friendship === "none" && <button onClick={() => void friendAction("add")}>Add friend</button>}
-              {data?.friendship === "outgoing" && <button onClick={() => void friendAction("cancel")}>Cancel request</button>}
-              {data?.friendship === "incoming" && <button onClick={() => void friendAction("accept")}>Accept request</button>}
-              {data?.friendship === "friends" && <button onClick={() => void friendAction("remove")}>Friends ✓</button>}
-              <button className="danger" onClick={() => void toggleBlock()}>{data?.blockedByMe ? "Unblock" : "Block"}</button>
-            </div>
-          )}
+              </div>
+            )}
+
+            {current === "moderation" && member && server && (
+              <div className="stack">
+                {canMod && <ModerationForm server={server} target={member} onError={(e) => setError(e instanceof Error ? e.message : "Something went wrong.")} onDone={(kind) => { onServerChanged(); if (kind === "kick" || kind === "ban") onClose(); }} />}
+                {canVote && (
+                  <div className="vote-row">
+                    <button type="button" onClick={() => { onStartVote(member); onClose(); }}>Start a vote to {actionVerb(server.settings.voteAction)}</button>
+                    <small className="muted">Lets everyone decide instead of acting on your own.</small>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
         </div>
       )}
     </Modal>

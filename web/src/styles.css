@@ -801,3 +801,88 @@ body.tb-win .titlebar { padding-right: calc(100vw - env(titlebar-area-x, 0px) - 
 .pill.sm { padding: 5px 11px; font-size: 12px; }
 .nav .pill { background: var(--side-hover); color: var(--side-text); }
 .nav .pill.primary { background: linear-gradient(135deg, var(--accent), color-mix(in srgb, var(--accent) 55%, #c58cff)); color: var(--accent-ink); }
+
+/* =====================================================================
+   v5 popups and controls: every modal, form control, tab bar and list
+   ===================================================================== */
+/* base controls */
+button { border-radius: 10px; padding: 8px 14px; background: color-mix(in srgb, var(--text) 7%, transparent); transition: background .15s, border-color .15s, transform .15s, box-shadow .15s, filter .15s; }
+button:hover { background: var(--hover); }
+button:active:not(:disabled) { transform: translateY(1px); }
+button.primary { background: linear-gradient(135deg, var(--accent), color-mix(in srgb, var(--accent) 55%, #c58cff)); border-color: transparent; color: var(--accent-ink); box-shadow: 0 6px 16px color-mix(in srgb, var(--accent) 32%, transparent); }
+button.primary:hover { background: linear-gradient(135deg, var(--accent), color-mix(in srgb, var(--accent) 55%, #c58cff)); filter: brightness(1.07); }
+button.danger-fill { background: var(--bad); border-color: transparent; color: #fff; box-shadow: 0 6px 16px color-mix(in srgb, var(--bad) 30%, transparent); }
+button.danger-fill:hover { background: var(--bad); filter: brightness(1.08); }
+button.danger { border-color: color-mix(in srgb, var(--bad) 45%, var(--line)); }
+button.link { background: none; box-shadow: none; }
+button.link:hover { background: none; filter: brightness(1.15); }
+button.icon { border-radius: 10px; }
+input, select, textarea { border-radius: 10px; padding: 9px 12px; background: color-mix(in srgb, var(--text) 5%, transparent); transition: border-color .15s, box-shadow .15s, background .15s; }
+input:focus, select:focus, textarea:focus { outline: 0; border-color: color-mix(in srgb, var(--accent) 65%, var(--line)); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent); background: color-mix(in srgb, var(--text) 7%, transparent); }
+.file-btn { border-radius: 10px; background: color-mix(in srgb, var(--text) 7%, transparent); }
+.error { color: var(--bad); }
+
+/* the popup shell */
+.backdrop { background: rgba(5, 8, 18, .62); backdrop-filter: blur(6px); animation: fadeIn .2s; }
+.modal { background: color-mix(in srgb, var(--panel) 96%, transparent); backdrop-filter: blur(20px); border: 1px solid var(--line); border-radius: 22px; box-shadow: 0 30px 80px rgba(0, 0, 0, .5); padding: 20px 24px 24px; animation: popIn .28s var(--ease); scrollbar-width: thin; }
+@keyframes popIn { from { opacity: 0; transform: translateY(14px) scale(.97); } }
+.modal > header { position: sticky; top: -20px; z-index: 3; margin: -20px -24px 14px; padding: 18px 20px 12px 24px; background: color-mix(in srgb, var(--panel) 92%, transparent); backdrop-filter: blur(14px); border-bottom: 1px solid var(--line); }
+.modal > header h2 { font-size: 20px; letter-spacing: -.01em; }
+.modal-close { width: 34px; height: 34px; font-size: 14px; }
+.modal h3 { font-size: 13px; text-transform: uppercase; letter-spacing: .07em; color: var(--dim); margin: 6px 0 2px; }
+.danger-zone h3 { color: var(--bad); }
+.modal hr { border: 0; border-top: 1px solid var(--line); margin: 6px 0; }
+
+/* tabs inside popups */
+.tabs { gap: 2px; border-bottom: 1px solid var(--line); }
+.tab { padding: 9px 14px; border-radius: 10px 10px 0 0; font-weight: 600; color: var(--dim); background: none; }
+.tab:hover { background: var(--hover); color: var(--text); }
+.tab.on { color: var(--text); border-bottom-color: var(--accent); }
+.seg { display: inline-flex; gap: 2px; padding: 3px; border: 1px solid var(--line); border-radius: 12px; background: color-mix(in srgb, var(--text) 5%, transparent); overflow: visible; }
+.seg button { border: 0; border-radius: 9px; background: none; padding: 6px 14px; font-weight: 600; color: var(--dim); }
+.seg button.on { background: linear-gradient(135deg, var(--accent), color-mix(in srgb, var(--accent) 55%, #c58cff)); color: var(--accent-ink); box-shadow: 0 4px 12px color-mix(in srgb, var(--accent) 35%, transparent); }
+.rows > li { border-radius: 14px; background: color-mix(in srgb, var(--text) 4%, transparent); transition: border-color .15s, background .15s; }
+.rows > li:hover { border-color: color-mix(in srgb, var(--accent) 30%, var(--line)); }
+.audit li { border-radius: 10px; }
+
+/* the profile card */
+.modal.profile-modal { padding: 0; width: min(480px, 100%); overflow-y: auto; overflow-x: hidden; }
+.modal-close.floating { position: absolute; top: 12px; right: 12px; z-index: 5; background: rgba(0, 0, 0, .38); color: #fff; backdrop-filter: blur(6px); }
+.modal-close.floating:hover { background: rgba(0, 0, 0, .55); color: #fff; }
+.card-error, .card-loading { margin: 0; padding: 28px 24px; }
+.pcard { display: grid; }
+.pcard-banner { height: 120px; background-size: cover; background-position: center; background-repeat: no-repeat; }
+.pcard-head { display: flex; align-items: flex-end; gap: 14px; padding: 0 22px; margin-top: -42px; }
+.pcard-avatar { position: relative; flex: none; line-height: 0; border: 5px solid var(--panel); border-radius: 50%; background: var(--panel); }
+.pcard-avatar .dot { position: absolute; right: 2px; bottom: 2px; width: 18px; height: 18px; border: 3px solid var(--panel); }
+.pcard-id { min-width: 0; padding-bottom: 4px; }
+.pcard-id h2 { margin: 0; font-size: clamp(20px, 1.2vw + 14px, 26px); letter-spacing: -.01em; display: flex; align-items: center; flex-wrap: wrap; gap: 6px 8px; overflow-wrap: anywhere; }
+.pcard-id small { display: block; margin-top: 2px; }
+.pcard-status { margin: 14px 22px 0; padding: 9px 14px; border-radius: 14px; background: color-mix(in srgb, var(--text) 7%, transparent); border: 1px solid var(--line); font-weight: 500; overflow-wrap: anywhere; }
+.pcard .status-reply { margin: 10px 22px 0; }
+.pcard-actions { display: flex; flex-wrap: wrap; gap: 8px; padding: 14px 22px 0; }
+.pcard .card-tabs { margin: 18px 22px 0; width: auto; }
+.pcard-panel { padding: 16px 22px 22px; }
+.pcard-panel h4 { margin: 0 0 8px; font-size: 12px; text-transform: uppercase; letter-spacing: .08em; color: var(--dim); }
+.pcard-panel .profile-meta { margin: 0; }
+.pcard-panel .profile-bio { margin: 0 !important; }
+.pcard-panel .mutual-list li { background: color-mix(in srgb, var(--text) 6%, transparent); }
+.role-chip { display: inline-flex; align-items: center; font-size: 11px; font-weight: 700; font-style: normal; letter-spacing: 0; padding: 2px 9px; border-radius: 999px; color: var(--c, var(--accent)); background: color-mix(in srgb, var(--c, var(--accent)) 16%, transparent); border: 1px solid color-mix(in srgb, var(--c, var(--accent)) 42%, transparent); white-space: nowrap; }
+.pill.danger { color: var(--bad); border-color: color-mix(in srgb, var(--bad) 45%, var(--line)); }
+.pill:disabled { opacity: .5; }
+
+/* smaller pieces */
+.toast { border-radius: 14px; backdrop-filter: blur(14px); box-shadow: 0 12px 34px rgba(0, 0, 0, .35); animation: popIn .25s var(--ease); }
+.picker, .gif-picker { border-radius: 16px; backdrop-filter: blur(16px); box-shadow: 0 16px 44px rgba(0, 0, 0, .35); }
+.menu { border-radius: 14px; backdrop-filter: blur(16px); animation: popIn .18s var(--ease); }
+
+/* sign in */
+.auth { background: radial-gradient(60% 50% at 10% 0%, color-mix(in srgb, var(--accent) 30%, transparent), transparent 70%), radial-gradient(50% 45% at 100% 100%, color-mix(in srgb, var(--accent) 20%, transparent), transparent 70%), var(--bg); }
+.auth-card { background: color-mix(in srgb, var(--panel) 90%, transparent); backdrop-filter: blur(20px); border: 1px solid var(--line); border-radius: 24px; box-shadow: 0 30px 80px rgba(0, 0, 0, .4); padding: 32px; animation: popIn .4s var(--ease); }
+.auth-card h1 { background: linear-gradient(135deg, var(--text), var(--accent)); -webkit-background-clip: text; background-clip: text; color: transparent; }
+@media (max-width: 699px) {
+  .modal { border-radius: 22px; padding: 18px 16px 20px; }
+  .modal > header { margin: -18px -16px 12px; padding: 16px 14px 10px 16px; }
+  .pcard-head { padding: 0 16px; } .pcard-status { margin-left: 16px; margin-right: 16px; } .pcard-actions { padding: 14px 16px 0; } .pcard .card-tabs { margin: 16px 16px 0; } .pcard-panel { padding: 14px 16px 18px; }
+}
+@media (prefers-reduced-motion: reduce) { .modal, .backdrop, .toast, .menu, .auth-card { animation: none; } }

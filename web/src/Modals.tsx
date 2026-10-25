@@ -6,7 +6,7 @@ import { RolesTab } from "./Roles";
 import type { BanEntry, DeletedMessage, ServerDetail, ServerSummary, Settings } from "./types";
 import { dateTimeOf, extractInviteCode, fmtDuration, fmtSize, hue, squareImage } from "./util";
 
-export function Modal({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
+export function Modal({ title, onClose, children, variant }: { title: string; onClose: () => void; children: React.ReactNode; variant?: "profile" }) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
     window.addEventListener("keydown", onKey);
@@ -14,8 +14,12 @@ export function Modal({ title, onClose, children }: { title: string; onClose: ()
   }, [onClose]);
   return (
     <div className="backdrop" onMouseDown={onClose}>
-      <div className="modal" role="dialog" aria-modal="true" aria-label={title} onMouseDown={(e) => e.stopPropagation()}>
-        <header><h2>{title}</h2><button className="icon" aria-label="Close" onClick={onClose}>✕</button></header>
+      <div className={variant === "profile" ? "modal profile-modal" : "modal"} role="dialog" aria-modal="true" aria-label={title} onMouseDown={(e) => e.stopPropagation()}>
+        {variant === "profile" ? (
+          <button className="icon ghost modal-close floating" aria-label="Close" onClick={onClose}>✕</button>
+        ) : (
+          <header><h2>{title}</h2><button className="icon ghost modal-close" aria-label="Close" onClick={onClose}>✕</button></header>
+        )}
         {children}
       </div>
     </div>
