@@ -1,3 +1,6 @@
+import crypto from "crypto";
+import fs from "fs";
+import path from "path";
 import type { NextFunction, Request, Response, Router as ExpressRouter } from "express";
 import { Router } from "express";
 import { userFromCookie } from "./auth";
@@ -55,11 +58,23 @@ export function startMaintenanceWatcher() {
   }, 2000).unref();
 }
 
+/**
+ * Identifies the version of the website being served. The built page names its scripts after their contents, so hashing it
+ * changes whenever the site does. Open pages compare it to the one they loaded with to know when to offer a reload.
+ */
+const BUILD = (() => {
+  try {
+    return crypto.createHash("sha1").update(fs.readFileSync(path.join(__dirname, "../../web/dist/index.html"))).digest("hex").slice(0, 12);
+  } catch {
+    return "dev";
+  }
+})();
+
 export const maintenanceRouter: ExpressRouter = Router();
 // Public: the maintenance screen (and the sign-in page) need this before anyone is signed in.
 maintenanceRouter.get("/maintenance", h(async (_req, res) => {
   res.set("Cache-Control", "no-store");
-  res.json({ ...maintenanceState(), now: new Date().toISOString() });
+  res.json({ ...maintenanceState(), now: new Date().toISOString(), build: BUILD });
 }));
 
 /** While maintenance is on, only Huddle Admins get through. Sign-in stays open so an admin can get in. */

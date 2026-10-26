@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "./api";
 import { Logo } from "./Logo";
 
-export interface MaintenanceState { active: boolean; endsAt: string | null; startedAt: string | null; message: string | null; now?: string }
+export interface MaintenanceState { active: boolean; endsAt: string | null; startedAt: string | null; message: string | null; now?: string; build?: string }
 const OFF: MaintenanceState = { active: false, endsAt: null, startedAt: null, message: null };
 
 /** Tells every piece of the app that maintenance may have started or stopped, so they all look again right away. */
@@ -13,21 +13,29 @@ export function useMaintenance() {
   const [state, setState] = useState<MaintenanceState>(OFF);
   const [skew, setSkew] = useState(0);
   const wasActive = useRef(false);
+  const loadedBuild = useRef<string | null>(null); // the version this page started with
+  const [newBuild, setNewBuild] = useState(false);
   const refresh = useCallback(async () => {
     try {
       const m = await api<MaintenanceState>("/maintenance");
       if (m.now) setSkew(new Date(m.now).getTime() - Date.now());
       setState(m);
       wasActive.current = m.active;
+      if (m.build && m.build !== "dev") {
+        loadedBuild.current ??= m.build;
+        if (m.build !== loadedBuild.current) setNewBuild(true);
+      }
     } catch { /* offline or restarting: keep what we know */ }
   }, []);
   useEffect(() => {
     void refresh();
     window.addEventListener("huddle:maintenance", refresh);
     const t = window.setInterval(refresh, state.active ? 5000 : 20000);
-    return () => { window.removeEventListener("huddle:maintenance", refresh); clearInterval(t); };
+    const visible = () => { if (document.visibilityState === "visible") void refresh(); }; // look right away when coming back to the tab
+    document.addEventListener("visibilitychange", visible);
+    return () => { window.removeEventListener("huddle:maintenance", refresh); document.removeEventListener("visibilitychange", visible); clearInterval(t); };
   }, [refresh, state.active]);
-  return { state, skew, refresh };
+  return { state, skew, refresh, newBuild };
 }
 
 /** Milliseconds left, ticking once a second. */
@@ -88,4 +96,18 @@ export function MaintenanceScreen({ state, skew, signedIn, onAdminSignIn, onSign
 export function MaintenancePill({ state, skew }: { state: MaintenanceState; skew: number }) {
   const left = useRemaining(state.endsAt, skew);
   return <div className="maint-pill" role="status"><span className="lp-live" aria-hidden="true" /> Maintenance is on for everyone else · {fmtCountdown(left)} left</div>;
+}
+
+/** Offers a reload when Huddle has been updated since this page loaded. Never reloads by itself, so nothing you're typing is lost. */
+export function SiteUpdateBanner() {
+  const [hidden, setHidden] = useState(false);
+  if (hidden) return null;
+  return (
+    <div className="update-banner" role="status" aria-live="polite">
+      <span className="lp-live" aria-hidden="true" />
+      <span>Huddle was updated. Reload to get the latest version.</span>
+      <button type="button" className="primary" onClick={() => window.location.reload()}>Reload</button>
+      <button type="button" className="icon ghost" aria-label="Dismiss" onClick={() => setHidden(true)}>✕</button>
+    </div>
+  );
 }

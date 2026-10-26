@@ -1067,3 +1067,9 @@ a.pill { color: inherit; }
   .settings-tabs button { flex: none; padding: 8px 12px; }
   .settings-panel { padding: 8px 24px 24px; }
 }
+
+/* "Huddle was updated" notice */
+.update-banner { position: fixed; z-index: 85; left: 50%; bottom: 18px; transform: translateX(-50%); display: flex; align-items: center; gap: 12px; max-width: calc(100vw - 24px); padding: 10px 12px 10px 16px; border-radius: 999px; background: color-mix(in srgb, var(--panel) 94%, transparent); backdrop-filter: blur(16px); border: 1px solid color-mix(in srgb, var(--accent) 50%, var(--line)); box-shadow: 0 14px 40px rgba(0, 0, 0, .4); font-size: 14px; font-weight: 600; animation: popIn .3s var(--ease); }
+.update-banner button.primary { padding: 7px 16px; border-radius: 999px; flex: none; }
+.update-banner .icon { width: 28px; height: 28px; flex: none; }
+@media (max-width: 560px) { .update-banner { border-radius: 18px; bottom: 10px; } }

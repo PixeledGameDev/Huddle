@@ -5,7 +5,7 @@ import { api, ApiError, uploadFile } from "./api";
 import { Avatar } from "./Avatar";
 import Auth from "./Auth";
 import { Logo } from "./Logo";
-import { MaintenancePill, MaintenanceScreen, pokeMaintenance, useMaintenance } from "./Maintenance";
+import { MaintenancePill, MaintenanceScreen, SiteUpdateBanner, pokeMaintenance, useMaintenance } from "./Maintenance";
 import Changelog from "./Changelog";
 import { hasUnseenUpdates, markUpdatesSeen } from "./changelog";
 import Chat from "./Chat";
@@ -63,7 +63,12 @@ export default function App() {
       />
     );
   }
-  const pill = maint.state.active ? <MaintenancePill state={maint.state} skew={maint.skew} /> : null;
+  const pill = (
+    <>
+      {maint.state.active && <MaintenancePill state={maint.state} skew={maint.skew} />}
+      {maint.newBuild && <SiteUpdateBanner />}
+    </>
+  );
   if (inviteCode) {
     return (
       <>
@@ -81,7 +86,7 @@ export default function App() {
       </>
     );
   }
-  if (!me) return <Auth onAuth={setMe} />;
+  if (!me) return <>{pill}<Auth onAuth={setMe} /></>;
   return <>{pill}<Main me={me} initialServerId={openServerId} onUser={setMe} onLogout={() => setMe(null)} /></>;
 }
 
