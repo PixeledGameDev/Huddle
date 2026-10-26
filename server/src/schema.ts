@@ -386,4 +386,7 @@ create table if not exists site_state (
   value jsonb not null,
   updated_at timestamptz not null default now()
 );
+
+-- v28: optional pronouns on a profile
+alter table users add column if not exists pronouns text not null default '';
 `;

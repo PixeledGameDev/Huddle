@@ -184,7 +184,7 @@ ul{list-style:none;margin:0;padding:0;display:grid;gap:8px} li{display:flex;flex
 </style></head><body><main>
 <h1>Huddle for desktop</h1>
 <p class="lead">${manifest ? `Version ${esc(manifest.version)}. ` : ""}Notifications, an unread badge, and a tray icon, in their own window.</p>
-${mine === "mobile" ? `<p class="note">The desktop app is for Windows, macOS and Linux computers. On a phone, use Huddle in your browser.</p>` : ""}
+${mine === "mobile" ? `<p class="note">The desktop app is for Windows computers. On a phone, use Huddle in your browser.</p>` : ""}
 ${body}
 <p class="steps">After installing, open Huddle and sign in. If it asks for a server address, enter <code>${esc(origin)}</code>.</p>
 <p><a class="home" href="/">Back to Huddle</a></p>

@@ -136,7 +136,7 @@ export function ProfileCard({ userId, serverId, server, meId, onClose, onEdit, o
                 {data?.server && data.server.role !== "member" && <em className="role-chip">{data.server.role}</em>}
                 {data?.server?.roles.map((r) => <em key={r.id} className="role-chip" style={{ ["--c" as string]: r.color ?? "var(--dim)" }}>{r.name}</em>)}
               </h2>
-              <small className="muted">@{p.username}{data?.server ? ` · Joined ${joined(data.server.joinedAt)}` : ""}</small>
+              <small className="muted">@{p.username}{p.pronouns ? ` · ${p.pronouns}` : ""}{data?.server ? ` · Joined ${joined(data.server.joinedAt)}` : ""}</small>
             </div>
           </div>
 
@@ -249,10 +249,15 @@ export function ProfileCard({ userId, serverId, server, meId, onClose, onEdit, o
   );
 }
 
-export function MyProfileModal({ me, onClose, onUser, onDeleted, onError, onOpenThemes }: { me: User; onClose: () => void; onUser: (u: User) => void; onDeleted: () => void; onError: (e: unknown) => void; onOpenThemes: () => void }) {
+export type SettingsTab = "profile" | "theme" | "startup" | "notifications" | "account";
+
+export function MyProfileModal({ me, onClose, onUser, onDeleted, onError, onOpenThemes, initialTab = "profile" }: { initialTab?: SettingsTab; me: User; onClose: () => void; onUser: (u: User) => void; onDeleted: () => void; onError: (e: unknown) => void; onOpenThemes: () => void }) {
   const [displayName, setDisplayName] = useState(me.displayName ?? "");
   const [statusText, setStatusText] = useState(me.statusText);
   const [bio, setBio] = useState(me.bio);
+  const [pronouns, setPronouns] = useState(me.pronouns ?? "");
+  const [tab, setTab] = useState<SettingsTab>(initialTab);
+  const [saved, setSaved] = useState(false);
   const [accent, setAccent] = useState<string | null>(me.accent);
   const [nameFont, setNameFont] = useState<NameFont>((me.nameFont as NameFont) ?? "default");
   const [dmPrivacy, setDmPrivacy] = useState<DmPrivacy>(me.dmPrivacy ?? "everyone");
@@ -268,11 +273,13 @@ export function MyProfileModal({ me, onClose, onUser, onDeleted, onError, onOpen
     e.preventDefault();
     setBusy(true);
     try {
-      const { user } = await api<{ user: User }>("/me/profile", "PATCH", { displayName: displayName.trim() || null, statusText: statusText.trim(), bio: bio.trim(), accent, dmPrivacy, nameFont });
+      const { user } = await api<{ user: User }>("/me/profile", "PATCH", { displayName: displayName.trim() || null, statusText: statusText.trim(), bio: bio.trim(), pronouns: pronouns.trim(), accent, nameFont });
       onUser(user);
-      onClose();
+      setSaved(true);
+      window.setTimeout(() => setSaved(false), 2500);
     } catch (err) {
       onError(err);
+    } finally {
       setBusy(false);
     }
   }
@@ -296,113 +303,180 @@ export function MyProfileModal({ me, onClose, onUser, onDeleted, onError, onOpen
   }
 
   const updatePrefs = (p: Prefs) => { setPrefs(p); savePrefs(p); };
+  const changeDmPrivacy = async (v: DmPrivacy) => {
+    const before = dmPrivacy;
+    setDmPrivacy(v);
+    try { onUser((await api<{ user: User }>("/me/profile", "PATCH", { dmPrivacy: v })).user); } catch (err) { setDmPrivacy(before); onError(err); }
+  };
+
+  const desktop = !!window.huddleDesktop;
+  const TABS: { id: SettingsTab; label: string; icon: string }[] = [
+    { id: "profile", label: "Profile", icon: "👤" },
+    { id: "theme", label: "Theme", icon: "🎨" },
+    { id: "startup", label: "Startup", icon: "🚀" },
+    { id: "notifications", label: "Notifications", icon: "🔔" },
+    { id: "account", label: "Account", icon: "🔒" },
+  ];
+  const onTabKey = (e: React.KeyboardEvent) => {
+    const i = TABS.findIndex((t) => t.id === tab);
+    const next = e.key === "ArrowDown" || e.key === "ArrowRight" ? i + 1 : e.key === "ArrowUp" || e.key === "ArrowLeft" ? i - 1 : null;
+    if (next === null) return;
+    e.preventDefault();
+    const t = TABS[(next + TABS.length) % TABS.length];
+    setTab(t.id);
+    document.getElementById(`settings-tab-${t.id}`)?.focus();
+  };
 
   return (
-    <Modal title="Profile & appearance" onClose={onClose}>
-      <div className="avatar-edit">
-        <Avatar id={me.id} name={nameOfUser(me)} version={me.avatarVersion} accent={me.accent} size={72} />
-        <div className="stack tight">
-          <label className="file-btn">
-            Upload picture
-            <input type="file" accept="image/png,image/jpeg,image/gif,image/webp" hidden onChange={(e) => { const f = e.target.files?.[0]; if (f) void pickAvatar(f); e.target.value = ""; }} />
-          </label>
-          {me.avatarVersion > 0 && (
-            <button type="button" className="link left" onClick={async () => { try { onUser((await api<{ user: User }>("/me/avatar", "DELETE")).user); } catch (err) { onError(err); } }}>Remove picture</button>
+    <Modal title="Settings" onClose={onClose} variant="settings">
+      <div className="settings-layout">
+        <div className="settings-tabs" role="tablist" aria-orientation="vertical" aria-label="Settings sections" onKeyDown={onTabKey}>
+          {TABS.map((t) => (
+            <button key={t.id} id={`settings-tab-${t.id}`} role="tab" type="button" aria-selected={tab === t.id} aria-controls="settings-panel" tabIndex={tab === t.id ? 0 : -1} className={tab === t.id ? "on" : ""} onClick={() => setTab(t.id)}>
+              <span aria-hidden="true">{t.icon}</span>{t.label}
+            </button>
+          ))}
+        </div>
+        <div className="settings-panel" id="settings-panel" role="tabpanel" aria-labelledby={`settings-tab-${tab}`}>
+          {tab === "profile" && (
+            <>
+              <div className="avatar-edit">
+                <Avatar id={me.id} name={nameOfUser(me)} version={me.avatarVersion} accent={me.accent} size={72} />
+                <div className="stack tight">
+                  <label className="file-btn">
+                    Upload picture
+                    <input type="file" accept="image/png,image/jpeg,image/gif,image/webp" hidden onChange={(e) => { const f = e.target.files?.[0]; if (f) void pickAvatar(f); e.target.value = ""; }} />
+                  </label>
+                  {me.avatarVersion > 0 && (
+                    <button type="button" className="link left" onClick={async () => { try { onUser((await api<{ user: User }>("/me/avatar", "DELETE")).user); } catch (err) { onError(err); } }}>Remove picture</button>
+                  )}
+                </div>
+              </div>
+              <div className="banner-edit">
+                <div className="profile-banner" style={me.bannerVersion ? { backgroundImage: `url(/api/users/${me.id}/banner?v=${me.bannerVersion})`, backgroundSize: "cover", backgroundPosition: "center" } : { background: accent ?? `hsl(${hue(me.username)} 45% 42%)` }} />
+                <div className="row-actions">
+                  <label className="file-btn">Upload banner<input type="file" accept="image/png,image/jpeg,image/gif,image/webp" hidden onChange={(e) => { const f = e.target.files?.[0]; if (f) void pickBanner(f); e.target.value = ""; }} /></label>
+                  {!!me.bannerVersion && <button type="button" className="link" onClick={async () => { try { onUser((await api<{ user: User }>("/me/banner", "DELETE")).user); } catch (err) { onError(err); } }}>Remove banner</button>}
+                </div>
+              </div>
+              <form className="stack" onSubmit={save}>
+                <label>Display name<input value={displayName} maxLength={32} placeholder={me.username} onChange={(e) => setDisplayName(e.target.value)} /><small className="muted">Shown instead of @{me.username}. People still @mention you as @{me.username}.</small></label>
+                <label>Pronouns
+                  <input value={pronouns} maxLength={24} placeholder="e.g. she/her, he/him, they/them" list="pronoun-suggestions" onChange={(e) => setPronouns(e.target.value)} />
+                  <datalist id="pronoun-suggestions"><option value="she/her" /><option value="he/him" /><option value="they/them" /><option value="she/they" /><option value="he/they" /><option value="any pronouns" /><option value="ask me" /></datalist>
+                  <small className="muted">Optional. Shown on your profile.</small>
+                </label>
+                <label>Display name font
+                  <select value={nameFont} onChange={(e) => setNameFont(e.target.value as NameFont)}>{NAME_FONTS.map((f) => <option key={f.id} value={f.id}>{f.label}</option>)}</select>
+                  <span className="font-preview"><Name user={{ username: me.username, displayName: displayName.trim() || null, nameFont }} /></span>
+                </label>
+                <label>Status<input value={statusText} maxLength={80} placeholder="What are you up to?" onChange={(e) => setStatusText(e.target.value)} /></label>
+                <label>About me<textarea value={bio} maxLength={190} rows={3} onChange={(e) => setBio(e.target.value)} /><small className="muted">{bio.length}/190</small></label>
+                <div className="color-row">
+                  <label>Profile color<input type="color" value={accent ?? "#3556d8"} onChange={(e) => setAccent(e.target.value)} /></label>
+                  {accent && <button type="button" className="link" onClick={() => setAccent(null)}>Use automatic color</button>}
+                </div>
+                <div className="save-row">
+                  <button className="primary" disabled={busy}>{busy ? "Saving…" : "Save profile"}</button>
+                  {saved && <span className="saved" role="status">✓ Saved</span>}
+                </div>
+              </form>
+            </>
+          )}
+
+          {tab === "theme" && (
+            <div className="stack">
+              <h3>Appearance</h3>
+              <div className="grid">
+                <label>Theme
+                  <select value={prefs.theme} onChange={(e) => updatePrefs({ ...prefs, theme: e.target.value as Prefs["theme"] })}>
+                    <option value="system">Match my device</option>
+                    <option value="light">Light</option>
+                    <option value="dark">Dark</option>
+                  </select>
+                </label>
+                <label>Message spacing
+                  <select value={prefs.density} onChange={(e) => updatePrefs({ ...prefs, density: e.target.value as Prefs["density"] })}>
+                    <option value="cozy">Cozy</option>
+                    <option value="compact">Compact</option>
+                  </select>
+                </label>
+              </div>
+              {desktop ? (
+                <div className="stack tight">
+                  <button type="button" onClick={onOpenThemes}>Custom themes…</button>
+                  <small className="muted">Design your own colors and background pictures. While a custom theme is on, the Theme setting above is paused.</small>
+                </div>
+              ) : (
+                <small className="muted">Custom themes with your own colors and background pictures are in the Huddle desktop app.</small>
+              )}
+            </div>
+          )}
+
+          {tab === "startup" && (desktop ? <DesktopSettings /> : (
+            <div className="stack">
+              <h3>Startup</h3>
+              <p className="muted">Opening Huddle when you sign in to your computer, and whether it shows its window, are options in the Huddle desktop app.</p>
+              <a className="pill" href="/download" target="_blank" rel="noopener">Get the desktop app</a>
+            </div>
+          ))}
+
+          {tab === "notifications" && <NotificationSettings />}
+
+          {tab === "account" && (
+            <>
+              <div className="stack">
+                <h3>Privacy</h3>
+                <label>Who can start a direct message with you
+                  <select value={dmPrivacy} onChange={(e) => void changeDmPrivacy(e.target.value as DmPrivacy)}>
+                    <option value="everyone">Anyone who shares a server with me</option>
+                    <option value="friends">Only my friends</option>
+                    <option value="nobody">Nobody</option>
+                  </select>
+                  <small className="muted">This only affects new conversations. Existing ones keep working, and you can still block people.</small>
+                </label>
+              </div>
+              <hr />
+              <SecuritySettings onError={onError} />
+              <hr />
+              <div className="stack danger-zone">
+                <h3>Delete account</h3>
+                {!deleting ? (
+                  <>
+                    <p className="muted">Permanently deletes your account. Your name, picture, bio and memberships are removed and your username becomes available again. You can't undo this.</p>
+                    <button type="button" className="danger" onClick={() => setDeleting(true)}>Delete my account…</button>
+                  </>
+                ) : (
+                  <form
+                    className="stack"
+                    onSubmit={async (e) => {
+                      e.preventDefault();
+                      if (!await confirmDialog("Delete your account for good? This can't be undone.")) return;
+                      try {
+                        await api("/me", "DELETE", { password: delPassword, deleteMessages: delMessages, code: delNeedsCode ? delCode : undefined });
+                        onDeleted();
+                      } catch (err) {
+                        if (err instanceof ApiError && err.data?.needs2fa) setDelNeedsCode(true);
+                        onError(err);
+                      }
+                    }}
+                  >
+                    <p className="muted">Your old messages stay in the conversations they were part of, shown as from "Deleted user", unless you also delete them. If you own servers, delete them first.</p>
+                    <label className="check"><input type="checkbox" checked={delMessages} onChange={(e) => setDelMessages(e.target.checked)} /> Also delete all my messages, reactions and poll votes</label>
+                    <label>Your password<input type="password" value={delPassword} onChange={(e) => setDelPassword(e.target.value)} autoComplete="current-password" required /></label>
+                    {delNeedsCode && <label>Authenticator or recovery code<input value={delCode} onChange={(e) => setDelCode(e.target.value)} autoComplete="one-time-code" required /></label>}
+                    <div className="row">
+                      <button type="button" onClick={() => { setDeleting(false); setDelPassword(""); }}>Cancel</button>
+                      <button className="danger-fill" disabled={!delPassword}>Delete my account</button>
+                    </div>
+                  </form>
+                )}
+              </div>
+              <p className="muted credits">Emoji graphics are Twemoji by Twitter and contributors, used under CC-BY 4.0.</p>
+            </>
           )}
         </div>
       </div>
-      <div className="banner-edit">
-        <div className="profile-banner" style={me.bannerVersion ? { backgroundImage: `url(/api/users/${me.id}/banner?v=${me.bannerVersion})`, backgroundSize: "cover", backgroundPosition: "center" } : { background: accent ?? `hsl(${hue(me.username)} 45% 42%)` }} />
-        <div className="row-actions">
-          <label className="file-btn">Upload banner<input type="file" accept="image/png,image/jpeg,image/gif,image/webp" hidden onChange={(e) => { const f = e.target.files?.[0]; if (f) void pickBanner(f); e.target.value = ""; }} /></label>
-          {!!me.bannerVersion && <button type="button" className="link" onClick={async () => { try { onUser((await api<{ user: User }>("/me/banner", "DELETE")).user); } catch (err) { onError(err); } }}>Remove banner</button>}
-        </div>
-      </div>
-      <form className="stack" onSubmit={save}>
-        <label>Display name<input value={displayName} maxLength={32} placeholder={me.username} onChange={(e) => setDisplayName(e.target.value)} /><small className="muted">Shown instead of @{me.username}. People still @mention you as @{me.username}.</small></label>
-        <label>Display name font
-          <select value={nameFont} onChange={(e) => setNameFont(e.target.value as NameFont)}>{NAME_FONTS.map((f) => <option key={f.id} value={f.id}>{f.label}</option>)}</select>
-          <span className="font-preview"><Name user={{ username: me.username, displayName: displayName.trim() || null, nameFont }} /></span>
-        </label>
-        <label>Status<input value={statusText} maxLength={80} placeholder="What are you up to?" onChange={(e) => setStatusText(e.target.value)} /></label>
-        <label>About me<textarea value={bio} maxLength={190} rows={3} onChange={(e) => setBio(e.target.value)} /><small className="muted">{bio.length}/190</small></label>
-        <div className="color-row">
-          <label>Profile color<input type="color" value={accent ?? "#3556d8"} onChange={(e) => setAccent(e.target.value)} /></label>
-          {accent && <button type="button" className="link" onClick={() => setAccent(null)}>Use automatic color</button>}
-        </div>
-        <label>Who can start a direct message with you
-          <select value={dmPrivacy} onChange={(e) => setDmPrivacy(e.target.value as DmPrivacy)}>
-            <option value="everyone">Anyone who shares a server with me</option>
-            <option value="friends">Only my friends</option>
-            <option value="nobody">Nobody</option>
-          </select>
-          <small className="muted">This only affects new conversations. Existing ones keep working, and you can still block people.</small>
-        </label>
-        <button className="primary" disabled={busy}>Save profile</button>
-      </form>
-      <hr />
-      <h3>Appearance</h3>
-      <div className="grid">
-        <label>Theme
-          <select value={prefs.theme} onChange={(e) => updatePrefs({ ...prefs, theme: e.target.value as Prefs["theme"] })}>
-            <option value="system">Match my device</option>
-            <option value="light">Light</option>
-            <option value="dark">Dark</option>
-          </select>
-        </label>
-        <label>Message spacing
-          <select value={prefs.density} onChange={(e) => updatePrefs({ ...prefs, density: e.target.value as Prefs["density"] })}>
-            <option value="cozy">Cozy</option>
-            <option value="compact">Compact</option>
-          </select>
-        </label>
-      </div>
-      {window.huddleDesktop && (
-        <div className="stack tight">
-          <button type="button" onClick={onOpenThemes}>Custom themes…</button>
-          <small className="muted">Design your own colors and background pictures (desktop app only). While a custom theme is on, the Theme setting above is paused.</small>
-        </div>
-      )}
-      <hr />
-      <NotificationSettings />
-      <DesktopSettings />
-      <hr />
-      <SecuritySettings onError={onError} />
-      <hr />
-      <div className="stack danger-zone">
-        <h3>Delete account</h3>
-        {!deleting ? (
-          <>
-            <p className="muted">Permanently deletes your account. Your name, picture, bio and memberships are removed and your username becomes available again. You can't undo this.</p>
-            <button type="button" className="danger" onClick={() => setDeleting(true)}>Delete my account…</button>
-          </>
-        ) : (
-          <form
-            className="stack"
-            onSubmit={async (e) => {
-              e.preventDefault();
-              if (!await confirmDialog("Delete your account for good? This can't be undone.")) return;
-              try {
-                await api("/me", "DELETE", { password: delPassword, deleteMessages: delMessages, code: delNeedsCode ? delCode : undefined });
-                onDeleted();
-              } catch (err) {
-                if (err instanceof ApiError && err.data?.needs2fa) setDelNeedsCode(true);
-                onError(err);
-              }
-            }}
-          >
-            <p className="muted">Your old messages stay in the conversations they were part of, shown as from "Deleted user", unless you also delete them. If you own servers, delete them first.</p>
-            <label className="check"><input type="checkbox" checked={delMessages} onChange={(e) => setDelMessages(e.target.checked)} /> Also delete all my messages, reactions and poll votes</label>
-            <label>Your password<input type="password" value={delPassword} onChange={(e) => setDelPassword(e.target.value)} autoComplete="current-password" required /></label>
-            {delNeedsCode && <label>Authenticator or recovery code<input value={delCode} onChange={(e) => setDelCode(e.target.value)} autoComplete="one-time-code" required /></label>}
-            <div className="row">
-              <button type="button" onClick={() => { setDeleting(false); setDelPassword(""); }}>Cancel</button>
-              <button className="danger-fill" disabled={!delPassword}>Delete my account</button>
-            </div>
-          </form>
-        )}
-      </div>
-      <p className="muted credits">Emoji graphics are Twemoji by Twitter and contributors, used under CC-BY 4.0.</p>
     </Modal>
   );
 }

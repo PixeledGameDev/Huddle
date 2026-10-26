@@ -6,7 +6,7 @@ import { RolesTab } from "./Roles";
 import type { BanEntry, DeletedMessage, ServerDetail, ServerSummary, Settings } from "./types";
 import { dateTimeOf, extractInviteCode, fmtDuration, fmtSize, hue, squareImage } from "./util";
 
-export function Modal({ title, onClose, children, variant }: { title: string; onClose: () => void; children: React.ReactNode; variant?: "profile" }) {
+export function Modal({ title, onClose, children, variant }: { title: string; onClose: () => void; children: React.ReactNode; variant?: "profile" | "settings" }) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
     window.addEventListener("keydown", onKey);
@@ -14,7 +14,7 @@ export function Modal({ title, onClose, children, variant }: { title: string; on
   }, [onClose]);
   return (
     <div className="backdrop" onMouseDown={onClose}>
-      <div className={variant === "profile" ? "modal profile-modal" : "modal"} role="dialog" aria-modal="true" aria-label={title} onMouseDown={(e) => e.stopPropagation()}>
+      <div className={variant === "profile" ? "modal profile-modal" : variant === "settings" ? "modal settings-modal" : "modal"} role="dialog" aria-modal="true" aria-label={title} onMouseDown={(e) => e.stopPropagation()}>
         {variant === "profile" ? (
           <button className="icon ghost modal-close floating" aria-label="Close" onClick={onClose}>✕</button>
         ) : (

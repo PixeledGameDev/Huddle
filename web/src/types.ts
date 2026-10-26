@@ -3,6 +3,7 @@ export interface User {
   username: string;
   displayName: string | null;
   bio: string;
+  pronouns?: string;
   accent: string | null;
   statusText: string;
   avatarVersion: number;

@@ -763,15 +763,15 @@ function Main({ me, initialServerId, onUser, onLogout }: { me: User; initialServ
         )}
 
         <footer className="me-card">
-          <button className="me-id" onClick={() => setModal("myprofile")} title="Profile & appearance">
+          <button className="me-id" onClick={() => setModal("myprofile")} title="Settings">
             <span className="avatar-wrap"><Avatar id={me.id} name={myName} version={me.avatarVersion} accent={me.accent} size={34} /><StatusDot status={me.presence === "invisible" ? "offline" : me.presence ?? "online"} /></span>
-            <span className="who"><strong>{myName}</strong><small>{me.statusText || "Profile & appearance"}</small></span>
+            <span className="who"><strong>{myName}</strong><small>{me.statusText || "Settings"}</small></span>
           </button>
           <StatusMenu me={me} onUser={onUser} onError={fail} />
           <MoreMenu
             badge={unseenUpdates}
             items={[
-              { label: "Profile & appearance", onClick: () => setModal("myprofile") },
+              { label: "Settings", hint: "Profile, theme, notifications and more", onClick: () => setModal("myprofile") },
               { label: "What's new", hint: unseenUpdates ? "New updates" : undefined, onClick: () => { markUpdatesSeen(); setUnseenUpdates(false); setModal("changelog"); } },
               { label: "Suggestions", hint: "Ideas for Huddle", onClick: () => setModal("suggestions") },
               ...(appAvailable ? [{ label: "Download the desktop app", href: "/download" }] : []),

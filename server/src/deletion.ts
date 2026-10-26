@@ -57,7 +57,7 @@ export async function eraseAccount(userId: string, opts: { deleteMessages: boole
     }
     await q(`delete from user_banners where user_id = $1`, [userId], c);
     await q(
-      `update users set username = 'deleted_' || substr(replace(id::text, '-', ''), 1, 12), display_name = 'Deleted user', bio = '',
+      `update users set username = 'deleted_' || substr(replace(id::text, '-', ''), 1, 12), display_name = 'Deleted user', bio = '', pronouns = '',
               accent = null, status_text = '', avatar_version = 0, banner_version = 0, name_font = 'default', password_hash = '!', huddle_admin = false, huddle_admin_locked = false,
               banned_until = null, ban_reason = null, deleted_at = now(),
               email = null, email_verified_at = null, totp_secret = null, totp_pending = null, totp_enabled_at = null, totp_last_step = null
