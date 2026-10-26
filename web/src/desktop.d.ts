@@ -13,6 +13,9 @@ interface HuddleDesktopBridge {
   onUpdateState?(cb: (state: DesktopUpdateState) => void): () => void;
   checkForUpdates?(): Promise<DesktopUpdateState | null>;
   installUpdate?(): void;
+  /** Present from desktop app 1.3 on. */
+  getStartup?(): Promise<{ supported: boolean; launch: boolean; background: boolean } | null>;
+  setStartup?(v: { launch: boolean; background: boolean }): Promise<{ supported: boolean; launch: boolean; background: boolean } | null>;
 }
 interface DesktopUpdateState { status: "idle" | "checking" | "downloading" | "ready" | "error" | "unsupported"; version?: string; percent?: number; message?: string; upToDate?: boolean }
 interface Window {

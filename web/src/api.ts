@@ -14,7 +14,10 @@ export async function api<T = any>(path: string, method = "GET", body?: unknown)
     credentials: "same-origin",
   });
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new ApiError(data.error ?? "Request failed.", res.status, data);
+  if (!res.ok) {
+    if (res.status === 503 && data.maintenance) window.dispatchEvent(new Event("huddle:maintenance")); // Huddle just went into maintenance
+    throw new ApiError(data.error ?? "Request failed.", res.status, data);
+  }
   return data as T;
 }
 

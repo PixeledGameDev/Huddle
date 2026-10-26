@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'self'; img-src 'self'" />
+  <title>Huddle</title>
+  <style>
+    html, body { margin: 0; background: transparent; overflow: hidden; user-select: none; -webkit-user-select: none; }
+    body { padding: 14px; font: 14px "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif; color: #e6e9f2; }
+    main {
+      display: grid; gap: 8px; justify-items: center; text-align: center; padding: 26px 24px 20px;
+      border-radius: 24px; border: 1px solid #2d3550; background: #1a1f2e;
+      box-shadow: 0 18px 50px rgba(0, 0, 0, .55);
+      animation: pop .22s cubic-bezier(.2, .8, .2, 1) both; -webkit-app-region: drag;
+    }
+    .ico { width: 56px; height: 56px; border-radius: 18px; display: grid; place-items: center; background: #26325f; margin-bottom: 4px; }
+    .ico img { width: 34px; height: 34px; display: block; }
+    .ico.warn { background: rgba(240, 122, 118, .16); color: #f07a76; font-size: 28px; font-weight: 800; }
+    h1 { margin: 0; font-size: 18px; letter-spacing: -.01em; overflow-wrap: anywhere; }
+    p { margin: 0; color: #9aa3bd; line-height: 1.45; overflow-wrap: anywhere; }
+    .actions { display: flex; gap: 10px; width: 100%; margin-top: 14px; -webkit-app-region: no-drag; }
+    button {
+      flex: 1; font: inherit; font-weight: 600; color: inherit; cursor: pointer;
+      padding: 10px 16px; border-radius: 999px; border: 1px solid #2d3550; background: rgba(255, 255, 255, .06);
+      transition: border-color .15s, background .15s, transform .15s;
+    }
+    button:hover { border-color: #5d7af0; transform: translateY(-1px); }
+    button.primary { background: #5d7af0; border-color: #5d7af0; color: #fff; }
+    button.primary:hover { background: #7088f5; }
+    button:focus-visible { outline: 2px solid #5d7af0; outline-offset: 2px; }
+    @keyframes pop { from { opacity: 0; transform: translateY(8px) scale(.97); } }
+    @media (prefers-reduced-motion: reduce) { main { animation: none; } button { transition: none; } }
+  </style>
+</head>
+<body>
+  <main id="card">
+    <div class="ico" id="ico"><img src="../build/icon.png" alt="" /></div>
+    <h1 id="msg"></h1>
+    <p id="detail" hidden></p>
+    <div class="actions" id="actions"></div>
+  </main>
+  <script src="dialog.js"></script>
+</body>
+</html>

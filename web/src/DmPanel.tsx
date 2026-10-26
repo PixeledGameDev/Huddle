@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { confirmDialog } from "./Dialogs";
 import { api } from "./api";
 import { Avatar } from "./Avatar";
 import { Name } from "./Name";
@@ -17,7 +18,7 @@ export default function DmPanel({ dm, onChanged, onRemove, onError }: { dm: DmSu
   }, [dm.user.id, dm.id, dm.user.avatarVersion, dm.user.displayName]);
 
   async function toggleBlock() {
-    if (!dm.blockedByMe && !window.confirm(`Block ${name}? Neither of you will be able to send messages in this conversation until you unblock them.`)) return;
+    if (!dm.blockedByMe && !await confirmDialog(`Block ${name}? Neither of you will be able to send messages in this conversation until you unblock them.`)) return;
     try {
       await api(`/users/${dm.user.id}/block`, dm.blockedByMe ? "DELETE" : "PUT");
       onChanged();

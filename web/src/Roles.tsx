@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { confirmDialog } from "./Dialogs";
 import { api } from "./api";
 import { Modal } from "./Modals";
 import { PERMISSION_INFO, canEditRole, can, isOwner } from "./permissions";
@@ -95,7 +96,7 @@ export function RolesTab({ server, onError }: { server: ServerDetail; onError: (
                     <button className="icon" aria-label={`Move ${r.name} up`} title="Higher rank" disabled={i === 0 || !canEditRole(server, roles[i - 1])} onClick={() => run(() => api(`/servers/${server.id}/roles/${r.id}/move`, "POST", { direction: "up" }))}>↑</button>
                     <button className="icon" aria-label={`Move ${r.name} down`} title="Lower rank" disabled={i === roles.length - 1} onClick={() => run(() => api(`/servers/${server.id}/roles/${r.id}/move`, "POST", { direction: "down" }))}>↓</button>
                     <button onClick={() => setEditing(editing === r.id ? null : r.id)}>{editing === r.id ? "Close" : "Edit"}</button>
-                    <button className="danger" onClick={() => { if (window.confirm(`Delete the ${r.name} role? Everyone who has it loses it.`)) void run(() => api(`/servers/${server.id}/roles/${r.id}`, "DELETE")); }}>Delete</button>
+                    <button className="danger" onClick={async () => { if (await confirmDialog(`Delete the ${r.name} role? Everyone who has it loses it.`)) void run(() => api(`/servers/${server.id}/roles/${r.id}`, "DELETE")); }}>Delete</button>
                   </span>
                 ) : <small className="muted">Ranked above you</small>}
               </div>
@@ -140,7 +141,7 @@ export function LegacyAdminsModal({ server, onClose, onDone, onError }: { server
         onSubmit={(d) => resolve({ mode: "role", role: d })}
       />
       <hr />
-      <button className="danger" disabled={busy} onClick={() => { if (window.confirm(`Remove admin from ${n === 1 ? "them" : `all ${n}`} without giving a role? They become regular members.`)) void resolve({ mode: "demote" }); }}>
+      <button className="danger" disabled={busy} onClick={async () => { if (await confirmDialog(`Remove admin from ${n === 1 ? "them" : `all ${n}`} without giving a role? They become regular members.`)) void resolve({ mode: "demote" }); }}>
         Remove their admin power instead
       </button>
       <p className="muted">Manage roles stays with you: an admin role can be given that permission later if you want.</p>

@@ -11,6 +11,18 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "5.2",
+    date: "2026-10-26",
+    title: "A new look for the front door",
+    changes: [
+      "The sign-in page is now a proper home page: it shows how many people are on Huddle, what Huddle can do, and a preview of the app.",
+      "Huddle has a new logo, used across the app, the website and the desktop app.",
+      "Confirmation boxes (deleting a message, leaving a server, blocking someone and so on) now look like the rest of Huddle instead of a plain browser popup. The desktop app's popups match too.",
+      "Huddle Admins can put Huddle into maintenance for a set time. Everyone else sees a countdown, and Huddle comes back by itself when it ends.",
+      "Desktop app: Huddle can now open when you sign in to your computer (on by default). You choose whether it shows its window or starts quietly in the tray. Find it in your profile settings or the Huddle menu.",
+    ],
+  },
+  {
     version: "5.1",
     date: "2026-10-26",
     title: "Tidy up your messages",

@@ -1,4 +1,4 @@
-const { app, BrowserWindow, Menu, Tray, Notification, dialog, ipcMain, nativeImage, net, screen, session, shell } = require("electron");
+const { app, BrowserWindow, Menu, Tray, Notification, ipcMain, nativeImage, net, screen, session, shell } = require("electron");
 const fs = require("node:fs");
 const path = require("node:path");
 const { fileURLToPath } = require("node:url");
@@ -20,7 +20,14 @@ const TRAY_ICON = path.join(__dirname, "..", "build", "tray.png");
 app.setAppUserModelId("app.huddle.desktop");
 
 // ---------- settings (a small JSON file in the user's app data folder) ----------
-const DEFAULTS = { serverUrl: null, closeToTray: true, bounds: null, maximized: false };
+const DEFAULTS = {
+  serverUrl: null,
+  closeToTray: true,
+  bounds: null,
+  maximized: false,
+  launchAtStartup: true, // open Huddle when the person signs in to their computer
+  startInBackground: false, // ...and if so, whether to leave the window closed (it's still in the tray)
+};
 let settings = { ...DEFAULTS };
 const settingsFile = () => path.join(app.getPath("userData"), "settings.json");
 function loadSettings() {
@@ -101,6 +108,68 @@ function closeSplash() {
   setTimeout(() => { if (splash && !splash.isDestroyed()) splash.close(); }, splashShownAt ? wait : 0);
 }
 
+// ---------- Huddle's own popups (instead of the system's grey message boxes) ----------
+const DIALOG_PAGE = path.join(__dirname, "dialog.html");
+const openDialogs = new Map(); // webContents id -> { resolve, opts }
+/**
+ * Shows a popup in Huddle's style and resolves with the index of the button pressed.
+ * Options: type ("info" | "warning"), message, detail, buttons (default ["OK"]), defaultId, cancelId.
+ */
+function showDialog(opts) {
+  const buttons = Array.isArray(opts.buttons) && opts.buttons.length ? opts.buttons.map(String) : ["OK"];
+  const o = { type: opts.type ?? "info", message: String(opts.message ?? ""), detail: opts.detail ? String(opts.detail) : "", buttons, defaultId: opts.defaultId ?? 0, cancelId: opts.cancelId ?? buttons.length - 1 };
+  return new Promise((resolve) => {
+    const parent = win && !win.isDestroyed() && win.isVisible() ? win : undefined;
+    const d = new BrowserWindow({
+      width: 440,
+      height: 300,
+      parent,
+      modal: !!parent,
+      frame: false,
+      transparent: true,
+      resizable: false,
+      maximizable: false,
+      minimizable: false,
+      fullscreenable: false,
+      show: false,
+      skipTaskbar: !!parent,
+      title: "Huddle",
+      icon: fs.existsSync(ICON) ? ICON : undefined,
+      webPreferences: { preload: path.join(__dirname, "dialog-preload.js"), contextIsolation: true, sandbox: true, nodeIntegration: false },
+    });
+    const id = d.webContents.id;
+    let settled = false;
+    const finish = (index) => {
+      if (settled) return;
+      settled = true;
+      openDialogs.delete(id);
+      resolve(index);
+      if (!d.isDestroyed()) d.close();
+    };
+    openDialogs.set(id, { opts: o, finish });
+    d.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
+    d.webContents.on("will-navigate", (e) => e.preventDefault());
+    d.on("closed", () => finish(o.cancelId));
+    void d.loadFile(DIALOG_PAGE);
+  });
+}
+const dialogFor = (e) => openDialogs.get(e.sender.id);
+ipcMain.on("dialog:ready", (e) => {
+  const d = dialogFor(e);
+  if (d) e.sender.send("dialog:show", d.opts);
+});
+ipcMain.on("dialog:choose", (e, index) => {
+  const d = dialogFor(e);
+  if (d && Number.isInteger(index) && index >= 0 && index < d.opts.buttons.length) d.finish(index);
+});
+ipcMain.on("dialog:size", (e, height) => {
+  const w = BrowserWindow.fromWebContents(e.sender);
+  if (!w || !dialogFor(e) || !Number.isFinite(height)) return;
+  w.setContentSize(440, Math.max(140, Math.min(Math.round(height), 600)));
+  w.center();
+  w.show();
+});
+
 // ---------- automatic updates ----------
 let updater = null;
 const UPDATE_CHECK_EVERY_MS = 4 * 60 * 60 * 1000;
@@ -139,20 +208,20 @@ function installUpdate() {
 }
 async function checkNow() {
   if (!updater) {
-    await dialog.showMessageBox(win ?? undefined, { type: "info", message: "Automatic updates aren't available for this copy of Huddle.", detail: "Installed copies of the app update themselves. Linux .deb users should install the newer .deb from your server's download page." });
+    await showDialog({ type: "info", message: "Automatic updates aren't available for this copy of Huddle.", detail: "Installed copies of the app update themselves. Linux .deb users should install the newer .deb from your server's download page." });
     return;
   }
   const state = await updater.check(feedUrl());
   const current = app.getVersion();
   if (state.status === "ready") {
-    const r = await dialog.showMessageBox(win ?? undefined, { type: "info", message: `Huddle ${state.version} is ready to install.`, buttons: ["Restart now", "Later"], defaultId: 0, cancelId: 1 });
-    if (r.response === 0) installUpdate();
+    const r = await showDialog({ type: "info", message: `Huddle ${state.version} is ready to install.`, detail: "Restart Huddle to finish updating.", buttons: ["Restart now", "Later"], defaultId: 0, cancelId: 1 });
+    if (r === 0) installUpdate();
   } else if (state.status === "downloading") {
-    await dialog.showMessageBox(win ?? undefined, { type: "info", message: `Downloading Huddle ${state.version}…`, detail: "You'll get a notification when it's ready to install." });
+    await showDialog({ type: "info", message: `Downloading Huddle ${state.version}…`, detail: "You'll get a notification when it's ready to install." });
   } else if (state.status === "error") {
-    await dialog.showMessageBox(win ?? undefined, { type: "warning", message: "Couldn't check for updates.", detail: state.message });
+    await showDialog({ type: "warning", message: "Couldn't check for updates.", detail: state.message });
   } else {
-    await dialog.showMessageBox(win ?? undefined, { type: "info", message: "You're up to date.", detail: `Huddle ${current}` });
+    await showDialog({ type: "info", message: "You're up to date.", detail: `Huddle ${current}` });
   }
 }
 ipcMain.handle("update:state", (e) => (fromHuddle(e) ? updater?.getState() ?? { status: "unsupported" } : null));
@@ -177,6 +246,7 @@ async function startupUpdate() {
 let win = null;
 let tray = null;
 let quitting = false;
+let startHidden = false; // set at start-up when Huddle should open without showing a window
 
 function visibleBounds(b) {
   if (!b) return null;
@@ -226,6 +296,11 @@ function createWindow() {
 
   win.once("ready-to-show", () => {
     if (settings.maximized) win.maximize();
+    if (startHidden) {
+      startHidden = false; // opened with the computer in the background: stay in the tray until the person opens it
+      closeSplash();
+      return;
+    }
     win.show();
     closeSplash();
   });
@@ -370,6 +445,50 @@ ipcMain.on("badge", (e, p) => {
   tray?.setToolTip(count ? `Huddle (${count} unread)` : "Huddle");
 });
 
+// ---------- starting with the computer ----------
+/** True when the system started Huddle at sign-in with the "background" choice (see applyStartup). */
+const launchedHidden = process.argv.includes("--hidden") || (() => { try { return !!app.getLoginItemSettings().wasOpenedAsHidden; } catch { return false; } })();
+const autostartFile = () => path.join(process.env.XDG_CONFIG_HOME || path.join(require("node:os").homedir(), ".config"), "autostart", "huddle.desktop");
+
+/** Makes the computer's startup list match the person's choices. Only an installed app does this, so a dev run never registers itself. */
+function applyStartup() {
+  if (!app.isPackaged) return;
+  const args = settings.startInBackground ? ["--hidden"] : [];
+  try {
+    if (process.platform === "linux") {
+      const file = autostartFile();
+      if (!settings.launchAtStartup) return void fs.rmSync(file, { force: true });
+      const exe = process.env.APPIMAGE || process.execPath;
+      fs.mkdirSync(path.dirname(file), { recursive: true });
+      fs.writeFileSync(file, `[Desktop Entry]\nType=Application\nName=Huddle\nExec="${exe}" ${args.join(" ")}\nTerminal=false\nX-GNOME-Autostart-enabled=true\n`);
+    } else {
+      app.setLoginItemSettings({ openAtLogin: settings.launchAtStartup, openAsHidden: settings.startInBackground, args });
+    }
+  } catch (e) {
+    console.error("Couldn't update the start-with-computer setting", e);
+  }
+}
+function setStartup(patch) {
+  if (typeof patch.launchAtStartup === "boolean") settings.launchAtStartup = patch.launchAtStartup;
+  if (typeof patch.startInBackground === "boolean") settings.startInBackground = patch.startInBackground;
+  saveSettings();
+  applyStartup();
+  buildMenus();
+}
+const startupState = () => ({ supported: app.isPackaged, launch: settings.launchAtStartup, background: settings.startInBackground });
+ipcMain.handle("startup:get", (e) => (fromHuddle(e) ? startupState() : null));
+ipcMain.handle("startup:set", (e, v) => {
+  if (!fromHuddle(e) || !v || typeof v !== "object") return null;
+  setStartup({ launchAtStartup: v.launch, startInBackground: v.background });
+  return startupState();
+});
+function startupItems() {
+  return [
+    { label: "Start Huddle when I sign in to my computer", type: "checkbox", checked: settings.launchAtStartup, click: (item) => setStartup({ launchAtStartup: item.checked }) },
+    { label: "Start in the background (don't show the window)", type: "checkbox", checked: settings.startInBackground, enabled: settings.launchAtStartup, click: (item) => setStartup({ startInBackground: item.checked }) },
+  ];
+}
+
 // ---------- tray and menus ----------
 function toggleCloseToTray(item) {
   settings.closeToTray = item.checked;
@@ -394,6 +513,7 @@ function huddleMenuTemplate() {
   return [
     { label: "Change server…", click: changeServer },
     { label: "Keep running in the tray when closed", type: "checkbox", checked: settings.closeToTray, click: toggleCloseToTray },
+    ...startupItems(),
     ...updateMenuItems(),
     { type: "separator" },
     { label: "Zoom in", accelerator: "CmdOrCtrl+=", click: () => zoom(0.5) },
@@ -425,6 +545,7 @@ function buildMenus() {
   const trayItems = [
     { label: "Open Huddle", click: showWindow },
     { label: "Keep running in the tray when closed", type: "checkbox", checked: settings.closeToTray, click: toggleCloseToTray },
+    ...startupItems(),
     { label: "Change server…", click: changeServer },
     ...updateMenuItems(),
     { type: "separator" },
@@ -464,9 +585,12 @@ if (!app.requestSingleInstanceLock()) {
     session.defaultSession.setPermissionRequestHandler((_wc, permission, callback) => callback(allowed.has(permission)));
     session.defaultSession.setPermissionCheckHandler((_wc, permission) => allowed.has(permission));
     createTray();
+    applyStartup();
+    // Opened by the computer at sign-in with "background" chosen: no splash and no window (needs the tray to get back in).
+    startHidden = launchedHidden && settings.launchAtStartup && settings.startInBackground && !!tray;
     initUpdater();
     buildMenus();
-    showSplash();
+    if (!startHidden) showSplash();
     setSplash("Starting…");
     startupUpdate()
       .catch((e) => { console.error("Startup update check failed", e); return "none"; })

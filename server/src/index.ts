@@ -8,6 +8,7 @@ import { migrate, q } from "./db";
 import { downloadsRouter } from "./downloads";
 import { bootstrapHuddle } from "./huddleAdmin";
 import { inviteMeta, invitesRouter } from "./invites";
+import { loadMaintenance, maintenanceGate, maintenanceRouter, startMaintenanceWatcher } from "./maintenance";
 import { recoveryRouter } from "./security";
 import { HttpError } from "./http";
 import { initRealtime } from "./realtime";
@@ -18,6 +19,7 @@ import { startVoteSweeper } from "./votes";
 async function main() {
   await migrate();
   await bootstrapHuddle();
+  await loadMaintenance();
 
   const app = express();
   app.set("trust proxy", 1); // Render terminates TLS in front of the app
@@ -36,6 +38,8 @@ async function main() {
 
   app.get("/healthz", (_req, res) => void res.send("ok"));
   app.use(downloadsRouter); // desktop app downloads: public, so the page works before signing in
+  app.use("/api", maintenanceRouter);
+  app.use("/api", maintenanceGate); // while maintenance is on, only Huddle Admins get past here
   app.use("/api/auth", authRouter);
   app.use("/api/auth", recoveryRouter);
   app.use("/api", invitesRouter); // public: invite cards work before signing in
@@ -89,6 +93,7 @@ async function main() {
   const server = http.createServer(app);
   initRealtime(server);
   startVoteSweeper();
+  startMaintenanceWatcher();
   // Uploads that never got attached to a message are removed after an hour.
   setInterval(() => q(`delete from attachments where message_id is null and created_at < now() - interval '1 hour'`).catch(console.error), 10 * 60_000).unref();
   setInterval(() => cleanupSessions().catch(console.error), 6 * 3600_000).unref();

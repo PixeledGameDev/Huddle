@@ -25,6 +25,9 @@ contextBridge.exposeInMainWorld("huddleDesktop", {
   },
   checkForUpdates: () => ipcRenderer.invoke("update:check"),
   installUpdate: () => ipcRenderer.send("update:install"),
+  // Present from desktop 1.3: whether Huddle opens with the computer, and whether it shows its window when it does.
+  getStartup: () => ipcRenderer.invoke("startup:get"),
+  setStartup: (v) => ipcRenderer.invoke("startup:set", v),
   onNotificationClick: (cb) => {
     const handler = (_event, target) => cb(target);
     ipcRenderer.on("notification-click", handler);

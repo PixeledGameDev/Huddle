@@ -1,4 +1,6 @@
+import { DesktopSettings } from "./DesktopSettings";
 import { NotificationSettings } from "./NotificationSettings";
+import { confirmDialog } from "./Dialogs";
 import { SecuritySettings } from "./SecuritySettings";
 import { useEffect, useState } from "react";
 import { api, ApiError, uploadRaw } from "./api";
@@ -47,7 +49,7 @@ export function ProfileCard({ userId, serverId, server, meId, onClose, onEdit, o
         await api(`/friends/requests/${userId}`, "DELETE");
         setData({ ...data, friendship: "none" });
       } else {
-        if (!window.confirm(`Remove ${nameOfUser(data.profile)} from your friends?`)) return;
+        if (!await confirmDialog(`Remove ${nameOfUser(data.profile)} from your friends?`)) return;
         await api(`/friends/${userId}`, "DELETE");
         setData({ ...data, friendship: "none" });
       }
@@ -59,7 +61,7 @@ export function ProfileCard({ userId, serverId, server, meId, onClose, onEdit, o
   async function toggleBlock() {
     if (!data) return;
     const name = nameOfUser(data.profile);
-    if (!data.blockedByMe && !window.confirm(`Block ${name}? Neither of you will be able to send direct messages until you unblock them.`)) return;
+    if (!data.blockedByMe && !await confirmDialog(`Block ${name}? Neither of you will be able to send direct messages until you unblock them.`)) return;
     try {
       await api(`/users/${userId}/block`, data.blockedByMe ? "DELETE" : "PUT");
       setData({ ...data, blockedByMe: !data.blockedByMe });
@@ -363,6 +365,7 @@ export function MyProfileModal({ me, onClose, onUser, onDeleted, onError, onOpen
       )}
       <hr />
       <NotificationSettings />
+      <DesktopSettings />
       <hr />
       <SecuritySettings onError={onError} />
       <hr />
@@ -378,7 +381,7 @@ export function MyProfileModal({ me, onClose, onUser, onDeleted, onError, onOpen
             className="stack"
             onSubmit={async (e) => {
               e.preventDefault();
-              if (!window.confirm("Delete your account for good? This can't be undone.")) return;
+              if (!await confirmDialog("Delete your account for good? This can't be undone.")) return;
               try {
                 await api("/me", "DELETE", { password: delPassword, deleteMessages: delMessages, code: delNeedsCode ? delCode : undefined });
                 onDeleted();

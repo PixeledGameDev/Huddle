@@ -5,6 +5,7 @@ import { dmList, revealDm } from "./dms";
 import { getMessageDto } from "./hydrate";
 import { HttpError, h, rateLimit } from "./http";
 import { isHuddleAdmin } from "./perms";
+import { endMaintenance, maintenanceState, startMaintenance } from "./maintenance";
 import { deleteServer, eraseAccount } from "./deletion";
 import { clearTwoFactor, issueCode, notifyEmail } from "./security";
 import { dropUser, emitServer, emitUser, joinAllServers, joinServerRooms, leaveUnjoinedServers } from "./realtime";
@@ -344,4 +345,21 @@ huddleAdminRouter.post("/huddle/users/disable-2fa", h(async (req, res) => {
   await notifyEmail(target.id, "Two-factor sign-in was turned off by an admin", "A Huddle admin turned off two-factor sign-in for your account (for example, because you lost access to your authenticator).");
   await log(user.id, "disable-2fa", { targetId: target.id, username: target.username });
   res.json({ ok: true, username: target.username });
+}));
+
+// ---------- maintenance mode ----------
+huddleAdminRouter.post("/huddle/maintenance", h(async (req, res) => {
+  const { minutes, message } = z.object({ minutes: z.number().int().min(1).max(7 * 24 * 60), message: z.string().trim().max(300).optional() }).parse(req.body);
+  const was = maintenanceState().active;
+  const state = await startMaintenance(minutes, message || null);
+  await log(req.user!.id, was ? "maintenance.change" : "maintenance.start", { minutes, message: message || null });
+  res.json({ maintenance: state });
+}));
+
+huddleAdminRouter.delete("/huddle/maintenance", h(async (req, res) => {
+  if (maintenanceState().active) {
+    await endMaintenance();
+    await log(req.user!.id, "maintenance.end", {});
+  }
+  res.json({ ok: true });
 }));

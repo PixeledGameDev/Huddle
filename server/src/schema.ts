@@ -379,4 +379,11 @@ alter table server_roles add column if not exists self_assignable boolean not nu
 
 -- v26: people can remove a conversation from their own DM list. The messages stay; a new message brings it back.
 alter table memberships add column if not exists dm_hidden_at timestamptz;
+
+-- v27: site-wide state (maintenance mode lives here so it survives a restart)
+create table if not exists site_state (
+  key text primary key,
+  value jsonb not null,
+  updated_at timestamptz not null default now()
+);
 `;
