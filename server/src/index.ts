@@ -4,7 +4,7 @@ import fs from "fs";
 import path from "path";
 import { ZodError } from "zod";
 import { authRouter, cleanupSessions, requireAuth } from "./auth";
-import { migrate, q } from "./db";
+import { migrate, q, requestStats, startPoolWarmer } from "./db";
 import { downloadsRouter } from "./downloads";
 import { bootstrapHuddle } from "./huddleAdmin";
 import { inviteMeta, invitesRouter } from "./invites";
@@ -20,6 +20,7 @@ async function main() {
   await migrate();
   await bootstrapHuddle();
   await loadMaintenance();
+  startPoolWarmer();
 
   const app = express();
   app.set("trust proxy", 1); // Render terminates TLS in front of the app
@@ -33,6 +34,16 @@ async function main() {
       "default-src 'self'; connect-src 'self' ws: wss:; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://*.giphy.com; frame-ancestors 'none'"
     );
     next();
+  });
+  // Slow API requests are logged with how many database queries they ran and how long those took, so a slowdown can be traced.
+  app.use("/api", (req, res, next) => {
+    const stats = { queries: 0, ms: 0 };
+    const t0 = Date.now();
+    res.on("finish", () => {
+      const total = Date.now() - t0;
+      if (total > 800) console.warn(`slow request ${req.method} ${req.originalUrl.split("?")[0]} ${total}ms (${stats.queries} queries, ${Math.round(stats.ms)}ms in the database)`);
+    });
+    requestStats.run(stats, next);
   });
   app.use(express.json({ limit: "20kb" }));
 

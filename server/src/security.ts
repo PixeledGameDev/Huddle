@@ -1,3 +1,4 @@
+import { clearAuthCache } from "./auth";
 import crypto from "crypto";
 import { Router } from "express";
 import { hash, verify } from "@node-rs/argon2";
@@ -160,6 +161,7 @@ recoveryRouter.post("/reset", h(async (req, res) => {
   if (!(await checkCode(user.id, "reset", body.code, true))) throw bad;
   await q(`update users set password_hash = $2 where id = $1`, [user.id, await hash(body.password)]);
   await q(`delete from sessions where user_id = $1`, [user.id]);
+  clearAuthCache();
   await q(`delete from email_codes where user_id = $1 and purpose = 'reset'`, [user.id]);
   await notifyEmail(user.id, "Your Huddle password was reset", "Your Huddle password was just reset, and you were signed out everywhere.");
   res.json({ ok: true });
@@ -231,6 +233,7 @@ securityRouter.post("/me/password", h(async (req, res) => {
   await q(`update users set password_hash = $2 where id = $1`, [id, await hash(body.password)]);
   const sid = parse(req.headers.cookie ?? "").sid;
   await q(`delete from sessions where user_id = $1 and token_hash <> $2`, [id, sid ? sha(sid) : ""]); // other devices are signed out; this one stays
+  clearAuthCache();
   await notifyEmail(id, "Your Huddle password was changed", "Your Huddle password was just changed, and your other devices were signed out.");
   res.json({ ok: true });
 }));

@@ -1,3 +1,4 @@
+import { clearAuthCache } from "./auth";
 import { Router, type NextFunction, type Request, type Response } from "express";
 import { z } from "zod";
 import { one, q, tx } from "./db";
@@ -286,6 +287,7 @@ huddleAdminRouter.post("/huddle/users/ban", h(async (req, res) => {
     [target.id, body.durationSeconds, body.reason || null]
   );
   await q(`delete from sessions where user_id = $1`, [target.id]);
+  clearAuthCache();
   dropUser(target.id, "account.banned", { permanent: body.durationSeconds === null, until: body.durationSeconds === null ? null : row!.until.toISOString(), reason: body.reason || null });
   await log(user.id, "ban", { targetId: target.id, username: target.username, durationSeconds: body.durationSeconds, reason: body.reason });
   res.json({ ok: true, username: target.username });

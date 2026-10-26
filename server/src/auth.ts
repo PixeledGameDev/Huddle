@@ -22,13 +22,29 @@ declare module "express-serve-static-core" {
 const SESSION_DAYS = 30;
 const sha = (s: string) => crypto.createHash("sha256").update(s).digest("hex");
 
+// Every request used to look the session up in the database. A short in-memory cache removes that round trip.
+// Only successful lookups are cached, and anything that ends a session or bans someone clears it (see clearAuthCache).
+const AUTH_TTL_MS = 15_000;
+const authCache = new Map<string, { user: AuthUser; at: number }>();
+export const clearAuthCache = () => authCache.clear();
+setInterval(() => { const now = Date.now(); for (const [k, v] of authCache) if (now - v.at > AUTH_TTL_MS) authCache.delete(k); }, 30_000).unref();
+
 export async function userFromCookie(header?: string): Promise<AuthUser | null> {
   const sid = parse(header ?? "").sid;
   if (!sid) return null;
+  const key = sha(sid);
+  const hit = authCache.get(key);
+  if (hit && Date.now() - hit.at < AUTH_TTL_MS) return hit.user;
+  const user = await lookupSession(key);
+  if (user) authCache.set(key, { user, at: Date.now() });
+  return user;
+}
+
+function lookupSession(hash: string): Promise<AuthUser | null> {
   return one<AuthUser>(
     `select u.id, u.username from sessions s join users u on u.id = s.user_id
      where s.token_hash = $1 and s.expires_at > now() and (u.banned_until is null or u.banned_until <= now())`,
-    [sha(sid)]
+    [hash]
   );
 }
 
@@ -122,6 +138,7 @@ authRouter.post(
   h(async (req, res) => {
     const sid = parse(req.headers.cookie ?? "").sid;
     if (sid) await q(`delete from sessions where token_hash = $1`, [sha(sid)]);
+    clearAuthCache();
     res.clearCookie("sid", { path: "/" });
     res.json({ ok: true });
   })

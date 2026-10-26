@@ -18,8 +18,9 @@ export function useMaintenance() {
   const refresh = useCallback(async () => {
     try {
       const m = await api<MaintenanceState>("/maintenance");
-      if (m.now) setSkew(new Date(m.now).getTime() - Date.now());
-      setState(m);
+      // Only change state when something actually changed: this runs every few seconds, and a new object each time re-rendered the whole app.
+      if (m.now) { const skewNow = new Date(m.now).getTime() - Date.now(); setSkew((s) => (Math.abs(s - skewNow) > 2000 ? skewNow : s)); }
+      setState((cur) => (cur.active === m.active && cur.endsAt === m.endsAt && cur.message === m.message && cur.startedAt === m.startedAt ? cur : m));
       wasActive.current = m.active;
       if (m.build && m.build !== "dev") {
         loadedBuild.current ??= m.build;

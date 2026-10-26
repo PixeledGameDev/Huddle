@@ -11,6 +11,16 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "5.4",
+    date: "2026-10-27",
+    title: "Much faster messaging",
+    changes: [
+      "Sending a message is now several times faster: Huddle checks everything it needs at the same time instead of one step after another.",
+      "Huddle keeps its connection to the database warm, so the first message after a quiet spell is no longer slow.",
+      "Signing in is remembered for a few seconds between requests, which speeds up everything you do in the app.",
+    ],
+  },
+  {
     version: "5.3",
     date: "2026-10-27",
     title: "Settings, pronouns and member list sections",

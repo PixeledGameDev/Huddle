@@ -1,3 +1,4 @@
+import { clearAuthCache } from "./auth";
 import { Router } from "express";
 import { verify } from "@node-rs/argon2";
 import { z } from "zod";
@@ -32,6 +33,7 @@ export async function eraseAccount(userId: string, opts: { deleteMessages: boole
   let removed: { id: string; channel_id: string; server_id: string }[] = [];
   await tx(async (c) => {
     await q(`delete from sessions where user_id = $1`, [userId], c);
+    clearAuthCache();
     // Direct-message memberships stay so the other person's conversation (with a "Deleted user") isn't lost.
     await q(`delete from memberships m using servers s where m.user_id = $1 and s.id = m.server_id and not s.is_dm`, [userId], c);
     await q(`delete from server_timeouts where user_id = $1`, [userId], c);

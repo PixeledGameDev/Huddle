@@ -56,47 +56,81 @@ const sendSchema = z.object({
 messagesRouter.post("/channels/:channelId/messages", h(async (req, res) => {
   const user = req.user!;
   const { channelId } = req.params;
-  const serverId = await channelServer(channelId);
-  const me = await requireMember(serverId, user.id);
   rateLimit(`msg:${user.id}`, 6, 5000);
   const body = sendSchema.parse(req.body);
   const attachmentIds = [...new Set(body.attachmentIds)];
   const gifUrl = body.gifUrl ?? null;
   if (gifUrl && !isAllowedGif(gifUrl)) throw new HttpError(400, "That GIF source isn't supported.");
   if (!body.content && !attachmentIds.length && !gifUrl && !body.stickerId) throw new HttpError(400, "Write a message, attach a file, or pick a GIF.");
-  await assertCanWrite(serverId, user.id);
-  if (body.stickerId && !(await one(`select 1 from server_stickers where id = $1 and server_id = $2`, [body.stickerId, serverId]))) throw new HttpError(400, "That sticker isn't available in this server.");
-  body.content = await cleanCustomEmoji(serverId, body.content);
 
-  let replyAuthor: string | null = null;
-  if (body.replyTo) {
-    const r = await one<{ author_id: string }>(`select author_id from messages where id = $1::bigint and channel_id = $2`, [body.replyTo, channelId]);
-    if (!r) throw new HttpError(400, "The message you're replying to no longer exists.");
-    replyAuthor = r.author_id;
-  }
-  const { ids, everyone } = await resolveMentions(serverId, body.content, me.perms.has("mention_everyone"));
-  const notify = [...new Set([...ids, ...(replyAuthor ? [replyAuthor] : [])])].filter((id) => id !== user.id);
+  // Sending used to be a dozen database round trips one after another. These checks don't depend on each other, so they run together.
+  const ch = await one<{ server_id: string; is_dm: boolean }>(`select c.server_id, s.is_dm from channels c join servers s on s.id = c.server_id where c.id = $1`, [channelId]);
+  if (!ch) throw new HttpError(404, "Channel not found.");
+  const serverId = ch.server_id;
+  const [me, , sticker, content, reply, author, mentioned] = await Promise.all([
+    requireMember(serverId, user.id),
+    assertCanWrite(serverId, user.id),
+    body.stickerId ? one<{ name: string }>(`select name from server_stickers where id = $1 and server_id = $2`, [body.stickerId, serverId]) : null,
+    cleanCustomEmoji(serverId, body.content),
+    body.replyTo
+      ? one<{ author_id: string; author_name: string; snippet: string; has_extra: boolean }>(
+          `select m.author_id, coalesce(u.display_name, u.username) as author_name, left(m.content, 120) as snippet,
+                  (m.gif_url is not null or exists(select 1 from attachments a where a.message_id = m.id) or exists(select 1 from polls p where p.message_id = m.id)) as has_extra
+             from messages m join users u on u.id = m.author_id where m.id = $1::bigint and m.channel_id = $2`,
+          [body.replyTo, channelId]
+        )
+      : null,
+    one<{ name: string; avatar_version: number }>(`select coalesce(display_name, username) as name, avatar_version from users where id = $1`, [user.id]),
+    resolveMentions(serverId, body.content, true),
+  ]);
+  if (body.stickerId && !sticker) throw new HttpError(400, "That sticker isn't available in this server.");
+  if (body.replyTo && !reply) throw new HttpError(400, "The message you're replying to no longer exists.");
+  const everyone = mentioned.everyone && me.perms.has("mention_everyone");
+  const notify = [...new Set([...mentioned.ids, ...(reply ? [reply.author_id] : [])])].filter((id) => id !== user.id);
 
-  const messageId = await tx(async (c) => {
-    const row = await one<{ id: string }>(
-      `insert into messages(channel_id, author_id, content, reply_to, mentions, mentions_everyone, gif_url, sticker_id)
-       values ($1, $2, $3, $4::bigint, $5::uuid[], $6, $7, $8) returning id::text as id`,
-      [channelId, user.id, body.content, body.replyTo ?? null, notify, everyone, gifUrl, body.stickerId ?? null],
-      c
-    );
-    if (attachmentIds.length) {
-      const linked = await q(
+  const insertSql = `insert into messages(channel_id, author_id, content, reply_to, mentions, mentions_everyone, gif_url, sticker_id)
+       values ($1, $2, $3, $4::bigint, $5::uuid[], $6, $7, $8) returning id::text as id, created_at`;
+  const insertArgs = [channelId, user.id, content, body.replyTo ?? null, notify, everyone, gifUrl, body.stickerId ?? null];
+  let row: { id: string; created_at: Date };
+  let files: { id: string; name: string; mime: string; size: number }[] = [];
+  if (!attachmentIds.length) {
+    row = (await one<{ id: string; created_at: Date }>(insertSql, insertArgs))!; // a single statement needs no transaction
+  } else {
+    ({ row, files } = await tx(async (c) => {
+      const inserted = (await one<{ id: string; created_at: Date }>(insertSql, insertArgs, c))!;
+      const linked = await q<{ id: string; name: string; mime: string; size: number }>(
         `update attachments set message_id = $1::bigint
-          where id = any($2::uuid[]) and uploader_id = $3 and channel_id = $4 and message_id is null returning id`,
-        [row!.id, attachmentIds, user.id, channelId],
+          where id = any($2::uuid[]) and uploader_id = $3 and channel_id = $4 and message_id is null returning id, name, mime, size, created_at`,
+        [inserted.id, attachmentIds, user.id, channelId],
         c
       );
       if (linked.length !== attachmentIds.length) throw new HttpError(400, "One of the attached files is missing or was already sent.");
-    }
-    return row!.id;
-  });
-  const message = await getMessageDto(messageId, null);
-  await revealDm(serverId); // a no-op outside DMs
+      return { row: inserted, files: linked };
+    }));
+  }
+
+  // A brand-new message has no reactions or poll, so the broadcast shape is built here instead of being read back (which took four more queries).
+  const message = {
+    id: row.id,
+    channelId,
+    serverId,
+    authorId: user.id,
+    authorName: author?.name ?? user.username,
+    authorAvatar: author?.avatar_version ?? 0,
+    content,
+    createdAt: new Date(row.created_at).toISOString(),
+    editedAt: null as string | null,
+    mentions: notify,
+    mentionsEveryone: everyone,
+    gif: gifUrl,
+    sticker: body.stickerId && sticker ? { id: body.stickerId, name: sticker.name } : null,
+    statusReply: null as string | null,
+    replyTo: reply && body.replyTo ? { id: body.replyTo, authorId: reply.author_id, authorName: reply.author_name, snippet: reply.snippet, hasExtra: !!reply.has_extra } : null,
+    attachments: attachmentIds.map((id) => files.find((f) => f.id === id)).filter(Boolean).map((f) => ({ id: f!.id, name: f!.name, mime: f!.mime, size: f!.size })),
+    reactions: [] as { emoji: string; userIds: string[] }[],
+    poll: null,
+  };
+  if (ch.is_dm) await revealDm(serverId); // only direct messages can have a hidden conversation to bring back
   emitServer(serverId, "message.create", message);
   res.json({ message });
 }));
