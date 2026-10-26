@@ -389,4 +389,7 @@ create table if not exists site_state (
 
 -- v28: optional pronouns on a profile
 alter table users add column if not exists pronouns text not null default '';
+
+-- v29: roles can name the member-list section they appear in (roles sharing a name share a section)
+alter table server_roles add column if not exists section_name text;
 `;

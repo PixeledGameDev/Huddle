@@ -16,14 +16,16 @@ const roleBody = z.object({
   permissions: z.array(z.enum(PERMISSIONS)).max(PERMISSIONS.length),
   /** Shows the people who hold this role (and are online) in their own section of the member list. */
   hoist: z.boolean().default(false),
+  /** With hoist on: the heading of the member-list section. Roles that share a heading share the section. */
+  sectionName: z.string().trim().max(24).nullable().default(null).transform((v) => (v ? v : null)),
   /** Anyone in the server may give themselves this role. Only allowed for roles without permissions. */
   selfAssignable: z.boolean().default(false),
 });
 
-interface RoleRow { id: string; name: string; color: string | null; permissions: string[]; position: number; hoist?: boolean; self_assignable?: boolean }
+interface RoleRow { id: string; name: string; color: string | null; permissions: string[]; position: number; hoist?: boolean; self_assignable?: boolean; section_name?: string | null }
 
 async function loadRole(serverId: string, roleId: string): Promise<RoleRow> {
-  const r = await one<RoleRow>(`select id, name, color, permissions, position, hoist, self_assignable from server_roles where id = $1 and server_id = $2`, [roleId, serverId]);
+  const r = await one<RoleRow>(`select id, name, color, permissions, position, hoist, self_assignable, section_name from server_roles where id = $1 and server_id = $2`, [roleId, serverId]);
   if (!r) throw new HttpError(404, "Role not found.");
   return r;
 }
@@ -51,8 +53,8 @@ async function insertRole(c: PoolClient, serverId: string, body: z.infer<typeof 
   if (n!.n >= MAX_ROLES) throw new HttpError(400, `A server can have at most ${MAX_ROLES} roles.`);
   await q(`update server_roles set position = position + 1 where server_id = $1`, [serverId], c);
   return (await one<RoleRow>(
-    `insert into server_roles(server_id, name, color, permissions, position, hoist, self_assignable) values ($1, $2, $3, $4::text[], 1, $5, $6) returning id, name, color, permissions, position`,
-    [serverId, body.name, body.color, body.permissions, body.hoist, body.selfAssignable],
+    `insert into server_roles(server_id, name, color, permissions, position, hoist, self_assignable, section_name) values ($1, $2, $3, $4::text[], 1, $5, $6, $7) returning id, name, color, permissions, position`,
+    [serverId, body.name, body.color, body.permissions, body.hoist, body.selfAssignable, body.hoist ? body.sectionName : null],
     c
   ))!;
 }
@@ -90,10 +92,11 @@ rolesRouter.patch("/servers/:serverId/roles/:roleId", h(async (req, res) => {
     permissions: body.permissions ?? role.permissions,
     hoist: body.hoist ?? !!role.hoist,
     selfAssignable: body.selfAssignable ?? !!role.self_assignable,
+    sectionName: ((body.hoist ?? !!role.hoist) ? (body.sectionName === undefined ? role.section_name ?? null : body.sectionName) : null) as string | null,
   };
   assertSelfAssignableIsSafe(next.selfAssignable, next.permissions);
   await tx(async (c) => {
-    await q(`update server_roles set name = $3, color = $4, permissions = $5::text[], hoist = $6, self_assignable = $7 where id = $1 and server_id = $2`, [roleId, serverId, next.name, next.color, next.permissions, next.hoist, next.selfAssignable], c);
+    await q(`update server_roles set name = $3, color = $4, permissions = $5::text[], hoist = $6, self_assignable = $7, section_name = $8 where id = $1 and server_id = $2`, [roleId, serverId, next.name, next.color, next.permissions, next.hoist, next.selfAssignable, next.sectionName], c);
     await audit(c, serverId, user.id, null, "role.update", {
       name: next.name,
       renamedFrom: next.name !== role.name ? role.name : undefined,

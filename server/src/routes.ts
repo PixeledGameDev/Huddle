@@ -54,7 +54,7 @@ async function serverDetail(serverId: string, userId: string) {
   const me = await requireMember(serverId, userId);
   const channels = await q(`select id, name from channels where server_id = $1 order by created_at`, [serverId]);
   const roles = await q<any>(
-    `select r.id, r.name, r.color, r.permissions, r.position, r.hoist, r.self_assignable, (select count(*)::int from member_roles mr where mr.role_id = r.id) as member_count
+    `select r.id, r.name, r.color, r.permissions, r.position, r.hoist, r.self_assignable, r.section_name, (select count(*)::int from member_roles mr where mr.role_id = r.id) as member_count
        from server_roles r where r.server_id = $1 order by r.position desc`,
     [serverId]
   );
@@ -93,7 +93,7 @@ async function serverDetail(serverId: string, userId: string) {
     myPermissions: [...me.perms],
     myTop: me.top,
     legacyAdminCount,
-    roles: roles.map((r) => ({ id: r.id as string, name: r.name as string, color: (r.color ?? null) as string | null, permissions: r.permissions as string[], position: r.position as number, hoist: r.hoist as boolean, selfAssignable: r.self_assignable as boolean, memberCount: r.member_count as number })),
+    roles: roles.map((r) => ({ id: r.id as string, name: r.name as string, color: (r.color ?? null) as string | null, permissions: r.permissions as string[], position: r.position as number, hoist: r.hoist as boolean, selfAssignable: r.self_assignable as boolean, sectionName: (r.section_name ?? null) as string | null, memberCount: r.member_count as number })),
     myTimeoutUntil: await timeoutUntil(serverId, userId),
     channels,
     members,

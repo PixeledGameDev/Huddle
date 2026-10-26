@@ -7,7 +7,7 @@ import type { Permission, ServerDetail } from "./types";
 
 const PRESET_COLORS = ["#e74c3c", "#e67e22", "#f1c40f", "#2ecc71", "#1abc9c", "#3498db", "#9b59b6", "#e84393"];
 
-interface Draft { name: string; color: string | null; permissions: Permission[]; hoist: boolean; selfAssignable: boolean }
+interface Draft { name: string; color: string | null; permissions: Permission[]; hoist: boolean; sectionName: string | null; selfAssignable: boolean }
 
 /** Name, color and permission checkboxes. Permissions you don't hold yourself are locked (the owner holds all of them). */
 function RoleForm({ server, initial, submitLabel, onSubmit, onCancel }: { server: ServerDetail; initial: Draft; submitLabel: string; onSubmit: (d: Draft) => Promise<void>; onCancel?: () => void }) {
@@ -36,6 +36,12 @@ function RoleForm({ server, initial, submitLabel, onSubmit, onCancel }: { server
         <input type="checkbox" checked={d.hoist} onChange={(e) => setD({ ...d, hoist: e.target.checked })} />
         <span><strong>Show members with this role separately</strong><small className="muted">People who are online get their own section in the member list.</small></span>
       </label>
+      {d.hoist && (
+        <label>Section name (optional)
+          <input value={d.sectionName ?? ""} maxLength={24} placeholder={d.name.trim() || "Same as the role name"} onChange={(e) => setD({ ...d, sectionName: e.target.value })} />
+          <small className="muted">Put this role in a section with a different heading. Roles that use the same section name share one section, so you can group several roles, like "Staff".</small>
+        </label>
+      )}
       <label className="check perm">
         <input type="checkbox" checked={d.selfAssignable} onChange={(e) => setD({ ...d, selfAssignable: e.target.checked, permissions: e.target.checked ? [] : d.permissions })} />
         <span><strong>Anyone can give themselves this role</strong><small className="muted">Handy for pick-your-own roles like pronouns or interests. Turns off the permissions below, since anyone could take it.</small></span>
@@ -77,7 +83,7 @@ export function RolesTab({ server, onError }: { server: ServerDetail; onError: (
       {editing === "new" && (
         <RoleForm
           server={server}
-          initial={{ name: "", color: null, permissions: [], hoist: true, selfAssignable: false }}
+          initial={{ name: "", color: null, permissions: [], hoist: true, sectionName: null, selfAssignable: false }}
           submitLabel="Create role"
           onCancel={() => setEditing(null)}
           onSubmit={async (d) => run(async () => { await api(`/servers/${server.id}/roles`, "POST", d); setEditing(null); })}
@@ -106,7 +112,7 @@ export function RolesTab({ server, onError }: { server: ServerDetail; onError: (
               {editing === r.id && (
                 <RoleForm
                   server={server}
-                  initial={{ name: r.name, color: r.color, permissions: r.permissions, hoist: r.hoist, selfAssignable: r.selfAssignable }}
+                  initial={{ name: r.name, color: r.color, permissions: r.permissions, hoist: r.hoist, sectionName: r.sectionName, selfAssignable: r.selfAssignable }}
                   submitLabel="Save role"
                   onSubmit={async (d) => run(async () => { await api(`/servers/${server.id}/roles/${r.id}`, "PATCH", d); setEditing(null); })}
                 />
@@ -136,7 +142,7 @@ export function LegacyAdminsModal({ server, onClose, onDone, onError }: { server
       </p>
       <RoleForm
         server={server}
-        initial={{ name: "Admin", color: "#3498db", permissions: all, hoist: true, selfAssignable: false }}
+        initial={{ name: "Admin", color: "#3498db", permissions: all, hoist: true, sectionName: null, selfAssignable: false }}
         submitLabel={`Create role and give it to ${n === 1 ? "them" : `all ${n}`}`}
         onSubmit={(d) => resolve({ mode: "role", role: d })}
       />

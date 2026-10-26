@@ -28,11 +28,21 @@ export function buildSections(server: ServerDetail): Section[] {
   if (legacy.length) sections.push({ key: "admin", title: "Admins", color: null, people: legacy });
   legacy.forEach((m) => placed.add(m.id));
 
+  // Roles that share a section name share one section; a role without one is a section of its own, named after the role.
+  const sectionOf = (r: ServerRole) => (r.sectionName?.trim() ? `n:${r.sectionName.trim().toLowerCase()}` : `r:${r.id}`);
+  const done = new Set<string>();
   for (const role of hoisted) {
-    // A person sits in the section of their highest-ranked role that is shown separately.
-    const people = online.filter((m) => !placed.has(m.id) && m.roleIds.find((id) => hoisted.some((h) => h.id === id)) === role.id);
-    // roleIds are sorted highest first, so the first hoisted one is their top section.
-    if (people.length) sections.push({ key: role.id, title: role.name, color: role.color, people });
+    const key = sectionOf(role);
+    if (done.has(key)) continue; // an earlier (higher-ranked) role with the same section name already made it
+    done.add(key);
+    const group = hoisted.filter((h) => sectionOf(h) === key);
+    // A person sits in the section of their highest-ranked role that is shown separately (roleIds are sorted highest first).
+    const people = online.filter((m) => {
+      if (placed.has(m.id)) return false;
+      const top = m.roleIds.find((id) => hoisted.some((h) => h.id === id));
+      return !!top && group.some((g) => g.id === top);
+    });
+    if (people.length) sections.push({ key, title: role.sectionName?.trim() || role.name, color: role.color, people });
     people.forEach((m) => placed.add(m.id));
   }
   const rest = online.filter((m) => !placed.has(m.id));

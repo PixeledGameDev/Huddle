@@ -11,6 +11,19 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "5.3",
+    date: "2026-10-27",
+    title: "Settings, pronouns and member list sections",
+    changes: [
+      "Settings now has tabs: Profile, Theme, Startup, Notifications and Account. Saving your profile no longer closes the window.",
+      "You can add pronouns to your profile. They show on your profile card, next to your username.",
+      "Roles have a new Section name. Roles that are shown separately can use a heading of your choosing, and roles that share a name share one section in the member list (handy for grouping several roles under \"Staff\").",
+      "Fixed the status menu (Online, Idle, Do not disturb, Invisible) getting cut off at the edge of the sidebar. The ⋯ menu got the same fix.",
+      "When Huddle is updated while you have it open, a notice offers a one-click reload so you're never stuck on an old version.",
+      "Desktop app: installers are now built for Windows only.",
+    ],
+  },
+  {
     version: "5.2",
     date: "2026-10-26",
     title: "A new look for the front door",
