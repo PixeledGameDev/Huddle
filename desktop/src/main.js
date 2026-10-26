@@ -232,12 +232,14 @@ ipcMain.on("update:install", (e) => fromHuddle(e) && installUpdate());
 async function startupUpdate() {
   if (!updater || !feedUrl()) return "none";
   setSplash("Checking for updates…");
+  const slow = setTimeout(() => setSplash("Still checking… the server may be waking up"), 5000);
   const result = await updater.startupCheck(feedUrl(), {
-    onProgress: (s) => setSplash(`Downloading update${s.version ? ` ${s.version}` : ""}…`, s.percent),
+    onProgress: (s) => setSplash(`Downloading update${s.version ? ` ${s.version}` : ""}${typeof s.percent === "number" && s.percent > 0 ? ` · ${s.percent}%` : "…"}`, s.percent),
   });
+  clearTimeout(slow);
   if (result !== "ready") return "none";
-  setSplash("Installing update…");
-  await new Promise((r) => setTimeout(r, 600));
+  setSplash("Installing update… Huddle will reopen by itself.");
+  await new Promise((r) => setTimeout(r, 1500)); // long enough to read
   installUpdate();
   return "installing";
 }

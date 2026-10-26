@@ -11,6 +11,16 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "5.5",
+    date: "2026-10-27",
+    title: "Desktop app updates on the splash screen",
+    changes: [
+      "The desktop app now looks for updates every time it opens, right on the splash screen, and installs them before showing Huddle.",
+      "Updates install quietly and Huddle reopens by itself, so there's no installer window to click through.",
+      "If the server is slow to answer (it can take a moment to wake up), the splash waits a little longer before giving up so you don't miss an update.",
+    ],
+  },
+  {
     version: "5.4",
     date: "2026-10-27",
     title: "Much faster messaging",
