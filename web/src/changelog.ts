@@ -11,6 +11,15 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "5.1",
+    date: "2026-10-26",
+    title: "Tidy up your messages",
+    changes: [
+      "You can now remove someone from your Messages list: hover a conversation and press ✕, or use Remove from messages in the panel beside the chat.",
+      "Removing only hides it for you. Your chat history is kept, the other person isn't told, and the conversation comes back if either of you sends a new message or you open it again from their profile.",
+    ],
+  },
+  {
     version: "5.0",
     date: "2026-10-22",
     title: "A whole new look",

@@ -1,7 +1,7 @@
 import { Router, type NextFunction, type Request, type Response } from "express";
 import { z } from "zod";
 import { one, q, tx } from "./db";
-import { dmList } from "./dms";
+import { dmList, revealDm } from "./dms";
 import { getMessageDto } from "./hydrate";
 import { HttpError, h, rateLimit } from "./http";
 import { isHuddleAdmin } from "./perms";
@@ -94,6 +94,7 @@ async function deliverDm(bot: string, userId: string, content: string): Promise<
   const messageId = await insertBotMessage(channelId!, bot, content, [userId], false);
   joinServerRooms(userId, serverId!);
   if (created) emitUser(userId, "dm.new", (await dmList(userId, serverId))[0]);
+  else await revealDm(serverId!);
   emitServer(serverId!, "message.create", await getMessageDto(messageId, null));
   return true;
 }

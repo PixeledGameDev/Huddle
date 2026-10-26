@@ -46,6 +46,37 @@ highest role**, and you can only grant permissions you hold yourself. Leaving, b
 **Servers from before roles existed:** the old single *admin* rank keeps working (everything except managing roles) until the
 owner is prompted to turn those admins into a real role, or remove the rank. Nobody can be made a legacy admin any more.
 
+## Moving to a new database
+
+Hosted free databases expire or have size limits, so Huddle includes a one-command move. It copies **everything**: accounts,
+servers, messages, roles, avatars, banners, emoji and any files stored in Postgres, and people stay signed in. (Files you
+keep in Cloudflare R2 aren't in the database, so they stay where they are.)
+
+1. **Make an empty database** on the host you're moving to and copy its connection string. Check its size limit against the
+   size the script prints for your current database.
+2. **Stop Huddle** (suspend the web service) so nothing is written during the move.
+3. **Run the move** (needs the PostgreSQL command-line tools, `pg_dump` version at least as new as your old database):
+
+   ```
+   npm run migrate-db -- --from "postgres://OLD_URL" --to "postgres://NEW_URL" --keep-dump huddle-backup.dump
+   ```
+
+   Hosted databases usually need `?sslmode=require` on the end of the URL. The script checks both databases, refuses to
+   touch a new database that already has data (add `--force` to replace it), and finishes by comparing row counts
+   for every table. Your old database is never changed. `--keep-dump` also leaves you a backup file.
+4. **Point Huddle at the new database:** set `DATABASE_URL` on the web service to the new string and, if the new host needs
+   SSL, set `DATABASE_SSL=true`. On Render, remove the `fromDatabase` link in `render.yaml` (or edit the variable in the
+   dashboard) so the old database isn't wired back in.
+5. Start Huddle, check your servers and messages, and keep the old database for a few days before deleting it.
+
+**No PostgreSQL tools installed (for example on Windows)?** Either install the PostgreSQL installer and tick *Command Line Tools*,
+or use Docker (use the same major version as your old database in place of `16`):
+
+```
+docker run --rm -v "${PWD}:/dump" postgres:16 pg_dump --format=custom --no-owner --no-privileges -f /dump/huddle.dump "postgres://OLD_URL"
+docker run --rm -v "${PWD}:/dump" postgres:16 pg_restore --no-owner --no-privileges --exit-on-error -d "postgres://NEW_URL" /dump/huddle.dump
+```
+
 ## Vote moderation
 
 People with the **Manage server** permission configure it under **Settings** (off by default):

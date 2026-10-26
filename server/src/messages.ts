@@ -11,6 +11,7 @@ import { assertCanWrite, channelServer, requireMember } from "./perms";
 import { cleanCustomEmoji } from "./emojis";
 import { emitServer } from "./realtime";
 import { deleteObject, putObject, r2Enabled } from "./storage";
+import { revealDm } from "./dms";
 
 export const messagesRouter = Router();
 
@@ -95,6 +96,7 @@ messagesRouter.post("/channels/:channelId/messages", h(async (req, res) => {
     return row!.id;
   });
   const message = await getMessageDto(messageId, null);
+  await revealDm(serverId); // a no-op outside DMs
   emitServer(serverId, "message.create", message);
   res.json({ message });
 }));

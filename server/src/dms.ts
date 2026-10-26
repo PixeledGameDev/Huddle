@@ -29,7 +29,7 @@ export async function dmList(viewerId: string, serverId?: string) {
        join memberships me on me.server_id = s.id and me.user_id = $1
        join memberships o on o.server_id = s.id and o.user_id <> $1
        join users u on u.id = o.user_id
-      where s.is_dm and ($2::uuid is null or s.id = $2::uuid)
+      where s.is_dm and ($2::uuid is null or s.id = $2::uuid) and ($2::uuid is not null or me.dm_hidden_at is null)
       order by last_at desc`,
     [viewerId, serverId ?? null]
   );
@@ -92,9 +92,42 @@ export async function openDm(me: string, userId: string) {
     joinServerRooms(me, serverId);
     joinServerRooms(userId, serverId);
   }
+  // Opening a conversation you had removed puts it back in your list.
+  await q(`update memberships set dm_hidden_at = null where server_id = $1 and user_id = $2 and dm_hidden_at is not null`, [serverId, me]);
   if (created) emitUser(userId, "dm.new", (await dmList(userId, serverId))[0]);
   return { serverId, dm: (await dmList(me, serverId))[0] };
 }
+
+/** Call right before a message is sent into a DM: anyone who had removed it from their list gets it back. */
+export async function revealDm(serverId: string) {
+  const rows = await q<{ user_id: string }>(
+    `update memberships m set dm_hidden_at = null
+       from servers s
+      where m.server_id = $1 and s.id = m.server_id and s.is_dm and m.dm_hidden_at is not null
+      returning m.user_id`,
+    [serverId]
+  );
+  for (const r of rows) {
+    const dm = (await dmList(r.user_id, serverId))[0];
+    if (dm) emitUser(r.user_id, "dm.new", dm);
+  }
+}
+
+/** Removes a conversation from your own list. Nothing is deleted, and the other person isn't told. */
+dmsRouter.delete("/dms/:serverId", h(async (req, res) => {
+  const me = req.user!.id;
+  const { serverId } = z.object({ serverId: z.string().uuid() }).parse(req.params);
+  const rows = await q(
+    `update memberships m set dm_hidden_at = now()
+       from servers s
+      where m.server_id = $1 and m.user_id = $2 and s.id = m.server_id and s.is_dm
+      returning m.user_id`,
+    [serverId, me]
+  );
+  if (!rows.length) throw new HttpError(404, "Conversation not found.");
+  emitUser(me, "dm.hidden", { id: serverId }); // keeps your other open windows in step
+  res.json({ ok: true });
+}));
 
 dmsRouter.post("/dms", h(async (req, res) => {
   const { userId } = z.object({ userId: z.string().uuid() }).parse(req.body);
@@ -113,6 +146,7 @@ dmsRouter.post("/users/:userId/status-reply", h(async (req, res) => {
   if (!target.status_text) throw new HttpError(409, "They don't have a status to reply to any more.");
   const { serverId, dm } = await openDm(me, userId);
   await assertCanWrite(serverId, me);
+  await revealDm(serverId);
   const ch = await one<{ id: string }>(`select id from channels where server_id = $1 limit 1`, [serverId]);
   const row = await one<{ id: string }>(
     `insert into messages(channel_id, author_id, content, status_reply) values ($1, $2, $3, $4) returning id::text as id`,

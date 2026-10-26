@@ -311,7 +311,12 @@ function Main({ me, initialServerId, onUser, onLogout }: { me: User; initialServ
       setTyping((t) => ({ ...t, [p.channelId]: { ...t[p.channelId], [p.userId]: { name: p.username, until: Date.now() + 4000 } } }));
       setTimeout(() => setTyping((t) => ({ ...t })), 4100);
     });
-    s.on("dm.new", (d: DmSummary) => setDms((prev) => (prev.some((x) => x.id === d.id) ? prev : [d, ...prev])));
+    s.on("dm.hidden", (p: { id: string }) => dropDmLocally(p.id));
+    s.on("dm.new", (d: DmSummary) => {
+      // Update the ref right away too, so the message that follows is recognised as a DM (unread badge, notification).
+      if (!dmsRef.current.some((x) => x.id === d.id)) dmsRef.current = [d, ...dmsRef.current];
+      setDms((prev) => (prev.some((x) => x.id === d.id) ? prev : [d, ...prev]));
+    });
     s.on("presence.self", (p: { presence: User["presence"] }) => onUser({ ...meRef.current, presence: p.presence }));
     s.on("presence", (p: { serverId: string; userId: string; online: boolean; status?: PublicStatus }) => {
       const status: PublicStatus = p.status ?? (p.online ? "online" : "offline");
@@ -548,6 +553,23 @@ function Main({ me, initialServerId, onUser, onLogout }: { me: User; initialServ
     }
   }
 
+  /** Takes a conversation out of the list on this screen (nothing is deleted). */
+  function dropDmLocally(id: string) {
+    const next = dmsRef.current.filter((d) => d.id !== id);
+    setDms(next);
+    if (activeIdRef.current === id) setActiveId(next[0]?.id ?? null);
+  }
+
+  async function removeDm(d: DmSummary) {
+    if (!window.confirm(`Remove ${nameOfUser(d.user)} from your messages? Your chat history is kept, and the conversation comes back if either of you sends a message.`)) return;
+    try {
+      await api(`/dms/${d.id}`, "DELETE");
+      dropDmLocally(d.id);
+    } catch (e) {
+      fail(e);
+    }
+  }
+
   async function startDm(userId: string) {
     try {
       const { dm } = await api<{ dm: DmSummary }>("/dms", "POST", { userId });
@@ -656,14 +678,19 @@ function Main({ me, initialServerId, onUser, onLogout }: { me: User; initialServ
           <div className="channels">
             {dms.length === 0 && <p className="side-empty">No conversations yet. Open someone's profile and choose Message to start one.</p>}
             {dms.map((d) => (
-              <button key={d.id} className={d.id === activeId ? "chan dm-item active" : "chan dm-item"} onClick={() => { setActiveId(d.id); closeNavIfSmall(); }}>
-                <span className="avatar-wrap">
-                  <Avatar id={d.user.id} name={nameOfUser(d.user)} version={d.user.avatarVersion} accent={d.user.accent} size={30} />
-                  <StatusDot status={d.status ?? (d.online ? "online" : "offline")} />
+              <div key={d.id} className="chan-row">
+                <button className={d.id === activeId ? "chan dm-item active" : "chan dm-item"} onClick={() => { setActiveId(d.id); closeNavIfSmall(); }}>
+                  <span className="avatar-wrap">
+                    <Avatar id={d.user.id} name={nameOfUser(d.user)} version={d.user.avatarVersion} accent={d.user.accent} size={30} />
+                    <StatusDot status={d.status ?? (d.online ? "online" : "offline")} />
+                  </span>
+                  <span className="chan-name"><Name user={d.user} /></span>
+                  {(unread.servers[d.id] ?? 0) > 0 && <span className="badge inline" aria-label={`${unread.servers[d.id]} unread`}>{unread.servers[d.id]}</span>}
+                </button>
+                <span className="chan-tools">
+                  <button className="icon ghost" aria-label={`Remove ${nameOfUser(d.user)} from messages`} title="Remove from messages" onClick={() => void removeDm(d)}>✕</button>
                 </span>
-                <span className="chan-name"><Name user={d.user} /></span>
-                {(unread.servers[d.id] ?? 0) > 0 && <span className="badge inline" aria-label={`${unread.servers[d.id]} unread`}>{unread.servers[d.id]}</span>}
-              </button>
+              </div>
             ))}
           </div>
         ) : detail ? (
@@ -791,7 +818,7 @@ function Main({ me, initialServerId, onUser, onLogout }: { me: User; initialServ
       </main>
 
       {activeDm ? (
-        <DmPanel dm={activeDm} onChanged={refreshDms} onError={fail} />
+        <DmPanel dm={activeDm} onChanged={refreshDms} onRemove={() => void removeDm(activeDm)} onError={fail} />
       ) : (
         !inDm && detail && <Members server={detail} onOpenProfile={setProfileId} onClose={() => setMembersOpen(false)} />
       )}

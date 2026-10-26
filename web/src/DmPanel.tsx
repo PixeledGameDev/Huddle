@@ -6,8 +6,8 @@ import { STATUS_LABEL, StatusDot } from "./Status";
 import type { DmSummary, User } from "./types";
 import { nameOfUser } from "./util";
 
-/** Right-hand panel in a DM: who you're talking to, plus block/unblock. */
-export default function DmPanel({ dm, onChanged, onError }: { dm: DmSummary; onChanged: () => void; onError: (e: unknown) => void }) {
+/** Right-hand panel in a DM: who you're talking to, plus remove and block/unblock. */
+export default function DmPanel({ dm, onChanged, onRemove, onError }: { dm: DmSummary; onChanged: () => void; onRemove: () => void; onError: (e: unknown) => void }) {
   const [profile, setProfile] = useState<User | null>(null);
   const name = nameOfUser(dm.user);
 
@@ -36,6 +36,7 @@ export default function DmPanel({ dm, onChanged, onError }: { dm: DmSummary; onC
       {profile?.bio && <p className="profile-bio">{profile.bio}</p>}
       {profile?.createdAt && <p className="muted small">On Huddle since {new Date(profile.createdAt).toLocaleDateString([], { year: "numeric", month: "short", day: "numeric" })}</p>}
       {dm.blockedByMe && <p className="timeout-note">You blocked this person. Neither of you can send messages here.</p>}
+      <button onClick={onRemove} title="Takes this conversation out of your list. Your history is kept.">Remove from messages</button>
       <button className={dm.blockedByMe ? "" : "danger"} onClick={() => void toggleBlock()}>{dm.blockedByMe ? "Unblock" : "Block"}</button>
     </aside>
   );

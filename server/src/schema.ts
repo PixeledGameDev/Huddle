@@ -376,4 +376,7 @@ alter table messages add column if not exists sticker_id uuid references server_
 -- v25: roles can get their own section in the member list, and some roles can be taken by anyone for themselves
 alter table server_roles add column if not exists hoist boolean not null default false;
 alter table server_roles add column if not exists self_assignable boolean not null default false;
+
+-- v26: people can remove a conversation from their own DM list. The messages stay; a new message brings it back.
+alter table memberships add column if not exists dm_hidden_at timestamptz;
 `;
