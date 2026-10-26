@@ -3,6 +3,7 @@ import { io, type Socket } from "socket.io-client";
 import { api, ApiError, uploadFile } from "./api";
 import { Avatar } from "./Avatar";
 import Auth from "./Auth";
+import { Logo } from "./Logo";
 import Changelog from "./Changelog";
 import { hasUnseenUpdates, markUpdatesSeen } from "./changelog";
 import Chat from "./Chat";
@@ -644,7 +645,7 @@ function Main({ me, initialServerId, onUser, onLogout }: { me: User; initialServ
     <div className={`app nav-${navOpen ? "open" : "closed"} members-${membersOpen ? "open" : "closed"}`}>
       <aside className="nav" aria-label="Navigation">
         <header className="nav-top">
-          <div className="brand"><span className="logo shine" aria-hidden="true">H</span><strong>Huddle</strong></div>
+          <div className="brand"><Logo /><strong>Huddle</strong></div>
           <button className="icon ghost show-sm" onClick={() => setNavOpen(false)} aria-label="Hide navigation">✕</button>
         </header>
 

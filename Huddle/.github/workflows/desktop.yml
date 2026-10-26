@@ -1,0 +1,87 @@
+name: Desktop app
+
+# Builds the installers for Windows, macOS and Linux and, when the repository is set up for it (see
+# desktop/README.md), publishes them to your Huddle website's download page. The repository can stay private.
+#
+# Run it from the Actions tab ("Run workflow"), or push a tag like desktop-v1.0.0.
+on:
+  workflow_dispatch:
+  push:
+    tags: ["desktop-v*"]
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: desktop
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Point the app at your server
+        if: ${{ vars.HUDDLE_URL != '' }}
+        run: |
+          node -e "require('fs').writeFileSync('app.config.json', JSON.stringify({ defaultUrl: process.env.HUDDLE_URL }, null, 2))"
+        env:
+          HUDDLE_URL: ${{ vars.HUDDLE_URL }}
+      - name: Use the version from the tag (desktop-v1.2.0 becomes 1.2.0)
+        if: ${{ startsWith(github.ref, 'refs/tags/desktop-v') }}
+        shell: bash
+        run: npm pkg set version="${GITHUB_REF_NAME#desktop-v}"
+      - run: npm install
+      - run: npm test
+      # The generic update feed is what lets installed apps update themselves; the app swaps in its own server's address when it runs.
+      - run: npx electron-builder --publish never
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: "false" # unsigned builds; see desktop/README.md
+      - uses: actions/upload-artifact@v4
+        with:
+          name: huddle-desktop-${{ matrix.os }}
+          if-no-files-found: error
+          path: |
+            desktop/dist/*.exe
+            desktop/dist/*.dmg
+            desktop/dist/*.AppImage
+            desktop/dist/*.deb
+            desktop/dist/*.zip
+            desktop/dist/*.blockmap
+            desktop/dist/latest*.yml
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    env:
+      R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+      R2_BUCKET: ${{ secrets.R2_BUCKET }}
+      AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+      AWS_DEFAULT_REGION: auto
+      # Recent AWS CLI versions add checksums that R2 doesn't accept unless they're only used when required.
+      AWS_REQUEST_CHECKSUM_CALCULATION: when_required
+      AWS_RESPONSE_CHECKSUM_VALIDATION: when_required
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: installers
+          merge-multiple: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Publish to the website's download page
+        if: ${{ env.R2_BUCKET != '' }}
+        run: |
+          ls -l installers
+          node desktop/scripts/make-manifest.js installers > latest.json
+          ENDPOINT="https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com"
+          aws s3 sync installers "s3://${R2_BUCKET}/desktop" --delete --exclude "latest.json" --endpoint-url "$ENDPOINT"
+          aws s3 cp latest.json "s3://${R2_BUCKET}/desktop/latest.json" --content-type application/json --endpoint-url "$ENDPOINT"
+      - name: Nothing to publish to
+        if: ${{ env.R2_BUCKET == '' }}
+        run: echo "R2 secrets aren't set, so the installers were built but not published. They're in this run's artifacts."

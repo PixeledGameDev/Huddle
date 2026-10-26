@@ -1,5 +1,7 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { api, ApiError } from "./api";
+import { FinalCta, Features, Footer, Hero, Preview, Steps, Trust, useReveal, useSiteStats } from "./Landing";
+import { Logo } from "./Logo";
 import type { User } from "./types";
 
 type Mode = "login" | "register" | "twofa" | "forgot" | "reset";
@@ -17,6 +19,10 @@ export default function Auth({ onAuth, intro }: { onAuth: (u: User) => void; int
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const landing = !intro; // the plain sign-in screen is the home page; an invite shows just the card
+  const stats = useSiteStats();
+  const scroller = useRef<HTMLElement>(null);
+  useReveal(scroller);
 
   useEffect(() => {
     api<{ mail: boolean }>("/auth/config").then((c) => setMail(c.mail), () => setMail(false));
@@ -69,6 +75,14 @@ export default function Auth({ onAuth, intro }: { onAuth: (u: User) => void; int
     });
   };
 
+  /** Switches to a mode, scrolls the form into view and puts the cursor in it. */
+  const jumpTo = (m: Mode) => {
+    go(m);
+    const wrap = document.getElementById("lp-form");
+    wrap?.scrollIntoView({ behavior: window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "center" });
+    window.setTimeout(() => wrap?.querySelector<HTMLInputElement>("input")?.focus({ preventScroll: true }), 250);
+  };
+
   const title =
     mode === "login" ? "Sign in to pick up where you left off."
     : mode === "register" ? "Create an account to start chatting."
@@ -76,11 +90,11 @@ export default function Auth({ onAuth, intro }: { onAuth: (u: User) => void; int
     : mode === "forgot" ? "Forgot your password?"
     : "Choose a new password.";
 
-  return (
-    <main className="auth">
+  const card = (
       <form className="auth-card" onSubmit={submit}>
         {intro}
-        <h1>Huddle</h1>
+        {landing && <Logo className="auth-mark" />}
+        {landing ? <h2>Huddle</h2> : <h1>Huddle</h1>}
         <p className="muted">{title}</p>
         {notice && <p className="notice" role="status">{notice}</p>}
 
@@ -88,7 +102,7 @@ export default function Auth({ onAuth, intro }: { onAuth: (u: User) => void; int
           <>
             <label>
               Username
-              <input value={username} onChange={(e) => setUsername(e.target.value)} autoComplete="username" autoFocus required />
+              <input value={username} onChange={(e) => setUsername(e.target.value)} autoComplete="username" autoFocus={!landing} required />
             </label>
             <label>
               Password
@@ -163,8 +177,32 @@ export default function Auth({ onAuth, intro }: { onAuth: (u: User) => void; int
         {(mode === "twofa" || mode === "forgot" || mode === "reset") && (
           <button type="button" className="link" onClick={() => go("login")}>Back to sign in</button>
         )}
-        {!window.huddleDesktop && <a className="link" href="/download" target="_blank" rel="noopener">Get the desktop app</a>}
+        {!window.huddleDesktop && !landing && <a className="link" href="/download" target="_blank" rel="noopener">Get the desktop app</a>}
       </form>
+  );
+
+  if (!landing) return <main className="auth">{card}</main>;
+
+  const showDownload = !window.huddleDesktop;
+  return (
+    <main className="auth lp" ref={scroller}>
+      <header className="lp-nav">
+        <span className="lp-brand"><Logo /> Huddle</span>
+        <div className="lp-nav-actions">
+          {showDownload && <a className="link-quiet" href="/download" target="_blank" rel="noopener">Desktop app</a>}
+          <button type="button" className="pill" onClick={() => jumpTo("login")}>Sign in</button>
+        </div>
+      </header>
+      <section className="lp-hero">
+        <Hero stats={stats} onSignUp={() => jumpTo("register")} onSignIn={() => jumpTo("login")} />
+        <div className="lp-form" id="lp-form">{card}</div>
+      </section>
+      <Preview />
+      <Features />
+      <Steps />
+      <Trust showDownload={showDownload} />
+      <FinalCta onSignUp={() => jumpTo("register")} />
+      <Footer showDownload={showDownload} />
     </main>
   );
 }

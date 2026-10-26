@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Logo } from "./Logo";
 
 /**
  * The desktop app has no system title bar or menu bar: this is its title bar. The logo opens the Huddle menu, the middle
@@ -48,7 +49,7 @@ export function TitleBar() {
           bar.openMenu(r.left, r.bottom + 4);
         }}
       >
-        <span className="logo shine" aria-hidden="true">H</span>
+        <Logo />
         <span className="tb-name">Huddle</span>
         <span className="tb-caret" aria-hidden="true">▾</span>
       </button>

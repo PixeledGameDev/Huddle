@@ -127,6 +127,21 @@ authRouter.post(
   })
 );
 
+// Public numbers for the landing page. Cached briefly so a busy sign-in page can't hammer the database.
+let statsCache: { at: number; value: { users: number; servers: number } } | null = null;
+authRouter.get(
+  "/stats",
+  h(async (req, res) => {
+    rateLimit(`stats:${req.ip}`, 60, 60_000);
+    if (!statsCache || Date.now() - statsCache.at > 30_000) {
+      const row = await one<{ users: string; servers: string }>(`select (select count(*) from users) as users, (select count(*) from servers) as servers`);
+      statsCache = { at: Date.now(), value: { users: Number(row?.users ?? 0), servers: Number(row?.servers ?? 0) } };
+    }
+    res.set("Cache-Control", "public, max-age=30");
+    res.json(statsCache.value);
+  })
+);
+
 authRouter.get(
   "/me",
   h(async (req, res) => {
