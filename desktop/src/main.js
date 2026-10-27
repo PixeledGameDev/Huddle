@@ -66,7 +66,7 @@ const SPLASH_PAGE = path.join(__dirname, "splash.html");
 const SPLASH_MIN_MS = 1200; // long enough to read, short enough not to feel slow
 let splash = null;
 let splashShownAt = 0;
-let splashStatus = { text: "Starting…" };
+let splashStatus = { text: "Starting…", version: app.getVersion() };
 
 function showSplash() {
   splash = new BrowserWindow({
@@ -95,7 +95,7 @@ function showSplash() {
   void splash.loadFile(SPLASH_PAGE);
 }
 function setSplash(text, percent) {
-  splashStatus = { text, percent };
+  splashStatus = { text, percent, version: app.getVersion() };
   splash?.webContents.send("splash:status", splashStatus);
 }
 ipcMain.on("splash:ready", (e) => {

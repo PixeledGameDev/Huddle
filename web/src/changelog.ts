@@ -11,6 +11,14 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "5.9",
+    date: "2026-10-28",
+    title: "Desktop app 1.4",
+    changes: [
+      "The desktop app's splash screen now shows which version of Huddle you're running, so you can see when an update has installed.",
+    ],
+  },
+  {
     version: "5.8",
     date: "2026-10-28",
     title: "Email removed",
