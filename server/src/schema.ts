@@ -392,4 +392,25 @@ alter table users add column if not exists pronouns text not null default '';
 
 -- v29: roles can name the member-list section they appear in (roles sharing a name share a section)
 alter table server_roles add column if not exists section_name text;
+
+-- v30: passkeys (WebAuthn) for passwordless sign-in
+create table if not exists passkeys (
+  id text primary key,                       -- credential id (base64url)
+  user_id uuid not null references users(id) on delete cascade,
+  public_key bytea not null,
+  counter bigint not null default 0,
+  transports text[] not null default '{}',
+  name text not null default 'Passkey',
+  created_at timestamptz not null default now(),
+  last_used_at timestamptz
+);
+create index if not exists passkeys_user on passkeys(user_id);
+-- one-time challenges handed out for a passkey registration or sign-in
+create table if not exists passkey_challenges (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid references users(id) on delete cascade,
+  challenge text not null,
+  purpose text not null,
+  expires_at timestamptz not null default now() + interval '5 minutes'
+);
 `;

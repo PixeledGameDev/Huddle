@@ -344,7 +344,7 @@ export function HuddleAdminModal({ meId, onClose, onNotice, onError }: { meId: s
           </form>
           <div className="stack">
             <h3>Help someone get back in</h3>
-            <small className="hint">For people who can't use "Forgot password?" (no verified email, or email isn't set up). Check it's really them first, then give them the code by another route. Other Huddle Admins can't be targeted.</small>
+            <small className="hint">Huddle has no email, so this is how people reset a forgotten password: they ask you, you make a one-time code, and they enter it under "Forgot your password?". Check it's really them first, then give them the code by another route. Other Huddle Admins can't be targeted.</small>
             <label>
               Username
               <input value={helpWho} onChange={(e) => { setHelpWho(e.target.value); setIssued(null); }} placeholder="Username" maxLength={40} autoComplete="off" />

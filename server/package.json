@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@node-rs/argon2": "^2.0.2",
+    "@simplewebauthn/server": "^14.0.3",
     "@twemoji/svg": "^15.0.0",
     "aws4fetch": "^1.0.20",
     "cookie": "^1.0.2",

@@ -10,6 +10,7 @@ import { bootstrapHuddle } from "./huddleAdmin";
 import { inviteMeta, invitesRouter } from "./invites";
 import { loadMaintenance, maintenanceGate, maintenanceRouter, startMaintenanceWatcher } from "./maintenance";
 import { recoveryRouter } from "./security";
+import { passkeyAuthRouter } from "./passkeys";
 import { HttpError } from "./http";
 import { initRealtime } from "./realtime";
 import { api } from "./routes";
@@ -53,6 +54,7 @@ async function main() {
   app.use("/api", maintenanceGate); // while maintenance is on, only Huddle Admins get past here
   app.use("/api/auth", authRouter);
   app.use("/api/auth", recoveryRouter);
+  app.use("/api/auth", passkeyAuthRouter);
   app.use("/api", invitesRouter); // public: invite cards work before signing in
   app.use("/api", requireAuth, api);
   app.use("/api", (_req, res) => void res.status(404).json({ error: "Not found." }));

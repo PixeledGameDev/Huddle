@@ -1073,3 +1073,10 @@ a.pill { color: inherit; }
 .update-banner button.primary { padding: 7px 16px; border-radius: 999px; flex: none; }
 .update-banner .icon { width: 28px; height: 28px; flex: none; }
 @media (max-width: 560px) { .update-banner { border-radius: 18px; bottom: 10px; } }
+
+/* passkeys */
+.passkey-btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; width: 100%; padding: 10px 16px; border-radius: 999px; font-weight: 600; }
+.passkey-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.passkey-list li { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: 14px; background: color-mix(in srgb, var(--text) 5%, transparent); border: 1px solid var(--line); }
+.passkey-list li > div { flex: 1; display: grid; min-width: 0; }
+.passkey-list li > span { width: 32px; height: 32px; border-radius: 10px; display: grid; place-items: center; background: var(--accent-soft); }

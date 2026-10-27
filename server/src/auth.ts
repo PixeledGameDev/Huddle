@@ -56,7 +56,7 @@ export function requireAuth(req: Request, _res: Response, next: NextFunction) {
   }, next);
 }
 
-async function startSession(res: Response, userId: string) {
+export async function startSession(res: Response, userId: string) {
   const token = crypto.randomBytes(32).toString("base64url");
   await q(`insert into sessions(token_hash, user_id, expires_at) values ($1, $2, now() + make_interval(days => $3))`, [
     sha(token),

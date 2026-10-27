@@ -8,6 +8,7 @@ import { embedsRouter } from "./embeds";
 import { gifsRouter } from "./gifs";
 import { huddleAdminRouter } from "./huddleAdmin";
 import { securityRouter } from "./security";
+import { passkeyRouter } from "./passkeys";
 import { suggestionsRouter } from "./suggestions";
 import { messagesRouter } from "./messages";
 import { ADMIN_TOP, OWNER_TOP, assertNotDm, requireMember, requirePerm, timeoutUntil, type Role } from "./perms";
@@ -22,7 +23,7 @@ import { emitServer, isOnline, joinHuddleAdmins, joinServerRooms, leaveServerRoo
 import { listOpenVotes, voteRouter } from "./votes";
 
 export const api = Router();
-api.use(voteRouter, messagesRouter, pollsRouter, profilesRouter, adminRouter, gifsRouter, embedsRouter, dmsRouter, huddleAdminRouter, deletionRouter, securityRouter, suggestionsRouter, rolesRouter, friendsRouter, emojisRouter);
+api.use(voteRouter, messagesRouter, pollsRouter, profilesRouter, adminRouter, gifsRouter, embedsRouter, dmsRouter, huddleAdminRouter, deletionRouter, securityRouter, passkeyRouter, suggestionsRouter, rolesRouter, friendsRouter, emojisRouter);
 
 const settingsColumns = {
   voteEnabled: "vote_enabled",

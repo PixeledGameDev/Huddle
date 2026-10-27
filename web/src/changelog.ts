@@ -11,6 +11,37 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "5.8",
+    date: "2026-10-28",
+    title: "Email removed",
+    changes: [
+      "Huddle no longer uses email at all. It wasn't working reliably, so adding an email, emailed codes and emailed security notices are gone.",
+      "If you forget your password, choose “Forgot your password?” and enter the one-time reset code a Huddle Admin gives you.",
+      "To keep your account safe without email, add a passkey or turn on two-factor sign-in in Settings → Account.",
+    ],
+  },
+  {
+    version: "5.7",
+    date: "2026-10-27",
+    title: "Passkeys",
+    changes: [
+      "You can now sign in with a passkey: your fingerprint, face, PIN or a security key, with no password to type or forget.",
+      "Add one in Settings → Account → Passkeys. You can keep up to 10 and remove them any time.",
+      "Passkeys can't be phished, and they count as two-factor on their own, so signing in with one skips the authenticator code.",
+      "On the sign-in page, choose “Sign in with a passkey”. Your device offers the passkeys it has, so you don't even need to type your username.",
+    ],
+  },
+  {
+    version: "5.6",
+    date: "2026-10-27",
+    title: "A better desktop installer",
+    changes: [
+      "The Windows installer is now one click: no wizard pages, just a quick progress screen with the new Huddle logo, and Huddle opens when it's done.",
+      "Huddle now has a proper Windows icon (taskbar, shortcuts and the installer all use the new logo).",
+      "Installing no longer asks where to put Huddle. It goes in the right place automatically and updates itself from then on.",
+    ],
+  },
+  {
     version: "5.5",
     date: "2026-10-27",
     title: "Desktop app updates on the splash screen",

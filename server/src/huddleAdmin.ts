@@ -8,7 +8,7 @@ import { HttpError, h, rateLimit } from "./http";
 import { isHuddleAdmin } from "./perms";
 import { endMaintenance, maintenanceState, startMaintenance } from "./maintenance";
 import { deleteServer, eraseAccount } from "./deletion";
-import { clearTwoFactor, issueCode, notifyEmail } from "./security";
+import { clearTwoFactor, issueCode } from "./security";
 import { dropUser, emitServer, emitUser, joinAllServers, joinServerRooms, leaveUnjoinedServers } from "./realtime";
 
 /**
@@ -323,7 +323,7 @@ huddleAdminRouter.post("/huddle/users/delete", h(async (req, res) => {
 }));
 
 /**
- * Account recovery for people who can't use the normal route (no verified email, or email isn't set up on the server).
+ * Account recovery for people who can't use the normal route (there is no email on Huddle).
  * The code is shown once to the admin, who gives it to the person by some other channel after checking it's really them.
  * The person enters it under "Forgot password?" with their username.
  */
@@ -332,19 +332,18 @@ huddleAdminRouter.post("/huddle/users/reset-code", h(async (req, res) => {
   rateLimit(`huddlemod:${user.id}`, 30, 3600_000);
   const { username } = z.object({ username: usernameField }).parse(req.body);
   const target = await actionTarget(user.id, username);
-  const code = await issueCode(target.id, "reset", null, "admin");
+  const code = await issueCode(target.id, "reset");
   await log(user.id, "reset-code", { targetId: target.id, username: target.username });
   res.json({ ok: true, username: target.username, code, minutes: 60 });
 }));
 
-/** For someone who has lost their authenticator and recovery codes. Their password and email are unchanged. */
+/** For someone who has lost their authenticator and recovery codes. Their password is unchanged. */
 huddleAdminRouter.post("/huddle/users/disable-2fa", h(async (req, res) => {
   const user = req.user!;
   rateLimit(`huddlemod:${user.id}`, 30, 3600_000);
   const { username } = z.object({ username: usernameField }).parse(req.body);
   const target = await actionTarget(user.id, username);
   await clearTwoFactor(target.id);
-  await notifyEmail(target.id, "Two-factor sign-in was turned off by an admin", "A Huddle admin turned off two-factor sign-in for your account (for example, because you lost access to your authenticator).");
   await log(user.id, "disable-2fa", { targetId: target.id, username: target.username });
   res.json({ ok: true, username: target.username });
 }));

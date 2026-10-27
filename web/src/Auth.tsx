@@ -1,21 +1,21 @@
 import { useEffect, useRef, useState } from "react";
+import { browserSupportsWebAuthn, startAuthentication } from "@simplewebauthn/browser";
 import { api, ApiError } from "./api";
 import { FinalCta, Features, Footer, Hero, Preview, Steps, Trust, useReveal, useSiteStats } from "./Landing";
 import { Logo } from "./Logo";
 import type { User } from "./types";
 
-type Mode = "login" | "register" | "twofa" | "forgot" | "reset";
+type Mode = "login" | "register" | "twofa" | "reset";
 
 export default function Auth({ onAuth, intro }: { onAuth: (u: User) => void; intro?: React.ReactNode }) {
   const [mode, setMode] = useState<Mode>("login");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [code, setCode] = useState(""); // sign-in second factor
-  const [resetCode, setResetCode] = useState(""); // emailed (or admin-given) reset code
+  const [resetCode, setResetCode] = useState(""); // the reset code a Huddle Admin gave them
   const [newPassword, setNewPassword] = useState("");
   const [factor, setFactor] = useState(""); // authenticator/recovery code needed to reset a 2FA account
   const [needsFactor, setNeedsFactor] = useState(false);
-  const [mail, setMail] = useState<boolean | null>(null);
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -23,10 +23,6 @@ export default function Auth({ onAuth, intro }: { onAuth: (u: User) => void; int
   const stats = useSiteStats();
   const scroller = useRef<HTMLElement>(null);
   useReveal(scroller);
-
-  useEffect(() => {
-    api<{ mail: boolean }>("/auth/config").then((c) => setMail(c.mail), () => setMail(false));
-  }, []);
 
   const go = (m: Mode) => {
     setMode(m);
@@ -47,14 +43,26 @@ export default function Auth({ onAuth, intro }: { onAuth: (u: User) => void; int
     }
   }
 
+  /** Signs in with a passkey: the device asks for a fingerprint, face or PIN, and no username or password is typed. */
+  const passkeySignIn = () =>
+    run(async () => {
+      const { options, challengeId } = await api<{ options: any; challengeId: string }>("/auth/passkey/options", "POST");
+      let response;
+      try {
+        response = await startAuthentication({ optionsJSON: options });
+      } catch (err: any) {
+        if (err?.name === "NotAllowedError" || err?.name === "AbortError") throw new Error("Passkey sign-in was cancelled.");
+        throw new Error("This device couldn't use a passkey. You can still sign in with your password.");
+      }
+      const { user } = await api<{ user: User }>("/auth/passkey/login", "POST", { challengeId, response });
+      onAuth(user);
+    });
+  const canPasskey = browserSupportsWebAuthn();
+
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
     return run(async () => {
-      if (mode === "forgot") {
-        await api("/auth/forgot", "POST", { identifier: username });
-        setNotice(mail ? "If that account has a verified email, we've sent it a code." : "");
-        setMode("reset");
-      } else if (mode === "reset") {
+      if (mode === "reset") {
         await api("/auth/reset", "POST", { identifier: username, code: resetCode, password: newPassword, totp: needsFactor ? factor : undefined });
         setPassword("");
         setResetCode("");
@@ -87,8 +95,7 @@ export default function Auth({ onAuth, intro }: { onAuth: (u: User) => void; int
     mode === "login" ? "Sign in to pick up where you left off."
     : mode === "register" ? "Create an account to start chatting."
     : mode === "twofa" ? "Enter the 6-digit code from your authenticator app, or one of your recovery codes."
-    : mode === "forgot" ? "Forgot your password?"
-    : "Choose a new password.";
+    : "Reset your password.";
 
   const card = (
       <form className="auth-card" onSubmit={submit}>
@@ -125,29 +132,16 @@ export default function Auth({ onAuth, intro }: { onAuth: (u: User) => void; int
           </label>
         )}
 
-        {mode === "forgot" && (
-          <>
-            {mail ? (
-              <p className="muted">Enter your username or the email address on your account and we'll email you a code. Only a <strong>verified</strong> email can be used.</p>
-            ) : (
-              <p className="muted">Email isn't set up on this server. Ask a Huddle Admin for a reset code, then continue below.</p>
-            )}
-            <label>
-              {mail ? "Username or email" : "Your username"}
-              <input value={username} onChange={(e) => setUsername(e.target.value)} autoComplete="username" autoFocus required />
-            </label>
-          </>
-        )}
-
         {mode === "reset" && (
           <>
+            <p className="muted">Huddle has no email, so a Huddle Admin gives you a one-time reset code. Ask one for a code, then enter it here.</p>
             <label>
-              Username or email
+              Username
               <input value={username} onChange={(e) => setUsername(e.target.value)} autoComplete="username" required />
             </label>
             <label>
               Code
-              <input value={resetCode} onChange={(e) => setResetCode(e.target.value)} autoComplete="one-time-code" autoFocus required placeholder="From your email, or from a Huddle Admin" />
+              <input value={resetCode} onChange={(e) => setResetCode(e.target.value)} autoComplete="one-time-code" autoFocus required placeholder="From a Huddle Admin" />
             </label>
             <label>
               New password
@@ -164,17 +158,21 @@ export default function Auth({ onAuth, intro }: { onAuth: (u: User) => void; int
 
         {error && <p className="error" role="alert">{error}</p>}
         <button className="primary" disabled={busy}>
-          {mode === "login" ? "Sign in" : mode === "register" ? "Create account" : mode === "twofa" ? "Verify" : mode === "forgot" ? (mail ? "Send code" : "Continue") : "Change password"}
+          {mode === "login" ? "Sign in" : mode === "register" ? "Create account" : mode === "twofa" ? "Verify" : "Change password"}
         </button>
 
-        {mode === "login" && <button type="button" className="link" onClick={() => go("forgot")}>Forgot your password?</button>}
-        {mode === "forgot" && <button type="button" className="link" onClick={() => go("reset")}>I already have a code</button>}
+        {mode === "login" && canPasskey && (
+          <button type="button" className="pill passkey-btn" disabled={busy} onClick={() => void passkeySignIn()}>
+            <span aria-hidden="true">🔑</span> Sign in with a passkey
+          </button>
+        )}
+        {mode === "login" && <button type="button" className="link" onClick={() => go("reset")}>Forgot your password?</button>}
         {(mode === "login" || mode === "register") && (
           <button type="button" className="link" onClick={() => go(mode === "login" ? "register" : "login")}>
             {mode === "login" ? "Need an account? Create one" : "Have an account? Sign in"}
           </button>
         )}
-        {(mode === "twofa" || mode === "forgot" || mode === "reset") && (
+        {(mode === "twofa" || mode === "reset") && (
           <button type="button" className="link" onClick={() => go("login")}>Back to sign in</button>
         )}
         {!window.huddleDesktop && !landing && <a className="link" href="/download" target="_blank" rel="noopener">Get the desktop app</a>}
