@@ -20,10 +20,11 @@ import { ServerAssetsContext } from "./ServerAssets";
 import { VerifiedBadge } from "./Verified";
 import { StatusDot, StatusMenu } from "./Status";
 import { FriendsModal, useFriends } from "./Friends";
-import { notifyIncoming, setNotificationOpener, updateBadge } from "./notify";
+import { notifyIncoming, setNotificationActions, setNotificationOpener, updateBadge } from "./notify";
 import Members from "./Members";
 import { AddServerModal, SettingsModal } from "./Modals";
 import { PollModal } from "./Polls";
+import { QuickSwitcher, type JumpTarget } from "./QuickSwitcher";
 import { MyProfileModal, ProfileCard } from "./ProfileModals";
 import { can, canAny, isOwner } from "./permissions";
 import { LegacyAdminsModal } from "./Roles";
@@ -128,6 +129,7 @@ function Main({ me, initialServerId, onUser, onLogout }: { me: User; initialServ
   const [navOpen, setNavOpen] = useState(() => (wide() ? localStorage.getItem("huddle.nav") !== "closed" : false));
   const [membersOpen, setMembersOpen] = useState(() => (wide() ? localStorage.getItem("huddle.members") !== "closed" : false));
   const [showFriends, setShowFriends] = useState(false);
+  const [quick, setQuick] = useState(false); // the Ctrl+K quick switcher
   const lastServerRef = useRef<string | null>(null);
 
   const socketRef = useRef<Socket | null>(null);
@@ -301,6 +303,19 @@ function Main({ me, initialServerId, onUser, onLogout }: { me: User; initialServ
         pendingChannelRef.current = ch;
         setActiveId(serverId);
       }
+    });
+  }, []);
+
+  // Desktop popups: reply straight from one, or mark its conversation read.
+  useEffect(() => {
+    setNotificationActions({
+      reply: async ({ channelId: ch }, text) => { await api(`/channels/${ch}/messages`, "POST", { content: text }); },
+      markRead: ({ serverId, channelId: ch }) =>
+        setUnread((u) => {
+          const n = u.channels[ch] ?? 0;
+          if (!n) return u;
+          return { channels: { ...u.channels, [ch]: 0 }, servers: { ...u.servers, [serverId]: Math.max(0, (u.servers[serverId] ?? 0) - n) } };
+        }),
     });
   }, []);
 
@@ -646,6 +661,35 @@ function Main({ me, initialServerId, onUser, onLogout }: { me: User; initialServ
   }, []);
   useEffect(() => { if (sideMode === "server" && activeId) lastServerRef.current = activeId; }, [sideMode, activeId]);
 
+  // Ctrl+K (Cmd+K on a Mac) opens the quick switcher from anywhere.
+  useEffect(() => {
+    const k = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        setQuick((q) => !q);
+      }
+    };
+    window.addEventListener("keydown", k);
+    return () => window.removeEventListener("keydown", k);
+  }, []);
+  function jump(t: JumpTarget) {
+    setQuick(false);
+    setModal(null);
+    setShowFriends(false);
+    if (t.kind === "dm") {
+      setSideMode("dms");
+      setActiveId(t.serverId);
+    } else {
+      setSideMode("server");
+      if (t.channelId && activeIdRef.current === t.serverId) setChannelId(t.channelId);
+      else {
+        pendingChannelRef.current = t.channelId ?? null;
+        setActiveId(t.serverId);
+      }
+    }
+    if (!wide()) setNavOpen(false);
+  }
+
   async function logout() {
     await api("/auth/logout", "POST").catch(() => {});
     socketRef.current?.disconnect();
@@ -776,6 +820,7 @@ function Main({ me, initialServerId, onUser, onLogout }: { me: User; initialServ
           <MoreMenu
             badge={unseenUpdates}
             items={[
+              { label: "Quick switcher", hint: "Jump anywhere · Ctrl+K", onClick: () => setQuick(true) },
               { label: "Settings", hint: "Profile, theme, notifications and more", onClick: () => setModal("myprofile") },
               { label: "What's new", hint: unseenUpdates ? "New updates" : undefined, onClick: () => { markUpdatesSeen(); setUnseenUpdates(false); setModal("changelog"); } },
               { label: "Suggestions", hint: "Ideas for Huddle", onClick: () => setModal("suggestions") },
@@ -870,6 +915,17 @@ function Main({ me, initialServerId, onUser, onLogout }: { me: User; initialServ
             setActiveId(s.id);
             setModal(null);
           }}
+        />
+      )}
+      {quick && (
+        <QuickSwitcher
+          servers={servers}
+          channels={detail && !inDm ? detail.channels : []}
+          activeServer={detail && !inDm ? servers.find((s) => s.id === detail.id) ?? null : null}
+          dms={dms}
+          unread={unread}
+          onJump={jump}
+          onClose={() => setQuick(false)}
         />
       )}
       {modal === "settings" && detail && <SettingsModal server={detail} onClose={() => setModal(null)} onError={fail} onSaved={() => { setModal(null); push("Settings saved."); }} onDeleted={() => setModal(null)} />}

@@ -2,6 +2,8 @@ import type http from "http";
 import { Server as IOServer } from "socket.io";
 import { userFromCookie } from "./auth";
 import { one, q } from "./db";
+import { inMaintenance } from "./maintenance";
+import { isHuddleAdmin } from "./perms";
 
 let io: IOServer;
 const online = new Map<string, Set<string>>(); // userId -> socket ids
@@ -74,6 +76,7 @@ export function initRealtime(httpServer: http.Server) {
     try {
       const user = await userFromCookie(socket.handshake.headers.cookie);
       if (!user) return next(new Error("unauthorized"));
+      if (inMaintenance() && !(await isHuddleAdmin(user.id))) return next(new Error("maintenance"));
       socket.data.user = user;
       next();
     } catch (e) {
@@ -137,4 +140,14 @@ export function initRealtime(httpServer: http.Server) {
       }
     });
   });
+}
+
+/** Tells every open connection that maintenance started or ended. When it starts, everyone but Huddle Admins is disconnected. */
+export async function broadcastMaintenance(state: unknown & { active: boolean }) {
+  io.emit("maintenance", state);
+  if (!state.active) return;
+  for (const socket of await io.fetchSockets()) {
+    const id = (socket.data.user as { id: string } | undefined)?.id;
+    if (!id || !(await isHuddleAdmin(id))) socket.disconnect(true);
+  }
 }

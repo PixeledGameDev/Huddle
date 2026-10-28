@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { confirmDialog } from "./Dialogs";
 import { api } from "./api";
 import { Modal } from "./Modals";
 
@@ -75,7 +76,7 @@ export function SuggestionsModal({ admin, onClose, onNotice, onError }: { admin:
   }
 
   async function remove(s: Suggestion) {
-    if (!window.confirm(`Remove "${s.title}"?`)) return;
+    if (!await confirmDialog(`Remove "${s.title}"?`)) return;
     try {
       await api(`/suggestions/${s.id}`, "DELETE");
       setItems((list) => list?.filter((x) => x.id !== s.id) ?? null);

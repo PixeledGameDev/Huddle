@@ -157,30 +157,26 @@ Enter or Tab inserts the emoji. Names that don't match an emoji stay as typed, s
 stored as typed and converted when it's shown, so editing a message shows the `:name:` again. The name list lives in
 `web/src/emojiData.ts`; the short aliases are the ones to extend.
 
-## Account security: email, password reset, two-factor
+## Account security: passkeys, password reset, two-factor
 
-- **Email.** In *Profile & appearance → Sign-in & recovery* anyone can add an email address; it only counts once they
-  enter the 6-digit code sent to it. A verified email is used to reset a forgotten password and to send a heads-up
-  when the password, email or two-factor setting changes. Email is **optional** and needs setup (below).
-- **Forgot password.** On the sign-in screen: enter your username or verified email, get a 6-digit code (valid 30
-  minutes, works once, dies after 5 wrong tries), enter it with a new password. The answer is the same whether or not
-  the account exists, so it can't be used to find out who has one. A reset signs the account out everywhere. Codes
-  rather than links mean it works in the desktop app too.
+- **No email.** Huddle doesn't send email. It was costly and unreliable for a small project, so there are no email
+  addresses, emailed codes or emailed security notices.
+- **Forgot password.** On the sign-in screen, "Forgot your password?" asks for a username, a one-time reset code from a
+  Huddle Admin, and a new password. The code lasts an hour, works once and dies after 5 wrong tries. A reset signs the
+  account out everywhere. Codes rather than links mean it works in the desktop app too.
+- **Passkeys.** Settings → Account → Passkeys: sign in with a fingerprint, face, PIN or security key. A passkey counts as
+  two factors, so it skips the authenticator code. Set `PUBLIC_URL` if the site is served from more than one address.
 - **Two-factor sign-in.** Authenticator apps (Google Authenticator, Authy, 1Password…), turned on with a QR code and a
   confirming code, plus 10 one-time recovery codes. Signing in then needs the code; a code can't be reused. A
-  **password reset on an account with two-factor also needs an authenticator or recovery code**, so access to
-  someone's inbox alone isn't enough. Changing the password, removing the email, turning two-factor off and deleting
-  the account all ask for the password (and a code, if two-factor is on).
+  **password reset on an account with two-factor also needs an authenticator or recovery code**. Changing the password,
+  turning two-factor off and deleting the account all ask for the password (and a code, if two-factor is on).
 - **Change password** (same section) signs out your other devices and keeps this one.
-- **Locked out?** A Huddle Admin can create a one-hour reset code for someone (for people with no verified email or
-  on a server without email) and can turn off someone's two-factor if they've lost their authenticator and recovery
-  codes. Both are in the Huddle Admin panel, are logged, and can't be aimed at other Huddle Admins.
+- **Locked out?** A Huddle Admin can create a one-hour reset code for someone and can turn off someone's two-factor if
+  they've lost their authenticator and recovery codes. Both are in the Huddle Admin panel, are logged, and can't be
+  aimed at other Huddle Admins.
 
-Setup: set `RESEND_API_KEY` and `MAIL_FROM` (see `.env.example`) to turn email on; it uses Resend's HTTP API because
-many hosts block SMTP. Without them the app says email isn't set up and everything except email works (codes appear
-in the server log in development). Set `AUTH_SECRET` to a long random string to encrypt authenticator secrets in the
-database (without it they're stored as plain text; changing it later means giving people a two-factor reset). Rate
-limits apply to every step, and nothing here needs a new npm package.
+Set `AUTH_SECRET` to a long random string to encrypt authenticator secrets in the database (without it they're stored
+as plain text; changing it later means giving people a two-factor reset). Rate limits apply to every step.
 
 ## Deleting servers and accounts
 

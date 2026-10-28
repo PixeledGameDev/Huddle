@@ -2,9 +2,11 @@
 const status = document.getElementById("status");
 const bar = document.getElementById("bar");
 const fill = document.getElementById("fill");
+const version = document.getElementById("version");
 
-window.huddleSplash.onStatus(({ text, percent }) => {
+window.huddleSplash.onStatus(({ text, percent, version: v }) => {
   status.textContent = text || "";
+  if (v) version.textContent = `Version ${v}`;
   if (typeof percent === "number") {
     bar.classList.add("known");
     fill.style.width = `${Math.max(0, Math.min(100, percent))}%`;

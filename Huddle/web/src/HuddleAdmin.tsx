@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
+import { confirmDialog } from "./Dialogs";
 import { api } from "./api";
 import { Modal } from "./Modals";
+import { fmtCountdown, pokeMaintenance, useMaintenance, useRemaining } from "./Maintenance";
 import { VerifiedBadge } from "./Verified";
 
 interface Overview {
@@ -26,10 +28,94 @@ function adminAuditText(e: { action: string; detail: any; actor: string | null }
     case "delete.account": return `${who} deleted the account @${d.username}${d.deleteMessages ? " and their messages" : ""}${d.deletedServers?.length ? `, plus servers: ${d.deletedServers.join(", ")}` : ""}`;
     case "reset-code": return `${who} created a password reset code for @${d.username}`;
     case "disable-2fa": return `${who} turned off two-factor for @${d.username}`;
+    case "maintenance.start": return `${who} turned on maintenance for ${d.minutes} minutes`;
+    case "maintenance.change": return `${who} changed the maintenance timer to ${d.minutes} minutes from then`;
+    case "maintenance.end": return `${who} ended maintenance`;
     case "server.verify": return `${who} verified ${d.name}`;
     case "server.unverify": return `${who} removed verification from ${d.name}`;
     default: return `${who}: ${e.action}`;
   }
+}
+
+const MAINT_LENGTHS: [string, string][] = [["5", "5 minutes"], ["15", "15 minutes"], ["30", "30 minutes"], ["60", "1 hour"], ["120", "2 hours"], ["360", "6 hours"], ["720", "12 hours"], ["1440", "1 day"], ["custom", "Custom…"]];
+
+/** Turns Huddle off for everyone but Huddle Admins, for a set time. */
+function MaintenanceSection({ onNotice, onError, onChanged }: { onNotice: (t: string) => void; onError: (e: unknown) => void; onChanged: () => void }) {
+  const { state, skew, refresh } = useMaintenance();
+  const [length, setLength] = useState("30");
+  const [custom, setCustom] = useState("45");
+  const [message, setMessage] = useState("");
+  const [busy, setBusy] = useState(false);
+  const left = useRemaining(state.active ? state.endsAt : null, skew, refresh);
+  const minutes = length === "custom" ? Math.floor(Number(custom)) : Number(length);
+  const valid = Number.isFinite(minutes) && minutes >= 1 && minutes <= 10080;
+  const label = minutes >= 60 && minutes % 60 === 0 ? `${minutes / 60} hour${minutes === 60 ? "" : "s"}` : `${minutes} minute${minutes === 1 ? "" : "s"}`;
+
+  async function start(e: React.FormEvent) {
+    e.preventDefault();
+    if (!valid || busy) return;
+    const ok = await confirmDialog(
+      state.active
+        ? `Change the timer? Maintenance will now end ${label} from now.`
+        : `Start maintenance for ${label}? Everyone except Huddle Admins is signed out of the app and locked out until the timer ends.`,
+      { confirmLabel: state.active ? "Change timer" : "Start maintenance", danger: !state.active }
+    );
+    if (!ok) return;
+    setBusy(true);
+    try {
+      await api("/huddle/maintenance", "POST", { minutes, message: message.trim() || undefined });
+      onNotice(state.active ? `Maintenance now ends in ${label}.` : `Maintenance is on for ${label}.`);
+      await refresh();
+      pokeMaintenance();
+      onChanged();
+    } catch (err) { onError(err); } finally { setBusy(false); }
+  }
+  async function end() {
+    if (!(await confirmDialog("End maintenance now? Everyone can use Huddle again right away.", { confirmLabel: "End maintenance", danger: false }))) return;
+    setBusy(true);
+    try {
+      await api("/huddle/maintenance", "DELETE");
+      onNotice("Maintenance ended.");
+      await refresh();
+      pokeMaintenance();
+      onChanged();
+    } catch (err) { onError(err); } finally { setBusy(false); }
+  }
+
+  return (
+    <form className={`stack${state.active ? " maint-on" : ""}`} onSubmit={start}>
+      <h3>Maintenance</h3>
+      {state.active ? (
+        <div className="maint-status">
+          <span className="lp-live" aria-hidden="true" />
+          <div>
+            <b>Maintenance is on</b>
+            <small className="hint">{fmtCountdown(left)} left · ends around {new Date(state.endsAt!).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}</small>
+          </div>
+          <button type="button" className="pill" disabled={busy} onClick={end}>End now</button>
+        </div>
+      ) : (
+        <small className="hint">Turn Huddle off for everyone except Huddle Admins. They see a countdown, and the app and website come back by themselves when it hits zero.</small>
+      )}
+      <div className="row">
+        <label>
+          {state.active ? "Reset the timer to" : "How long"}
+          <select value={length} onChange={(e) => setLength(e.target.value)}>{MAINT_LENGTHS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select>
+        </label>
+        {length === "custom" && (
+          <label>
+            Minutes
+            <input type="number" min={1} max={10080} value={custom} onChange={(e) => setCustom(e.target.value)} required />
+          </label>
+        )}
+      </div>
+      <label>
+        Note for people (optional)
+        <input value={message} onChange={(e) => setMessage(e.target.value)} maxLength={300} placeholder="e.g. Upgrading the database" />
+      </label>
+      <button className={state.active ? "pill" : "danger-fill"} disabled={busy || !valid}>{state.active ? "Change timer" : "Start maintenance"}</button>
+    </form>
+  );
 }
 
 const BAN_LENGTHS: [string, string][] = [["3600", "1 hour"], ["86400", "1 day"], ["604800", "1 week"], ["2592000", "30 days"], ["", "Permanent"]];
@@ -84,7 +170,7 @@ export function HuddleAdminModal({ meId, onClose, onNotice, onError }: { meId: s
   async function send(e: React.FormEvent) {
     e.preventDefault();
     if (!data || sending) return;
-    if (target === "dms" && !window.confirm(`Send this to everyone's direct messages (${data.people} people) as Huddle? This can't be undone.`)) return;
+    if (target === "dms" && !await confirmDialog(`Send this to everyone's direct messages (${data.people} people) as Huddle? This can't be undone.`)) return;
     setSending(true);
     try {
       if (target === "dms") {
@@ -121,11 +207,11 @@ export function HuddleAdminModal({ meId, onClose, onNotice, onError }: { meId: s
     try {
       if (action === "ban") {
         const length = banLength ? Number(banLength) : null;
-        if (!window.confirm(`Ban @${name} from Huddle ${length ? `for ${BAN_LENGTHS.find(([v]) => v === banLength)![1]}` : "permanently"}? They'll be signed out right away.`)) return;
+        if (!await confirmDialog(`Ban @${name} from Huddle ${length ? `for ${BAN_LENGTHS.find(([v]) => v === banLength)![1]}` : "permanently"}? They'll be signed out right away.`)) return;
         await api("/huddle/users/ban", "POST", { username: name, durationSeconds: length, reason: reason.trim() || undefined });
         onNotice(`@${name} is banned.`);
       } else {
-        if (!window.confirm(`Permanently delete @${name}'s account? This can't be undone.`)) return;
+        if (!await confirmDialog(`Permanently delete @${name}'s account? This can't be undone.`)) return;
         const r = await api<{ deletedServers: number }>("/huddle/users/delete", "POST", { username: name, confirm: name, deleteMessages: wipeMessages, deleteOwnedServers: wipeServers });
         onNotice(`@${name}'s account was deleted${r.deletedServers ? ` along with ${r.deletedServers} server${r.deletedServers === 1 ? "" : "s"}` : ""}.`);
       }
@@ -147,7 +233,7 @@ export function HuddleAdminModal({ meId, onClose, onNotice, onError }: { meId: s
   }
   async function turnOff2fa() {
     const name = helpWho.trim().replace(/^@/, "");
-    if (!window.confirm(`Turn off two-factor sign-in for @${name}? Only do this once you're sure it's really them.`)) return;
+    if (!await confirmDialog(`Turn off two-factor sign-in for @${name}? Only do this once you're sure it's really them.`)) return;
     try {
       await api("/huddle/users/disable-2fa", "POST", { username: name });
       onNotice(`Two-factor is off for @${name}.`);
@@ -167,7 +253,7 @@ export function HuddleAdminModal({ meId, onClose, onNotice, onError }: { meId: s
   }
 
   async function revoke(id: string, name: string) {
-    if (!window.confirm(`Remove Huddle Admin from ${name}?`)) return;
+    if (!await confirmDialog(`Remove Huddle Admin from ${name}?`)) return;
     try {
       await api(`/huddle/admins/${id}`, "DELETE");
       onNotice(`${name} is no longer a Huddle Admin.`);
@@ -183,6 +269,8 @@ export function HuddleAdminModal({ meId, onClose, onNotice, onError }: { meId: s
         <p>Loading…</p>
       ) : (
         <>
+          <MaintenanceSection onNotice={onNotice} onError={onError} onChanged={() => loadAudit(false)} />
+          <hr />
           <form className="stack" onSubmit={send}>
             <h3>Send a message as Huddle</h3>
             <label>
@@ -256,7 +344,7 @@ export function HuddleAdminModal({ meId, onClose, onNotice, onError }: { meId: s
           </form>
           <div className="stack">
             <h3>Help someone get back in</h3>
-            <small className="hint">For people who can't use "Forgot password?" (no verified email, or email isn't set up). Check it's really them first, then give them the code by another route. Other Huddle Admins can't be targeted.</small>
+            <small className="hint">Huddle has no email, so this is how people reset a forgotten password: they ask you, you make a one-time code, and they enter it under "Forgot your password?". Check it's really them first, then give them the code by another route. Other Huddle Admins can't be targeted.</small>
             <label>
               Username
               <input value={helpWho} onChange={(e) => { setHelpWho(e.target.value); setIssued(null); }} placeholder="Username" maxLength={40} autoComplete="off" />

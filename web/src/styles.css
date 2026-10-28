@@ -1080,3 +1080,21 @@ a.pill { color: inherit; }
 .passkey-list li { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: 14px; background: color-mix(in srgb, var(--text) 5%, transparent); border: 1px solid var(--line); }
 .passkey-list li > div { flex: 1; display: grid; min-width: 0; }
 .passkey-list li > span { width: 32px; height: 32px; border-radius: 10px; display: grid; place-items: center; background: var(--accent-soft); }
+
+/* quick switcher (Ctrl+K) */
+.qs-backdrop { align-items: flex-start; padding-top: 12vh; z-index: 70; }
+.qs { width: min(560px, 100%); display: grid; border-radius: 22px; overflow: hidden; background: color-mix(in srgb, var(--panel) 96%, transparent); backdrop-filter: blur(20px); border: 1px solid var(--line); box-shadow: 0 30px 80px rgba(0, 0, 0, .5); animation: popIn .18s var(--ease); }
+.qs > input { border: 0; border-bottom: 1px solid var(--line); border-radius: 0; background: transparent; padding: 18px 20px; font-size: 17px; outline: none; }
+.qs-list { display: grid; gap: 2px; padding: 8px; max-height: min(55vh, 440px); overflow-y: auto; }
+.qs-item { display: flex; align-items: center; gap: 12px; width: 100%; text-align: left; padding: 8px 10px; border: 0; border-radius: 12px; background: none; color: inherit; }
+.qs-item.on { background: var(--accent-soft); }
+.qs-icon { width: 30px; height: 30px; display: grid; place-items: center; flex: none; }
+.qs-glyph { width: 28px; height: 28px; border-radius: 9px; display: grid; place-items: center; font-weight: 800; color: var(--dim); background: color-mix(in srgb, var(--text) 8%, transparent); }
+.qs-tile { width: 28px; height: 28px; border-radius: 9px; display: grid; place-items: center; font-size: 11px; font-weight: 700; color: #fff; }
+.qs-text { display: grid; flex: 1; min-width: 0; }
+.qs-text b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.qs-text small { color: var(--dim); }
+.qs-empty { padding: 18px; text-align: center; margin: 0; }
+.qs-foot { display: flex; flex-wrap: wrap; gap: 6px 16px; padding: 10px 16px; border-top: 1px solid var(--line); font-size: 12px; }
+.qs-foot kbd { padding: 1px 6px; margin-right: 3px; border-radius: 6px; border: 1px solid var(--line); background: color-mix(in srgb, var(--text) 6%, transparent); font: inherit; font-size: 11px; }
+@media (max-width: 560px) { .qs-backdrop { padding-top: 4vh; } .qs-foot span:last-child { display: none; } }

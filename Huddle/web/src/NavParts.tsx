@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Popover } from "./Popover";
 import { api } from "./api";
 import { Avatar } from "./Avatar";
 import { Name } from "./Name";
@@ -48,26 +49,19 @@ export interface MenuItem { label: string; onClick?: () => void; href?: string; 
 /** The ⋯ button in the bottom-left corner: everything that used to be a row of small buttons. */
 export function MoreMenu({ items, badge }: { items: MenuItem[]; badge?: boolean }) {
   const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (!open) return;
-    const close = (e: MouseEvent) => { if (!ref.current?.contains(e.target as Node)) setOpen(false); };
-    const esc = (e: KeyboardEvent) => e.key === "Escape" && setOpen(false);
-    window.addEventListener("mousedown", close);
-    window.addEventListener("keydown", esc);
-    return () => { window.removeEventListener("mousedown", close); window.removeEventListener("keydown", esc); };
-  }, [open]);
+  const btn = useRef<HTMLButtonElement>(null);
+  const close = useCallback(() => setOpen(false), []);
   return (
-    <div className="status-menu" ref={ref}>
-      <button className="icon ghost more-btn" aria-haspopup="menu" aria-expanded={open} aria-label="More" title="More" onClick={() => setOpen((o) => !o)}>⋯{badge && <span className="new-dot" />}</button>
+    <div className="status-menu">
+      <button ref={btn} className="icon ghost more-btn" aria-haspopup="menu" aria-expanded={open} aria-label="More" title="More" onClick={() => setOpen((o) => !o)}>⋯{badge && <span className="new-dot" />}</button>
       {open && (
-        <div className="menu more-menu" role="menu">
+        <Popover anchor={btn} onClose={close} width={260} className="more-menu" label="More">
           {items.map((it) => it.href ? (
-            <a key={it.label} role="menuitem" className="menu-item" href={it.href} target="_blank" rel="noopener" onClick={() => setOpen(false)}><span><strong>{it.label}</strong>{it.hint && <small>{it.hint}</small>}</span></a>
+            <a key={it.label} role="menuitem" className="menu-item" href={it.href} target="_blank" rel="noopener" onClick={close}><span><strong>{it.label}</strong>{it.hint && <small>{it.hint}</small>}</span></a>
           ) : (
             <button key={it.label} role="menuitem" className={it.danger ? "menu-item danger" : "menu-item"} onClick={() => { setOpen(false); it.onClick?.(); }}><span><strong>{it.label}</strong>{it.hint && <small>{it.hint}</small>}</span></button>
           ))}
-        </div>
+        </Popover>
       )}
     </div>
   );

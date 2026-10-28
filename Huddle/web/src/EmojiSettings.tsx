@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { confirmDialog, promptDialog } from "./Dialogs";
 import { api, uploadRaw } from "./api";
 import type { ServerDetail } from "./types";
 
@@ -48,8 +49,8 @@ function Section({ server, kind, onError }: { server: ServerDetail; kind: Kind; 
             <img src={`/api/${kind}/${it.id}`} alt={it.name} loading="lazy" />
             <span className="asset-name" title={it.name}>:{it.name}:</span>
             <span className="asset-tools">
-              <button className="link" onClick={() => { const n = window.prompt(`New name for :${it.name}:`, it.name); if (n && n !== it.name) void run(() => api(`/servers/${server.id}/${kind}/${it.id}`, "PATCH", { name: n })); }}>Rename</button>
-              <button className="link danger" onClick={() => { if (window.confirm(`Delete :${it.name}:? Messages that used it will show its name instead.`)) void run(() => api(`/servers/${server.id}/${kind}/${it.id}`, "DELETE")); }}>Delete</button>
+              <button className="link" onClick={async () => { const n = await promptDialog(`New name for :${it.name}:`, { defaultValue: it.name, confirmLabel: "Rename", maxLength: 32 }); if (n && n !== it.name) void run(() => api(`/servers/${server.id}/${kind}/${it.id}`, "PATCH", { name: n })); }}>Rename</button>
+              <button className="link danger" onClick={async () => { if (await confirmDialog(`Delete :${it.name}:? Messages that used it will show its name instead.`)) void run(() => api(`/servers/${server.id}/${kind}/${it.id}`, "DELETE")); }}>Delete</button>
             </span>
           </li>
         ))}

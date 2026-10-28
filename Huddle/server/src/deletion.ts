@@ -1,3 +1,4 @@
+import { clearAuthCache } from "./auth";
 import { Router } from "express";
 import { verify } from "@node-rs/argon2";
 import { z } from "zod";
@@ -32,6 +33,7 @@ export async function eraseAccount(userId: string, opts: { deleteMessages: boole
   let removed: { id: string; channel_id: string; server_id: string }[] = [];
   await tx(async (c) => {
     await q(`delete from sessions where user_id = $1`, [userId], c);
+    clearAuthCache();
     // Direct-message memberships stay so the other person's conversation (with a "Deleted user") isn't lost.
     await q(`delete from memberships m using servers s where m.user_id = $1 and s.id = m.server_id and not s.is_dm`, [userId], c);
     await q(`delete from server_timeouts where user_id = $1`, [userId], c);
@@ -57,7 +59,7 @@ export async function eraseAccount(userId: string, opts: { deleteMessages: boole
     }
     await q(`delete from user_banners where user_id = $1`, [userId], c);
     await q(
-      `update users set username = 'deleted_' || substr(replace(id::text, '-', ''), 1, 12), display_name = 'Deleted user', bio = '',
+      `update users set username = 'deleted_' || substr(replace(id::text, '-', ''), 1, 12), display_name = 'Deleted user', bio = '', pronouns = '',
               accent = null, status_text = '', avatar_version = 0, banner_version = 0, name_font = 'default', password_hash = '!', huddle_admin = false, huddle_admin_locked = false,
               banned_until = null, ban_reason = null, deleted_at = now(),
               email = null, email_verified_at = null, totp_secret = null, totp_pending = null, totp_enabled_at = null, totp_last_step = null

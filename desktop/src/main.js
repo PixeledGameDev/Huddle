@@ -16,6 +16,7 @@ const isMac = process.platform === "darwin";
 const SETUP_PAGE = path.join(__dirname, "setup.html");
 const ICON = path.join(__dirname, "..", "build", "icon.png");
 const TRAY_ICON = path.join(__dirname, "..", "build", "tray.png");
+const TRAY_ICON_UNREAD = path.join(__dirname, "..", "build", "tray-unread.png");
 
 app.setAppUserModelId("app.huddle.desktop");
 
@@ -418,13 +419,25 @@ const UUID = /^[0-9a-f-]{36}$/i;
 const text = (v, max) => (typeof v === "string" ? v.slice(0, max) : "");
 const liveNotes = new Map(); // tag -> Notification, so a channel has one notification that updates rather than a pile
 ipcMain.on("notify", (e, n) => {
-  if (!fromHuddle(e) || !n || typeof n !== "object" || !Notification.isSupported()) return;
+  if (!fromHuddle(e) || !n || typeof n !== "object") return;
   const title = text(n.title, 100);
   if (!title) return;
   const target = n.target && UUID.test(n.target.serverId) && UUID.test(n.target.channelId) ? { serverId: n.target.serverId, channelId: n.target.channelId } : null;
   const tag = text(n.tag, 64);
+  try {
+    showToast({ title, body: text(n.body, 250), tag, target }); // Huddle's own popup, with a box to reply in
+  } catch (err) {
+    console.error("Couldn't show the reply popup, using a system notification", err);
+    showSystemNotification({ title, body: text(n.body, 250), tag, target });
+  }
+  if (win && !win.isFocused()) win.flashFrame(true);
+});
+
+/** The plain system notification (no reply box): kept as a fallback if the popup can't be made. */
+function showSystemNotification({ title, body, tag, target }) {
+  if (!Notification.isSupported()) return;
   if (tag) liveNotes.get(tag)?.close();
-  const note = new Notification({ title, body: text(n.body, 250), silent: true, icon: fs.existsSync(ICON) ? ICON : undefined }); // Huddle plays its own chime
+  const note = new Notification({ title, body, silent: true, icon: fs.existsSync(ICON) ? ICON : undefined }); // Huddle plays its own chime
   if (tag) liveNotes.set(tag, note);
   note.on("click", () => {
     showWindow();
@@ -432,7 +445,119 @@ ipcMain.on("notify", (e, n) => {
   });
   note.on("close", () => tag && liveNotes.get(tag) === note && liveNotes.delete(tag));
   note.show();
-  if (win && !win.isFocused()) win.flashFrame(true);
+}
+
+// ---------- reply popups ----------
+// A small Huddle-styled popup in the corner of the screen: read the message, type a reply and send it, mark it read, or open it.
+const TOAST_PAGE = path.join(__dirname, "toast.html");
+const TOAST_W = 380;
+const TOAST_H = 178;
+const MAX_TOASTS = 3;
+const toasts = []; // newest first: { win, tag, target, timer, held }
+const toastFor = (e) => toasts.find((t) => !t.win.isDestroyed() && t.win.webContents.id === e.sender.id);
+
+function layoutToasts() {
+  const wa = screen.getPrimaryDisplay().workArea;
+  toasts.forEach((t, i) => {
+    if (!t.win.isDestroyed()) t.win.setBounds({ x: wa.x + wa.width - TOAST_W, y: wa.y + wa.height - TOAST_H * (i + 1), width: TOAST_W, height: TOAST_H });
+  });
+}
+function closeToast(t) {
+  clearTimeout(t.timer);
+  const i = toasts.indexOf(t);
+  if (i >= 0) toasts.splice(i, 1);
+  if (!t.win.isDestroyed()) t.win.close();
+  layoutToasts();
+}
+function armToast(t, ms = 9000) {
+  clearTimeout(t.timer);
+  if (!t.held) t.timer = setTimeout(() => closeToast(t), ms);
+}
+function showToast({ title, body, tag, target }) {
+  const content = { title, body, canReply: !!target };
+  const existing = tag ? toasts.find((t) => t.tag === tag && !t.win.isDestroyed()) : null;
+  if (existing) { // another message in the same conversation: update the popup instead of stacking a new one
+    existing.target = target;
+    existing.win.webContents.send("toast:show", content);
+    armToast(existing);
+    return;
+  }
+  const w = new BrowserWindow({
+    width: TOAST_W,
+    height: TOAST_H,
+    frame: false,
+    transparent: true,
+    resizable: false,
+    maximizable: false,
+    minimizable: false,
+    fullscreenable: false,
+    skipTaskbar: true,
+    alwaysOnTop: true,
+    hasShadow: false,
+    show: false,
+    title: "Huddle",
+    webPreferences: { preload: path.join(__dirname, "toast-preload.js"), contextIsolation: true, sandbox: true, nodeIntegration: false },
+  });
+  const t = { win: w, tag, target, timer: null, held: false, content };
+  toasts.unshift(t);
+  if (toasts.length > MAX_TOASTS) closeToast(toasts[toasts.length - 1]);
+  layoutToasts();
+  w.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
+  w.webContents.on("will-navigate", (ev) => ev.preventDefault());
+  w.on("closed", () => { clearTimeout(t.timer); const i = toasts.indexOf(t); if (i >= 0) toasts.splice(i, 1); layoutToasts(); });
+  void w.loadFile(TOAST_PAGE);
+}
+ipcMain.on("toast:ready", (e) => {
+  const t = toastFor(e);
+  if (!t) return;
+  e.sender.send("toast:show", t.content);
+  t.win.showInactive(); // appears without taking focus from what you're doing
+  armToast(t);
+});
+ipcMain.on("toast:close", (e) => { const t = toastFor(e); if (t) closeToast(t); });
+ipcMain.on("toast:hold", (e, on) => {
+  const t = toastFor(e);
+  if (!t) return;
+  t.held = !!on;
+  if (on) clearTimeout(t.timer);
+  else armToast(t, 4000);
+});
+ipcMain.on("toast:open", (e) => {
+  const t = toastFor(e);
+  if (!t) return;
+  showWindow();
+  if (t.target) win?.webContents.send("notification-click", t.target);
+  closeToast(t);
+});
+ipcMain.on("toast:markread", (e) => {
+  const t = toastFor(e);
+  if (!t) return;
+  if (t.target) win?.webContents.send("notification-markread", t.target);
+  closeToast(t);
+});
+// Replying: the popup hands the text to the Huddle page, which sends it with the person's own session, then says how it went.
+const pendingReplies = new Map();
+let replySeq = 0;
+ipcMain.handle("toast:reply", async (e, raw) => {
+  const t = toastFor(e);
+  const body = text(raw, 2000).trim();
+  if (!t || !t.target || !body) return { ok: false, error: "Nothing to send." };
+  if (!win || win.isDestroyed()) return { ok: false, error: "Huddle isn't running." };
+  const id = ++replySeq;
+  const result = await new Promise((resolve) => {
+    pendingReplies.set(id, resolve);
+    setTimeout(() => pendingReplies.delete(id) && resolve({ ok: false, error: "That took too long. Try again." }), 12000);
+    win.webContents.send("notification-reply", { id, target: t.target, text: body });
+  });
+  if (result.ok) setTimeout(() => closeToast(t), 1100);
+  return result;
+});
+ipcMain.on("reply-result", (e, p) => {
+  if (!fromHuddle(e) || !p || !Number.isInteger(p.id)) return;
+  const resolve = pendingReplies.get(p.id);
+  if (!resolve) return;
+  pendingReplies.delete(p.id);
+  resolve({ ok: !!p.ok, error: text(p.error, 120) });
 });
 
 ipcMain.on("badge", (e, p) => {
@@ -445,6 +570,7 @@ ipcMain.on("badge", (e, p) => {
     win.setOverlayIcon(ok ? nativeImage.createFromDataURL(p.iconDataUrl) : null, count ? `${count} unread` : "");
   }
   tray?.setToolTip(count ? `Huddle (${count} unread)` : "Huddle");
+  setTrayUnread(count > 0);
 });
 
 // ---------- starting with the computer ----------
@@ -563,10 +689,19 @@ function buildMenus() {
     Menu.setApplicationMenu(null); // no "File Edit View Window" bar: the logo in the title bar opens the Huddle menu
   }
 }
+// The tray icon gets a red dot while there are unread messages, so you can tell at a glance without opening Huddle.
+let trayImages = null;
+function setTrayUnread(unread) {
+  if (!tray || !trayImages) return;
+  tray.setImage(unread ? trayImages.unread : trayImages.normal);
+}
 function createTray() {
   const img = nativeImage.createFromPath(TRAY_ICON);
   if (img.isEmpty()) return;
-  tray = new Tray(img.resize({ width: isMac ? 18 : 20, height: isMac ? 18 : 20 }));
+  const size = { width: isMac ? 18 : 20, height: isMac ? 18 : 20 };
+  const unreadImg = nativeImage.createFromPath(TRAY_ICON_UNREAD);
+  trayImages = { normal: img.resize(size), unread: unreadImg.isEmpty() ? img.resize(size) : unreadImg.resize(size) };
+  tray = new Tray(trayImages.normal);
   tray.setToolTip("Huddle");
   tray.on("click", showWindow);
 }

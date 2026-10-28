@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { confirmDialog, promptDialog, alertDialog } from "./Dialogs";
 import { io, type Socket } from "socket.io-client";
 import { api, ApiError, uploadFile } from "./api";
 import { Avatar } from "./Avatar";
 import Auth from "./Auth";
 import { Logo } from "./Logo";
+import { MaintenancePill, MaintenanceScreen, SiteUpdateBanner, pokeMaintenance, useMaintenance } from "./Maintenance";
 import Changelog from "./Changelog";
 import { hasUnseenUpdates, markUpdatesSeen } from "./changelog";
 import Chat from "./Chat";
@@ -18,10 +20,11 @@ import { ServerAssetsContext } from "./ServerAssets";
 import { VerifiedBadge } from "./Verified";
 import { StatusDot, StatusMenu } from "./Status";
 import { FriendsModal, useFriends } from "./Friends";
-import { notifyIncoming, setNotificationOpener, updateBadge } from "./notify";
+import { notifyIncoming, setNotificationActions, setNotificationOpener, updateBadge } from "./notify";
 import Members from "./Members";
 import { AddServerModal, SettingsModal } from "./Modals";
 import { PollModal } from "./Polls";
+import { QuickSwitcher, type JumpTarget } from "./QuickSwitcher";
 import { MyProfileModal, ProfileCard } from "./ProfileModals";
 import { can, canAny, isOwner } from "./permissions";
 import { LegacyAdminsModal } from "./Roles";
@@ -34,26 +37,58 @@ export default function App() {
   const [me, setMe] = useState<User | null | undefined>(undefined);
   const [inviteCode, setInviteCode] = useState<string | null>(() => /^\/invite\/([A-Za-z0-9_-]{6,32})\/?$/.exec(window.location.pathname)?.[1] ?? null);
   const [openServerId, setOpenServerId] = useState<string | undefined>();
+  const [adminSignIn, setAdminSignIn] = useState(false);
+  const maint = useMaintenance();
+  const wasDown = useRef(false);
   useEffect(() => {
     api<{ user: User }>("/auth/me").then((r) => setMe(r.user), () => setMe(null));
   }, []);
+  // When maintenance ends, start fresh: everyone's connection was dropped while it was on.
+  useEffect(() => {
+    if (maint.state.active) wasDown.current = true;
+    else if (wasDown.current && me !== undefined && !me?.huddleAdmin) window.location.reload();
+  }, [maint.state.active]); // eslint-disable-line react-hooks/exhaustive-deps
   if (me === undefined) return <div className="boot">Loading…</div>;
-  if (inviteCode) {
+  if (maint.state.active && !me?.huddleAdmin) {
+    if (adminSignIn && !me) {
+      return <Auth onAuth={(u) => { setMe(u); setAdminSignIn(false); }} intro={<><p className="notice" role="status">Huddle is in maintenance. Only Huddle Admins can sign in right now.</p><button type="button" className="link left" onClick={() => setAdminSignIn(false)}>← Back</button></>} />;
+    }
     return (
-      <InvitePage
-        code={inviteCode}
-        me={me}
-        onAuth={setMe}
-        onDone={(serverId) => {
-          window.history.replaceState(null, "", "/");
-          setOpenServerId(serverId);
-          setInviteCode(null);
-        }}
+      <MaintenanceScreen
+        state={maint.state}
+        skew={maint.skew}
+        signedIn={!!me}
+        onAdminSignIn={() => setAdminSignIn(true)}
+        onSignOut={() => { api("/auth/logout", "POST").catch(() => {}).then(() => setMe(null)); }}
+        onDone={pokeMaintenance}
       />
     );
   }
-  if (!me) return <Auth onAuth={setMe} />;
-  return <Main me={me} initialServerId={openServerId} onUser={setMe} onLogout={() => setMe(null)} />;
+  const pill = (
+    <>
+      {maint.state.active && <MaintenancePill state={maint.state} skew={maint.skew} />}
+      {maint.newBuild && <SiteUpdateBanner />}
+    </>
+  );
+  if (inviteCode) {
+    return (
+      <>
+        {pill}
+        <InvitePage
+          code={inviteCode}
+          me={me}
+          onAuth={setMe}
+          onDone={(serverId) => {
+            window.history.replaceState(null, "", "/");
+            setOpenServerId(serverId);
+            setInviteCode(null);
+          }}
+        />
+      </>
+    );
+  }
+  if (!me) return <>{pill}<Auth onAuth={setMe} /></>;
+  return <>{pill}<Main me={me} initialServerId={openServerId} onUser={setMe} onLogout={() => setMe(null)} /></>;
 }
 
 interface Toast { id: number; text: string; error?: boolean }
@@ -94,6 +129,7 @@ function Main({ me, initialServerId, onUser, onLogout }: { me: User; initialServ
   const [navOpen, setNavOpen] = useState(() => (wide() ? localStorage.getItem("huddle.nav") !== "closed" : false));
   const [membersOpen, setMembersOpen] = useState(() => (wide() ? localStorage.getItem("huddle.members") !== "closed" : false));
   const [showFriends, setShowFriends] = useState(false);
+  const [quick, setQuick] = useState(false); // the Ctrl+K quick switcher
   const lastServerRef = useRef<string | null>(null);
 
   const socketRef = useRef<Socket | null>(null);
@@ -270,6 +306,19 @@ function Main({ me, initialServerId, onUser, onLogout }: { me: User; initialServ
     });
   }, []);
 
+  // Desktop popups: reply straight from one, or mark its conversation read.
+  useEffect(() => {
+    setNotificationActions({
+      reply: async ({ channelId: ch }, text) => { await api(`/channels/${ch}/messages`, "POST", { content: text }); },
+      markRead: ({ serverId, channelId: ch }) =>
+        setUnread((u) => {
+          const n = u.channels[ch] ?? 0;
+          if (!n) return u;
+          return { channels: { ...u.channels, [ch]: 0 }, servers: { ...u.servers, [serverId]: Math.max(0, (u.servers[serverId] ?? 0) - n) } };
+        }),
+    });
+  }, []);
+
   // ---- realtime
   useEffect(() => {
     const s = io({ withCredentials: true });
@@ -349,8 +398,10 @@ function Main({ me, initialServerId, onUser, onLogout }: { me: User; initialServ
     s.on("account.banned", (p: { permanent: boolean; until: string | null; reason: string | null }) => {
       s.disconnect();
       onLogoutRef.current();
-      setTimeout(() => alert(`Your account has been banned${p.permanent ? "" : ` until ${new Date(p.until!).toLocaleString()}`}.${p.reason ? ` Reason: ${p.reason}` : ""}`), 0);
+      setTimeout(() => void alertDialog(`Your account has been banned${p.permanent ? "" : ` until ${new Date(p.until!).toLocaleString()}`}.${p.reason ? ` Reason: ${p.reason}` : ""}`), 0);
     });
+
+    s.on("maintenance", () => pokeMaintenance());
 
     s.on("account.removed", () => {
       s.disconnect();
@@ -413,7 +464,7 @@ function Main({ me, initialServerId, onUser, onLogout }: { me: User; initialServ
   }
 
   async function deleteMessage(m: Message) {
-    if (!window.confirm("Delete this message? This can't be undone.")) return;
+    if (!await confirmDialog("Delete this message? This can't be undone.")) return;
     try {
       await api(`/messages/${m.id}`, "DELETE");
       removeMessage(m.channelId, m.id);
@@ -445,7 +496,7 @@ function Main({ me, initialServerId, onUser, onLogout }: { me: User; initialServ
   }
 
   async function closePoll(m: Message) {
-    if (!m.poll || !window.confirm("Close this poll? Nobody will be able to vote after.")) return;
+    if (!m.poll || !await confirmDialog("Close this poll? Nobody will be able to vote after.")) return;
     try {
       const { poll } = await api<{ poll: Poll }>(`/polls/${m.poll.id}/close`, "POST");
       patchMessage(m.channelId, m.id, (x) => ({ ...x, poll }));
@@ -474,7 +525,7 @@ function Main({ me, initialServerId, onUser, onLogout }: { me: User; initialServ
     if (!detail) return;
     const st = detail.settings;
     const what = st.voteAction === "kick" ? "kick" : `${actionVerb(st.voteAction)} for ${fmtDuration(st.voteDurationSeconds)}`;
-    if (!window.confirm(`Start a vote to ${what} ${nameOfUser(m)}?`)) return;
+    if (!await confirmDialog(`Start a vote to ${what} ${nameOfUser(m)}?`)) return;
     try {
       const { vote } = await api<{ vote: Vote }>(`/servers/${detail.id}/votes`, "POST", { targetId: m.id });
       setVotes((prev) => (prev.some((x) => x.id === vote.id) ? prev.map((x) => (x.id === vote.id ? { ...x, ...vote } : x)) : [...prev, vote]));
@@ -514,7 +565,7 @@ function Main({ me, initialServerId, onUser, onLogout }: { me: User; initialServ
   }
 
   async function addChannel() {
-    const name = window.prompt("Channel name");
+    const name = await promptDialog("Name your channel", { placeholder: "general", confirmLabel: "Create", maxLength: 40 });
     if (!name || !detail) return;
     try {
       await api(`/servers/${detail.id}/channels`, "POST", { name });
@@ -524,7 +575,7 @@ function Main({ me, initialServerId, onUser, onLogout }: { me: User; initialServ
   }
 
   async function renameChannel(c: Channel) {
-    const name = window.prompt("Rename channel", c.name);
+    const name = await promptDialog("Rename channel", { defaultValue: c.name, confirmLabel: "Rename", maxLength: 40 });
     if (!name || !detail || name === c.name) return;
     try {
       await api(`/servers/${detail.id}/channels/${c.id}`, "PATCH", { name });
@@ -534,7 +585,7 @@ function Main({ me, initialServerId, onUser, onLogout }: { me: User; initialServ
   }
 
   async function deleteChannel(c: Channel) {
-    if (!detail || !window.confirm(`Delete #${c.name}? All of its messages and files will be permanently removed.`)) return;
+    if (!detail || !await confirmDialog(`Delete #${c.name}? All of its messages and files will be permanently removed.`)) return;
     try {
       await api(`/servers/${detail.id}/channels/${c.id}`, "DELETE");
     } catch (e) {
@@ -543,7 +594,7 @@ function Main({ me, initialServerId, onUser, onLogout }: { me: User; initialServ
   }
 
   async function leave() {
-    if (!detail || !window.confirm(`Leave ${detail.name}?`)) return;
+    if (!detail || !await confirmDialog(`Leave ${detail.name}?`)) return;
     try {
       await api(`/servers/${detail.id}/leave`, "POST");
       const next = servers.filter((s) => s.id !== detail.id);
@@ -562,7 +613,7 @@ function Main({ me, initialServerId, onUser, onLogout }: { me: User; initialServ
   }
 
   async function removeDm(d: DmSummary) {
-    if (!window.confirm(`Remove ${nameOfUser(d.user)} from your messages? Your chat history is kept, and the conversation comes back if either of you sends a message.`)) return;
+    if (!await confirmDialog(`Remove ${nameOfUser(d.user)} from your messages? Your chat history is kept, and the conversation comes back if either of you sends a message.`)) return;
     try {
       await api(`/dms/${d.id}`, "DELETE");
       dropDmLocally(d.id);
@@ -609,6 +660,35 @@ function Main({ me, initialServerId, onUser, onLogout }: { me: User; initialServ
     return () => window.removeEventListener("keydown", esc);
   }, []);
   useEffect(() => { if (sideMode === "server" && activeId) lastServerRef.current = activeId; }, [sideMode, activeId]);
+
+  // Ctrl+K (Cmd+K on a Mac) opens the quick switcher from anywhere.
+  useEffect(() => {
+    const k = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        setQuick((q) => !q);
+      }
+    };
+    window.addEventListener("keydown", k);
+    return () => window.removeEventListener("keydown", k);
+  }, []);
+  function jump(t: JumpTarget) {
+    setQuick(false);
+    setModal(null);
+    setShowFriends(false);
+    if (t.kind === "dm") {
+      setSideMode("dms");
+      setActiveId(t.serverId);
+    } else {
+      setSideMode("server");
+      if (t.channelId && activeIdRef.current === t.serverId) setChannelId(t.channelId);
+      else {
+        pendingChannelRef.current = t.channelId ?? null;
+        setActiveId(t.serverId);
+      }
+    }
+    if (!wide()) setNavOpen(false);
+  }
 
   async function logout() {
     await api("/auth/logout", "POST").catch(() => {});
@@ -732,15 +812,16 @@ function Main({ me, initialServerId, onUser, onLogout }: { me: User; initialServ
         )}
 
         <footer className="me-card">
-          <button className="me-id" onClick={() => setModal("myprofile")} title="Profile & appearance">
+          <button className="me-id" onClick={() => setModal("myprofile")} title="Settings">
             <span className="avatar-wrap"><Avatar id={me.id} name={myName} version={me.avatarVersion} accent={me.accent} size={34} /><StatusDot status={me.presence === "invisible" ? "offline" : me.presence ?? "online"} /></span>
-            <span className="who"><strong>{myName}</strong><small>{me.statusText || "Profile & appearance"}</small></span>
+            <span className="who"><strong>{myName}</strong><small>{me.statusText || "Settings"}</small></span>
           </button>
           <StatusMenu me={me} onUser={onUser} onError={fail} />
           <MoreMenu
             badge={unseenUpdates}
             items={[
-              { label: "Profile & appearance", onClick: () => setModal("myprofile") },
+              { label: "Quick switcher", hint: "Jump anywhere · Ctrl+K", onClick: () => setQuick(true) },
+              { label: "Settings", hint: "Profile, theme, notifications and more", onClick: () => setModal("myprofile") },
               { label: "What's new", hint: unseenUpdates ? "New updates" : undefined, onClick: () => { markUpdatesSeen(); setUnseenUpdates(false); setModal("changelog"); } },
               { label: "Suggestions", hint: "Ideas for Huddle", onClick: () => setModal("suggestions") },
               ...(appAvailable ? [{ label: "Download the desktop app", href: "/download" }] : []),
@@ -834,6 +915,17 @@ function Main({ me, initialServerId, onUser, onLogout }: { me: User; initialServ
             setActiveId(s.id);
             setModal(null);
           }}
+        />
+      )}
+      {quick && (
+        <QuickSwitcher
+          servers={servers}
+          channels={detail && !inDm ? detail.channels : []}
+          activeServer={detail && !inDm ? servers.find((s) => s.id === detail.id) ?? null : null}
+          dms={dms}
+          unread={unread}
+          onJump={jump}
+          onClose={() => setQuick(false)}
         />
       )}
       {modal === "settings" && detail && <SettingsModal server={detail} onClose={() => setModal(null)} onError={fail} onSaved={() => { setModal(null); push("Settings saved."); }} onDeleted={() => setModal(null)} />}

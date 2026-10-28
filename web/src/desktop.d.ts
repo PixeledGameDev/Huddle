@@ -5,6 +5,10 @@ interface HuddleDesktopBridge {
   version: string;
   notify(n: { title: string; body: string; tag?: string; target?: { serverId: string; channelId: string } }): void;
   setBadge(count: number, iconDataUrl: string | null): void;
+  /** Present from desktop app 1.4 on: reply to or mark read from a notification popup. */
+  onNotificationReply?(cb: (r: { id: number; target: { serverId: string; channelId: string }; text: string }) => void): () => void;
+  replyResult?(id: number, ok: boolean, error?: string): void;
+  onNotificationMarkRead?(cb: (target: { serverId: string; channelId: string }) => void): () => void;
   onNotificationClick(cb: (target: { serverId: string; channelId: string } | null) => void): () => void;
   /** Present from desktop app 1.2 on: Huddle draws its own title bar and the logo opens the Huddle menu. */
   titleBar?: { height: number; openMenu(x: number, y: number): void; setColors(color: string, symbolColor: string): void };

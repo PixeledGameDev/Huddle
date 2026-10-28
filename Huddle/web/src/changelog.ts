@@ -11,6 +11,120 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "5.12",
+    date: "2026-10-28",
+    title: "Reply from notifications",
+    changes: [
+      "Desktop app: new messages now pop up in a small Huddle-styled card in the corner of your screen, with a box to type a reply and send it without opening Huddle.",
+      "Each popup also has Mark as read and Open buttons. It stays while you're typing or pointing at it, and goes away by itself otherwise.",
+      "More messages from the same conversation update the same popup instead of piling up, and up to three show at once.",
+    ],
+  },
+  {
+    version: "5.11",
+    date: "2026-10-28",
+    title: "Quick switcher",
+    changes: [
+      "Press Ctrl+K (Cmd+K on a Mac) to jump to any channel, conversation or server by typing a few letters.",
+      "With nothing typed it shows what needs you first: anything with unread mentions or messages, then your recent conversations.",
+      "Start with # to search only channels, or @ to search only people. Use the arrow keys and Enter, or click.",
+      "It's also in the ⋯ menu as Quick switcher.",
+    ],
+  },
+  {
+    version: "5.10",
+    date: "2026-10-28",
+    title: "Unread dot in the desktop tray",
+    changes: [
+      "Desktop app: the tray icon now shows a red dot while you have unread mentions or messages, and goes back to normal when you've read them.",
+      "The tray icon uses the new Huddle logo. The taskbar still shows your unread count, and the taskbar icon flashes until you come back to the window.",
+    ],
+  },
+  {
+    version: "5.9",
+    date: "2026-10-28",
+    title: "Desktop app 1.4",
+    changes: [
+      "The desktop app's splash screen now shows which version of Huddle you're running, so you can see when an update has installed.",
+    ],
+  },
+  {
+    version: "5.8",
+    date: "2026-10-28",
+    title: "Email removed",
+    changes: [
+      "Huddle no longer uses email at all. It wasn't working reliably, so adding an email, emailed codes and emailed security notices are gone.",
+      "If you forget your password, choose “Forgot your password?” and enter the one-time reset code a Huddle Admin gives you.",
+      "To keep your account safe without email, add a passkey or turn on two-factor sign-in in Settings → Account.",
+    ],
+  },
+  {
+    version: "5.7",
+    date: "2026-10-27",
+    title: "Passkeys",
+    changes: [
+      "You can now sign in with a passkey: your fingerprint, face, PIN or a security key, with no password to type or forget.",
+      "Add one in Settings → Account → Passkeys. You can keep up to 10 and remove them any time.",
+      "Passkeys can't be phished, and they count as two-factor on their own, so signing in with one skips the authenticator code.",
+      "On the sign-in page, choose “Sign in with a passkey”. Your device offers the passkeys it has, so you don't even need to type your username.",
+    ],
+  },
+  {
+    version: "5.6",
+    date: "2026-10-27",
+    title: "A better desktop installer",
+    changes: [
+      "The Windows installer is now one click: no wizard pages, just a quick progress screen with the new Huddle logo, and Huddle opens when it's done.",
+      "Huddle now has a proper Windows icon (taskbar, shortcuts and the installer all use the new logo).",
+      "Installing no longer asks where to put Huddle. It goes in the right place automatically and updates itself from then on.",
+    ],
+  },
+  {
+    version: "5.5",
+    date: "2026-10-27",
+    title: "Desktop app updates on the splash screen",
+    changes: [
+      "The desktop app now looks for updates every time it opens, right on the splash screen, and installs them before showing Huddle.",
+      "Updates install quietly and Huddle reopens by itself, so there's no installer window to click through.",
+      "If the server is slow to answer (it can take a moment to wake up), the splash waits a little longer before giving up so you don't miss an update.",
+    ],
+  },
+  {
+    version: "5.4",
+    date: "2026-10-27",
+    title: "Much faster messaging",
+    changes: [
+      "Sending a message is now several times faster: Huddle checks everything it needs at the same time instead of one step after another.",
+      "Huddle keeps its connection to the database warm, so the first message after a quiet spell is no longer slow.",
+      "Signing in is remembered for a few seconds between requests, which speeds up everything you do in the app.",
+    ],
+  },
+  {
+    version: "5.3",
+    date: "2026-10-27",
+    title: "Settings, pronouns and member list sections",
+    changes: [
+      "Settings now has tabs: Profile, Theme, Startup, Notifications and Account. Saving your profile no longer closes the window.",
+      "You can add pronouns to your profile. They show on your profile card, next to your username.",
+      "Roles have a new Section name. Roles that are shown separately can use a heading of your choosing, and roles that share a name share one section in the member list (handy for grouping several roles under \"Staff\").",
+      "Fixed the status menu (Online, Idle, Do not disturb, Invisible) getting cut off at the edge of the sidebar. The ⋯ menu got the same fix.",
+      "When Huddle is updated while you have it open, a notice offers a one-click reload so you're never stuck on an old version.",
+      "Desktop app: installers are now built for Windows only.",
+    ],
+  },
+  {
+    version: "5.2",
+    date: "2026-10-26",
+    title: "A new look for the front door",
+    changes: [
+      "The sign-in page is now a proper home page: it shows how many people are on Huddle, what Huddle can do, and a preview of the app.",
+      "Huddle has a new logo, used across the app, the website and the desktop app.",
+      "Confirmation boxes (deleting a message, leaving a server, blocking someone and so on) now look like the rest of Huddle instead of a plain browser popup. The desktop app's popups match too.",
+      "Huddle Admins can put Huddle into maintenance for a set time. Everyone else sees a countdown, and Huddle comes back by itself when it ends.",
+      "Desktop app: Huddle can now open when you sign in to your computer (on by default). You choose whether it shows its window or starts quietly in the tray. Find it in your profile settings or the Huddle menu.",
+    ],
+  },
+  {
     version: "5.1",
     date: "2026-10-26",
     title: "Tidy up your messages",

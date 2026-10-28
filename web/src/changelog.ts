@@ -11,6 +11,36 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "5.12",
+    date: "2026-10-28",
+    title: "Reply from notifications",
+    changes: [
+      "Desktop app: new messages now pop up in a small Huddle-styled card in the corner of your screen, with a box to type a reply and send it without opening Huddle.",
+      "Each popup also has Mark as read and Open buttons. It stays while you're typing or pointing at it, and goes away by itself otherwise.",
+      "More messages from the same conversation update the same popup instead of piling up, and up to three show at once.",
+    ],
+  },
+  {
+    version: "5.11",
+    date: "2026-10-28",
+    title: "Quick switcher",
+    changes: [
+      "Press Ctrl+K (Cmd+K on a Mac) to jump to any channel, conversation or server by typing a few letters.",
+      "With nothing typed it shows what needs you first: anything with unread mentions or messages, then your recent conversations.",
+      "Start with # to search only channels, or @ to search only people. Use the arrow keys and Enter, or click.",
+      "It's also in the ⋯ menu as Quick switcher.",
+    ],
+  },
+  {
+    version: "5.10",
+    date: "2026-10-28",
+    title: "Unread dot in the desktop tray",
+    changes: [
+      "Desktop app: the tray icon now shows a red dot while you have unread mentions or messages, and goes back to normal when you've read them.",
+      "The tray icon uses the new Huddle logo. The taskbar still shows your unread count, and the taskbar icon flashes until you come back to the window.",
+    ],
+  },
+  {
     version: "5.9",
     date: "2026-10-28",
     title: "Desktop app 1.4",

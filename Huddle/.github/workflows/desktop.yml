@@ -1,6 +1,6 @@
 name: Desktop app
 
-# Builds the installers for Windows, macOS and Linux and, when the repository is set up for it (see
+# Builds the Windows installer and, when the repository is set up for it (see
 # desktop/README.md), publishes them to your Huddle website's download page. The repository can stay private.
 #
 # Run it from the Actions tab ("Run workflow"), or push a tag like desktop-v1.0.0.
@@ -14,7 +14,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
+        os: [windows-latest]
     runs-on: ${{ matrix.os }}
     defaults:
       run:
@@ -46,10 +46,6 @@ jobs:
           if-no-files-found: error
           path: |
             desktop/dist/*.exe
-            desktop/dist/*.dmg
-            desktop/dist/*.AppImage
-            desktop/dist/*.deb
-            desktop/dist/*.zip
             desktop/dist/*.blockmap
             desktop/dist/latest*.yml
 

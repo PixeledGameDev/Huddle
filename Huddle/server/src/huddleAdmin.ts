@@ -1,3 +1,4 @@
+import { clearAuthCache } from "./auth";
 import { Router, type NextFunction, type Request, type Response } from "express";
 import { z } from "zod";
 import { one, q, tx } from "./db";
@@ -5,8 +6,9 @@ import { dmList, revealDm } from "./dms";
 import { getMessageDto } from "./hydrate";
 import { HttpError, h, rateLimit } from "./http";
 import { isHuddleAdmin } from "./perms";
+import { endMaintenance, maintenanceState, startMaintenance } from "./maintenance";
 import { deleteServer, eraseAccount } from "./deletion";
-import { clearTwoFactor, issueCode, notifyEmail } from "./security";
+import { clearTwoFactor, issueCode } from "./security";
 import { dropUser, emitServer, emitUser, joinAllServers, joinServerRooms, leaveUnjoinedServers } from "./realtime";
 
 /**
@@ -285,6 +287,7 @@ huddleAdminRouter.post("/huddle/users/ban", h(async (req, res) => {
     [target.id, body.durationSeconds, body.reason || null]
   );
   await q(`delete from sessions where user_id = $1`, [target.id]);
+  clearAuthCache();
   dropUser(target.id, "account.banned", { permanent: body.durationSeconds === null, until: body.durationSeconds === null ? null : row!.until.toISOString(), reason: body.reason || null });
   await log(user.id, "ban", { targetId: target.id, username: target.username, durationSeconds: body.durationSeconds, reason: body.reason });
   res.json({ ok: true, username: target.username });
@@ -320,7 +323,7 @@ huddleAdminRouter.post("/huddle/users/delete", h(async (req, res) => {
 }));
 
 /**
- * Account recovery for people who can't use the normal route (no verified email, or email isn't set up on the server).
+ * Account recovery for people who can't use the normal route (there is no email on Huddle).
  * The code is shown once to the admin, who gives it to the person by some other channel after checking it's really them.
  * The person enters it under "Forgot password?" with their username.
  */
@@ -329,19 +332,35 @@ huddleAdminRouter.post("/huddle/users/reset-code", h(async (req, res) => {
   rateLimit(`huddlemod:${user.id}`, 30, 3600_000);
   const { username } = z.object({ username: usernameField }).parse(req.body);
   const target = await actionTarget(user.id, username);
-  const code = await issueCode(target.id, "reset", null, "admin");
+  const code = await issueCode(target.id, "reset");
   await log(user.id, "reset-code", { targetId: target.id, username: target.username });
   res.json({ ok: true, username: target.username, code, minutes: 60 });
 }));
 
-/** For someone who has lost their authenticator and recovery codes. Their password and email are unchanged. */
+/** For someone who has lost their authenticator and recovery codes. Their password is unchanged. */
 huddleAdminRouter.post("/huddle/users/disable-2fa", h(async (req, res) => {
   const user = req.user!;
   rateLimit(`huddlemod:${user.id}`, 30, 3600_000);
   const { username } = z.object({ username: usernameField }).parse(req.body);
   const target = await actionTarget(user.id, username);
   await clearTwoFactor(target.id);
-  await notifyEmail(target.id, "Two-factor sign-in was turned off by an admin", "A Huddle admin turned off two-factor sign-in for your account (for example, because you lost access to your authenticator).");
   await log(user.id, "disable-2fa", { targetId: target.id, username: target.username });
   res.json({ ok: true, username: target.username });
+}));
+
+// ---------- maintenance mode ----------
+huddleAdminRouter.post("/huddle/maintenance", h(async (req, res) => {
+  const { minutes, message } = z.object({ minutes: z.number().int().min(1).max(7 * 24 * 60), message: z.string().trim().max(300).optional() }).parse(req.body);
+  const was = maintenanceState().active;
+  const state = await startMaintenance(minutes, message || null);
+  await log(req.user!.id, was ? "maintenance.change" : "maintenance.start", { minutes, message: message || null });
+  res.json({ maintenance: state });
+}));
+
+huddleAdminRouter.delete("/huddle/maintenance", h(async (req, res) => {
+  if (maintenanceState().active) {
+    await endMaintenance();
+    await log(req.user!.id, "maintenance.end", {});
+  }
+  res.json({ ok: true });
 }));

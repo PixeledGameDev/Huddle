@@ -2,6 +2,7 @@ import "./fonts";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import App from "./App";
+import { DialogHost } from "./Dialogs";
 import { TitleBar } from "./TitleBar";
 import { applyPrefs, loadPrefs } from "./prefs";
 import { applyActiveTheme } from "./themes";
@@ -15,5 +16,6 @@ createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <TitleBar />
     <App />
+    <DialogHost />
   </StrictMode>
 );

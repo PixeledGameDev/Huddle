@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useRef, useState } from "react";
+import { Popover } from "./Popover";
 import { api } from "./api";
 import type { Presence, PublicStatus, User } from "./types";
 
@@ -18,16 +19,9 @@ const CHOICES: { value: Presence; label: string; help: string }[] = [
 /** The little status button in the bottom-left corner. */
 export function StatusMenu({ me, onUser, onError }: { me: User; onUser: (u: User) => void; onError: (e: unknown) => void }) {
   const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
+  const btn = useRef<HTMLButtonElement>(null);
   const current = me.presence ?? "online";
-  useEffect(() => {
-    if (!open) return;
-    const close = (e: MouseEvent) => { if (!ref.current?.contains(e.target as Node)) setOpen(false); };
-    const esc = (e: KeyboardEvent) => e.key === "Escape" && setOpen(false);
-    window.addEventListener("mousedown", close);
-    window.addEventListener("keydown", esc);
-    return () => { window.removeEventListener("mousedown", close); window.removeEventListener("keydown", esc); };
-  }, [open]);
+  const close = useCallback(() => setOpen(false), []);
 
   async function choose(p: Presence) {
     setOpen(false);
@@ -39,19 +33,19 @@ export function StatusMenu({ me, onUser, onError }: { me: User; onUser: (u: User
   }
   const shown: PublicStatus = current === "invisible" ? "offline" : current;
   return (
-    <div className="status-menu" ref={ref}>
-      <button className="icon status-btn" aria-haspopup="menu" aria-expanded={open} title={`Status: ${CHOICES.find((c) => c.value === current)?.label}`} onClick={() => setOpen((o) => !o)}>
+    <div className="status-menu">
+      <button ref={btn} className="icon status-btn" aria-haspopup="menu" aria-expanded={open} title={`Status: ${CHOICES.find((c) => c.value === current)?.label}`} onClick={() => setOpen((o) => !o)}>
         <StatusDot status={shown} className="inline" />
       </button>
       {open && (
-        <div className="menu" role="menu">
+        <Popover anchor={btn} onClose={close} label="Status">
           {CHOICES.map((c) => (
             <button key={c.value} role="menuitemradio" aria-checked={c.value === current} className={c.value === current ? "on" : ""} onClick={() => void choose(c.value)}>
               <StatusDot status={c.value === "invisible" ? "offline" : c.value} className="inline" />
               <span><strong>{c.label}</strong>{c.help && <small>{c.help}</small>}</span>
             </button>
           ))}
-        </div>
+        </Popover>
       )}
     </div>
   );

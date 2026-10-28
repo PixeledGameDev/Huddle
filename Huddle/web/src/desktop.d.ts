@@ -5,6 +5,10 @@ interface HuddleDesktopBridge {
   version: string;
   notify(n: { title: string; body: string; tag?: string; target?: { serverId: string; channelId: string } }): void;
   setBadge(count: number, iconDataUrl: string | null): void;
+  /** Present from desktop app 1.4 on: reply to or mark read from a notification popup. */
+  onNotificationReply?(cb: (r: { id: number; target: { serverId: string; channelId: string }; text: string }) => void): () => void;
+  replyResult?(id: number, ok: boolean, error?: string): void;
+  onNotificationMarkRead?(cb: (target: { serverId: string; channelId: string }) => void): () => void;
   onNotificationClick(cb: (target: { serverId: string; channelId: string } | null) => void): () => void;
   /** Present from desktop app 1.2 on: Huddle draws its own title bar and the logo opens the Huddle menu. */
   titleBar?: { height: number; openMenu(x: number, y: number): void; setColors(color: string, symbolColor: string): void };
@@ -13,6 +17,9 @@ interface HuddleDesktopBridge {
   onUpdateState?(cb: (state: DesktopUpdateState) => void): () => void;
   checkForUpdates?(): Promise<DesktopUpdateState | null>;
   installUpdate?(): void;
+  /** Present from desktop app 1.3 on. */
+  getStartup?(): Promise<{ supported: boolean; launch: boolean; background: boolean } | null>;
+  setStartup?(v: { launch: boolean; background: boolean }): Promise<{ supported: boolean; launch: boolean; background: boolean } | null>;
 }
 interface DesktopUpdateState { status: "idle" | "checking" | "downloading" | "ready" | "error" | "unsupported"; version?: string; percent?: number; message?: string; upToDate?: boolean }
 interface Window {

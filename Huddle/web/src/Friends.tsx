@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { confirmDialog } from "./Dialogs";
 import { api } from "./api";
 import { Avatar } from "./Avatar";
 import { Modal } from "./Modals";
@@ -73,7 +74,7 @@ export function FriendsModal({ data, refreshKey, onClose, onOpenProfile, onMessa
           {data.friends.map((u) => row(u, (
             <>
               <button onClick={() => { onMessage(u.id); onClose(); }}>Message</button>
-              <button className="danger" onClick={() => { if (window.confirm(`Remove ${nameOfUser(u)} from your friends?`)) void run(() => api(`/friends/${u.id}`, "DELETE")); }}>Remove</button>
+              <button className="danger" onClick={async () => { if (await confirmDialog(`Remove ${nameOfUser(u)} from your friends?`)) void run(() => api(`/friends/${u.id}`, "DELETE")); }}>Remove</button>
             </>
           )))}
         </ul>

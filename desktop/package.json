@@ -26,6 +26,7 @@
     "files": [
       "src/**/*",
       "build/tray.png",
+      "build/tray-unread.png",
       "build/icon.png",
       "app.config.json",
       "package.json"

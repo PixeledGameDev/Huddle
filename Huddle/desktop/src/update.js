@@ -73,7 +73,7 @@ function createUpdater({ autoUpdater, onState = () => {}, log = () => {} }) {
    * For the splash screen: checks, and if an update is found waits for it to download (reporting progress).
    * Resolves "ready" when there is an update to install now, "none" otherwise (no update, an error, or too slow).
    */
-  function startupCheck(feedUrl, { onProgress = () => {}, findTimeoutMs = 6000, downloadTimeoutMs = 180000 } = {}) {
+  function startupCheck(feedUrl, { onProgress = () => {}, findTimeoutMs = 15000, downloadTimeoutMs = 180000 } = {}) {
     return new Promise((resolve) => {
       let done = false;
       let timer = null;
@@ -107,7 +107,8 @@ function createUpdater({ autoUpdater, onState = () => {}, log = () => {} }) {
     check,
     startupCheck,
     getState: () => state,
-    installNow: () => autoUpdater.quitAndInstall(false, true),
+    // Silent, then reopen: the person only sees the splash screen, not an installer window.
+    installNow: () => autoUpdater.quitAndInstall(true, true),
   };
 }
 

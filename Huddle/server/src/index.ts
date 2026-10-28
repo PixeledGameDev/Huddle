@@ -4,11 +4,13 @@ import fs from "fs";
 import path from "path";
 import { ZodError } from "zod";
 import { authRouter, cleanupSessions, requireAuth } from "./auth";
-import { migrate, q } from "./db";
+import { migrate, q, requestStats, startPoolWarmer } from "./db";
 import { downloadsRouter } from "./downloads";
 import { bootstrapHuddle } from "./huddleAdmin";
 import { inviteMeta, invitesRouter } from "./invites";
+import { loadMaintenance, maintenanceGate, maintenanceRouter, startMaintenanceWatcher } from "./maintenance";
 import { recoveryRouter } from "./security";
+import { passkeyAuthRouter } from "./passkeys";
 import { HttpError } from "./http";
 import { initRealtime } from "./realtime";
 import { api } from "./routes";
@@ -18,6 +20,8 @@ import { startVoteSweeper } from "./votes";
 async function main() {
   await migrate();
   await bootstrapHuddle();
+  await loadMaintenance();
+  startPoolWarmer();
 
   const app = express();
   app.set("trust proxy", 1); // Render terminates TLS in front of the app
@@ -32,12 +36,25 @@ async function main() {
     );
     next();
   });
+  // Slow API requests are logged with how many database queries they ran and how long those took, so a slowdown can be traced.
+  app.use("/api", (req, res, next) => {
+    const stats = { queries: 0, ms: 0 };
+    const t0 = Date.now();
+    res.on("finish", () => {
+      const total = Date.now() - t0;
+      if (total > 800) console.warn(`slow request ${req.method} ${req.originalUrl.split("?")[0]} ${total}ms (${stats.queries} queries, ${Math.round(stats.ms)}ms in the database)`);
+    });
+    requestStats.run(stats, next);
+  });
   app.use(express.json({ limit: "20kb" }));
 
   app.get("/healthz", (_req, res) => void res.send("ok"));
   app.use(downloadsRouter); // desktop app downloads: public, so the page works before signing in
+  app.use("/api", maintenanceRouter);
+  app.use("/api", maintenanceGate); // while maintenance is on, only Huddle Admins get past here
   app.use("/api/auth", authRouter);
   app.use("/api/auth", recoveryRouter);
+  app.use("/api/auth", passkeyAuthRouter);
   app.use("/api", invitesRouter); // public: invite cards work before signing in
   app.use("/api", requireAuth, api);
   app.use("/api", (_req, res) => void res.status(404).json({ error: "Not found." }));
@@ -89,6 +106,7 @@ async function main() {
   const server = http.createServer(app);
   initRealtime(server);
   startVoteSweeper();
+  startMaintenanceWatcher();
   // Uploads that never got attached to a message are removed after an hour.
   setInterval(() => q(`delete from attachments where message_id is null and created_at < now() - interval '1 hour'`).catch(console.error), 10 * 60_000).unref();
   setInterval(() => cleanupSessions().catch(console.error), 6 * 3600_000).unref();

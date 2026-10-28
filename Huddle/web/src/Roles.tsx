@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { confirmDialog } from "./Dialogs";
 import { api } from "./api";
 import { Modal } from "./Modals";
 import { PERMISSION_INFO, canEditRole, can, isOwner } from "./permissions";
@@ -6,7 +7,7 @@ import type { Permission, ServerDetail } from "./types";
 
 const PRESET_COLORS = ["#e74c3c", "#e67e22", "#f1c40f", "#2ecc71", "#1abc9c", "#3498db", "#9b59b6", "#e84393"];
 
-interface Draft { name: string; color: string | null; permissions: Permission[]; hoist: boolean; selfAssignable: boolean }
+interface Draft { name: string; color: string | null; permissions: Permission[]; hoist: boolean; sectionName: string | null; selfAssignable: boolean }
 
 /** Name, color and permission checkboxes. Permissions you don't hold yourself are locked (the owner holds all of them). */
 function RoleForm({ server, initial, submitLabel, onSubmit, onCancel }: { server: ServerDetail; initial: Draft; submitLabel: string; onSubmit: (d: Draft) => Promise<void>; onCancel?: () => void }) {
@@ -35,6 +36,12 @@ function RoleForm({ server, initial, submitLabel, onSubmit, onCancel }: { server
         <input type="checkbox" checked={d.hoist} onChange={(e) => setD({ ...d, hoist: e.target.checked })} />
         <span><strong>Show members with this role separately</strong><small className="muted">People who are online get their own section in the member list.</small></span>
       </label>
+      {d.hoist && (
+        <label>Section name (optional)
+          <input value={d.sectionName ?? ""} maxLength={24} placeholder={d.name.trim() || "Same as the role name"} onChange={(e) => setD({ ...d, sectionName: e.target.value })} />
+          <small className="muted">Put this role in a section with a different heading. Roles that use the same section name share one section, so you can group several roles, like "Staff".</small>
+        </label>
+      )}
       <label className="check perm">
         <input type="checkbox" checked={d.selfAssignable} onChange={(e) => setD({ ...d, selfAssignable: e.target.checked, permissions: e.target.checked ? [] : d.permissions })} />
         <span><strong>Anyone can give themselves this role</strong><small className="muted">Handy for pick-your-own roles like pronouns or interests. Turns off the permissions below, since anyone could take it.</small></span>
@@ -76,7 +83,7 @@ export function RolesTab({ server, onError }: { server: ServerDetail; onError: (
       {editing === "new" && (
         <RoleForm
           server={server}
-          initial={{ name: "", color: null, permissions: [], hoist: true, selfAssignable: false }}
+          initial={{ name: "", color: null, permissions: [], hoist: true, sectionName: null, selfAssignable: false }}
           submitLabel="Create role"
           onCancel={() => setEditing(null)}
           onSubmit={async (d) => run(async () => { await api(`/servers/${server.id}/roles`, "POST", d); setEditing(null); })}
@@ -95,7 +102,7 @@ export function RolesTab({ server, onError }: { server: ServerDetail; onError: (
                     <button className="icon" aria-label={`Move ${r.name} up`} title="Higher rank" disabled={i === 0 || !canEditRole(server, roles[i - 1])} onClick={() => run(() => api(`/servers/${server.id}/roles/${r.id}/move`, "POST", { direction: "up" }))}>↑</button>
                     <button className="icon" aria-label={`Move ${r.name} down`} title="Lower rank" disabled={i === roles.length - 1} onClick={() => run(() => api(`/servers/${server.id}/roles/${r.id}/move`, "POST", { direction: "down" }))}>↓</button>
                     <button onClick={() => setEditing(editing === r.id ? null : r.id)}>{editing === r.id ? "Close" : "Edit"}</button>
-                    <button className="danger" onClick={() => { if (window.confirm(`Delete the ${r.name} role? Everyone who has it loses it.`)) void run(() => api(`/servers/${server.id}/roles/${r.id}`, "DELETE")); }}>Delete</button>
+                    <button className="danger" onClick={async () => { if (await confirmDialog(`Delete the ${r.name} role? Everyone who has it loses it.`)) void run(() => api(`/servers/${server.id}/roles/${r.id}`, "DELETE")); }}>Delete</button>
                   </span>
                 ) : <small className="muted">Ranked above you</small>}
               </div>
@@ -105,7 +112,7 @@ export function RolesTab({ server, onError }: { server: ServerDetail; onError: (
               {editing === r.id && (
                 <RoleForm
                   server={server}
-                  initial={{ name: r.name, color: r.color, permissions: r.permissions, hoist: r.hoist, selfAssignable: r.selfAssignable }}
+                  initial={{ name: r.name, color: r.color, permissions: r.permissions, hoist: r.hoist, sectionName: r.sectionName, selfAssignable: r.selfAssignable }}
                   submitLabel="Save role"
                   onSubmit={async (d) => run(async () => { await api(`/servers/${server.id}/roles/${r.id}`, "PATCH", d); setEditing(null); })}
                 />
@@ -135,12 +142,12 @@ export function LegacyAdminsModal({ server, onClose, onDone, onError }: { server
       </p>
       <RoleForm
         server={server}
-        initial={{ name: "Admin", color: "#3498db", permissions: all, hoist: true, selfAssignable: false }}
+        initial={{ name: "Admin", color: "#3498db", permissions: all, hoist: true, sectionName: null, selfAssignable: false }}
         submitLabel={`Create role and give it to ${n === 1 ? "them" : `all ${n}`}`}
         onSubmit={(d) => resolve({ mode: "role", role: d })}
       />
       <hr />
-      <button className="danger" disabled={busy} onClick={() => { if (window.confirm(`Remove admin from ${n === 1 ? "them" : `all ${n}`} without giving a role? They become regular members.`)) void resolve({ mode: "demote" }); }}>
+      <button className="danger" disabled={busy} onClick={async () => { if (await confirmDialog(`Remove admin from ${n === 1 ? "them" : `all ${n}`} without giving a role? They become regular members.`)) void resolve({ mode: "demote" }); }}>
         Remove their admin power instead
       </button>
       <p className="muted">Manage roles stays with you: an admin role can be given that permission later if you want.</p>

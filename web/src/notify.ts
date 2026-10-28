@@ -85,6 +85,24 @@ export function setNotificationOpener(fn: (t: Target) => void) {
   unsubscribeDesktop = window.huddleDesktop?.onNotificationClick((t) => t && onOpen(t)) ?? null;
 }
 
+/** Called once by the app: what to do when someone replies to, or marks read, a desktop notification popup. */
+let unsubReply: (() => void) | null = null;
+let unsubRead: (() => void) | null = null;
+export function setNotificationActions(a: { reply: (t: Target, text: string) => Promise<void>; markRead: (t: Target) => void }) {
+  const d = window.huddleDesktop;
+  unsubReply?.();
+  unsubRead?.();
+  unsubReply = d?.onNotificationReply?.(async ({ id, target, text }) => {
+    try {
+      await a.reply(target, text);
+      d.replyResult?.(id, true);
+    } catch (err) {
+      d.replyResult?.(id, false, err instanceof Error ? err.message : "Couldn't send.");
+    }
+  }) ?? null;
+  unsubRead = d?.onNotificationMarkRead?.((t) => a.markRead(t)) ?? null;
+}
+
 function show(n: Show) {
   if (window.huddleDesktop) return window.huddleDesktop.notify(n);
   if (permissionState() !== "granted") return;

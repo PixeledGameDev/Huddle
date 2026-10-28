@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { confirmDialog } from "./Dialogs";
 import { Modal } from "./Modals";
 import { applyActiveTheme, applyTheme, clearTheme, COLOR_INFO, PRESETS, exportTheme, getActiveId, loadImages, loadThemes, makeTheme, parseThemeFile, prepareImage, removeImage, saveImage, saveThemes, setActiveId, type CustomTheme, type ImageSlot, type ThemeColorKey } from "./themes";
 import { applyPrefs, loadPrefs } from "./prefs";
@@ -58,7 +59,7 @@ export function ThemeEditorModal({ onClose, onError, onNotice }: { onClose: () =
     commit(themes.map((t) => (t.id === current.id ? { ...t, images: nextImages } : t)), current.id, pics);
   }
   async function remove() {
-    if (!current || !window.confirm(`Delete the theme "${current.name}"?`)) return;
+    if (!current || !await confirmDialog(`Delete the theme "${current.name}"?`)) return;
     for (const s of ["app", "chat", "side"] as ImageSlot[]) await removeImage(current.id, s).catch(() => {});
     commit(themes.filter((t) => t.id !== current.id), null);
   }

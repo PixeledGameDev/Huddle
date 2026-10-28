@@ -28,6 +28,18 @@ contextBridge.exposeInMainWorld("huddleDesktop", {
   // Present from desktop 1.3: whether Huddle opens with the computer, and whether it shows its window when it does.
   getStartup: () => ipcRenderer.invoke("startup:get"),
   setStartup: (v) => ipcRenderer.invoke("startup:set", v),
+  // Present from desktop 1.4: replying to, and marking read, a message straight from its popup.
+  onNotificationReply: (cb) => {
+    const handler = (_event, r) => cb(r);
+    ipcRenderer.on("notification-reply", handler);
+    return () => ipcRenderer.removeListener("notification-reply", handler);
+  },
+  replyResult: (id, ok, error) => ipcRenderer.send("reply-result", { id, ok, error }),
+  onNotificationMarkRead: (cb) => {
+    const handler = (_event, target) => cb(target);
+    ipcRenderer.on("notification-markread", handler);
+    return () => ipcRenderer.removeListener("notification-markread", handler);
+  },
   onNotificationClick: (cb) => {
     const handler = (_event, target) => cb(target);
     ipcRenderer.on("notification-click", handler);

@@ -1,4 +1,4 @@
-const { app, BrowserWindow, Menu, Tray, Notification, dialog, ipcMain, nativeImage, net, screen, session, shell } = require("electron");
+const { app, BrowserWindow, Menu, Tray, Notification, ipcMain, nativeImage, net, screen, session, shell } = require("electron");
 const fs = require("node:fs");
 const path = require("node:path");
 const { fileURLToPath } = require("node:url");
@@ -16,11 +16,19 @@ const isMac = process.platform === "darwin";
 const SETUP_PAGE = path.join(__dirname, "setup.html");
 const ICON = path.join(__dirname, "..", "build", "icon.png");
 const TRAY_ICON = path.join(__dirname, "..", "build", "tray.png");
+const TRAY_ICON_UNREAD = path.join(__dirname, "..", "build", "tray-unread.png");
 
 app.setAppUserModelId("app.huddle.desktop");
 
 // ---------- settings (a small JSON file in the user's app data folder) ----------
-const DEFAULTS = { serverUrl: null, closeToTray: true, bounds: null, maximized: false };
+const DEFAULTS = {
+  serverUrl: null,
+  closeToTray: true,
+  bounds: null,
+  maximized: false,
+  launchAtStartup: true, // open Huddle when the person signs in to their computer
+  startInBackground: false, // ...and if so, whether to leave the window closed (it's still in the tray)
+};
 let settings = { ...DEFAULTS };
 const settingsFile = () => path.join(app.getPath("userData"), "settings.json");
 function loadSettings() {
@@ -59,7 +67,7 @@ const SPLASH_PAGE = path.join(__dirname, "splash.html");
 const SPLASH_MIN_MS = 1200; // long enough to read, short enough not to feel slow
 let splash = null;
 let splashShownAt = 0;
-let splashStatus = { text: "Starting…" };
+let splashStatus = { text: "Starting…", version: app.getVersion() };
 
 function showSplash() {
   splash = new BrowserWindow({
@@ -88,7 +96,7 @@ function showSplash() {
   void splash.loadFile(SPLASH_PAGE);
 }
 function setSplash(text, percent) {
-  splashStatus = { text, percent };
+  splashStatus = { text, percent, version: app.getVersion() };
   splash?.webContents.send("splash:status", splashStatus);
 }
 ipcMain.on("splash:ready", (e) => {
@@ -100,6 +108,68 @@ function closeSplash() {
   const wait = Math.max(0, SPLASH_MIN_MS - (Date.now() - splashShownAt));
   setTimeout(() => { if (splash && !splash.isDestroyed()) splash.close(); }, splashShownAt ? wait : 0);
 }
+
+// ---------- Huddle's own popups (instead of the system's grey message boxes) ----------
+const DIALOG_PAGE = path.join(__dirname, "dialog.html");
+const openDialogs = new Map(); // webContents id -> { resolve, opts }
+/**
+ * Shows a popup in Huddle's style and resolves with the index of the button pressed.
+ * Options: type ("info" | "warning"), message, detail, buttons (default ["OK"]), defaultId, cancelId.
+ */
+function showDialog(opts) {
+  const buttons = Array.isArray(opts.buttons) && opts.buttons.length ? opts.buttons.map(String) : ["OK"];
+  const o = { type: opts.type ?? "info", message: String(opts.message ?? ""), detail: opts.detail ? String(opts.detail) : "", buttons, defaultId: opts.defaultId ?? 0, cancelId: opts.cancelId ?? buttons.length - 1 };
+  return new Promise((resolve) => {
+    const parent = win && !win.isDestroyed() && win.isVisible() ? win : undefined;
+    const d = new BrowserWindow({
+      width: 440,
+      height: 300,
+      parent,
+      modal: !!parent,
+      frame: false,
+      transparent: true,
+      resizable: false,
+      maximizable: false,
+      minimizable: false,
+      fullscreenable: false,
+      show: false,
+      skipTaskbar: !!parent,
+      title: "Huddle",
+      icon: fs.existsSync(ICON) ? ICON : undefined,
+      webPreferences: { preload: path.join(__dirname, "dialog-preload.js"), contextIsolation: true, sandbox: true, nodeIntegration: false },
+    });
+    const id = d.webContents.id;
+    let settled = false;
+    const finish = (index) => {
+      if (settled) return;
+      settled = true;
+      openDialogs.delete(id);
+      resolve(index);
+      if (!d.isDestroyed()) d.close();
+    };
+    openDialogs.set(id, { opts: o, finish });
+    d.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
+    d.webContents.on("will-navigate", (e) => e.preventDefault());
+    d.on("closed", () => finish(o.cancelId));
+    void d.loadFile(DIALOG_PAGE);
+  });
+}
+const dialogFor = (e) => openDialogs.get(e.sender.id);
+ipcMain.on("dialog:ready", (e) => {
+  const d = dialogFor(e);
+  if (d) e.sender.send("dialog:show", d.opts);
+});
+ipcMain.on("dialog:choose", (e, index) => {
+  const d = dialogFor(e);
+  if (d && Number.isInteger(index) && index >= 0 && index < d.opts.buttons.length) d.finish(index);
+});
+ipcMain.on("dialog:size", (e, height) => {
+  const w = BrowserWindow.fromWebContents(e.sender);
+  if (!w || !dialogFor(e) || !Number.isFinite(height)) return;
+  w.setContentSize(440, Math.max(140, Math.min(Math.round(height), 600)));
+  w.center();
+  w.show();
+});
 
 // ---------- automatic updates ----------
 let updater = null;
@@ -139,20 +209,20 @@ function installUpdate() {
 }
 async function checkNow() {
   if (!updater) {
-    await dialog.showMessageBox(win ?? undefined, { type: "info", message: "Automatic updates aren't available for this copy of Huddle.", detail: "Installed copies of the app update themselves. Linux .deb users should install the newer .deb from your server's download page." });
+    await showDialog({ type: "info", message: "Automatic updates aren't available for this copy of Huddle.", detail: "Installed copies of the app update themselves. Linux .deb users should install the newer .deb from your server's download page." });
     return;
   }
   const state = await updater.check(feedUrl());
   const current = app.getVersion();
   if (state.status === "ready") {
-    const r = await dialog.showMessageBox(win ?? undefined, { type: "info", message: `Huddle ${state.version} is ready to install.`, buttons: ["Restart now", "Later"], defaultId: 0, cancelId: 1 });
-    if (r.response === 0) installUpdate();
+    const r = await showDialog({ type: "info", message: `Huddle ${state.version} is ready to install.`, detail: "Restart Huddle to finish updating.", buttons: ["Restart now", "Later"], defaultId: 0, cancelId: 1 });
+    if (r === 0) installUpdate();
   } else if (state.status === "downloading") {
-    await dialog.showMessageBox(win ?? undefined, { type: "info", message: `Downloading Huddle ${state.version}…`, detail: "You'll get a notification when it's ready to install." });
+    await showDialog({ type: "info", message: `Downloading Huddle ${state.version}…`, detail: "You'll get a notification when it's ready to install." });
   } else if (state.status === "error") {
-    await dialog.showMessageBox(win ?? undefined, { type: "warning", message: "Couldn't check for updates.", detail: state.message });
+    await showDialog({ type: "warning", message: "Couldn't check for updates.", detail: state.message });
   } else {
-    await dialog.showMessageBox(win ?? undefined, { type: "info", message: "You're up to date.", detail: `Huddle ${current}` });
+    await showDialog({ type: "info", message: "You're up to date.", detail: `Huddle ${current}` });
   }
 }
 ipcMain.handle("update:state", (e) => (fromHuddle(e) ? updater?.getState() ?? { status: "unsupported" } : null));
@@ -163,12 +233,14 @@ ipcMain.on("update:install", (e) => fromHuddle(e) && installUpdate());
 async function startupUpdate() {
   if (!updater || !feedUrl()) return "none";
   setSplash("Checking for updates…");
+  const slow = setTimeout(() => setSplash("Still checking… the server may be waking up"), 5000);
   const result = await updater.startupCheck(feedUrl(), {
-    onProgress: (s) => setSplash(`Downloading update${s.version ? ` ${s.version}` : ""}…`, s.percent),
+    onProgress: (s) => setSplash(`Downloading update${s.version ? ` ${s.version}` : ""}${typeof s.percent === "number" && s.percent > 0 ? ` · ${s.percent}%` : "…"}`, s.percent),
   });
+  clearTimeout(slow);
   if (result !== "ready") return "none";
-  setSplash("Installing update…");
-  await new Promise((r) => setTimeout(r, 600));
+  setSplash("Installing update… Huddle will reopen by itself.");
+  await new Promise((r) => setTimeout(r, 1500)); // long enough to read
   installUpdate();
   return "installing";
 }
@@ -177,6 +249,7 @@ async function startupUpdate() {
 let win = null;
 let tray = null;
 let quitting = false;
+let startHidden = false; // set at start-up when Huddle should open without showing a window
 
 function visibleBounds(b) {
   if (!b) return null;
@@ -226,6 +299,11 @@ function createWindow() {
 
   win.once("ready-to-show", () => {
     if (settings.maximized) win.maximize();
+    if (startHidden) {
+      startHidden = false; // opened with the computer in the background: stay in the tray until the person opens it
+      closeSplash();
+      return;
+    }
     win.show();
     closeSplash();
   });
@@ -341,13 +419,25 @@ const UUID = /^[0-9a-f-]{36}$/i;
 const text = (v, max) => (typeof v === "string" ? v.slice(0, max) : "");
 const liveNotes = new Map(); // tag -> Notification, so a channel has one notification that updates rather than a pile
 ipcMain.on("notify", (e, n) => {
-  if (!fromHuddle(e) || !n || typeof n !== "object" || !Notification.isSupported()) return;
+  if (!fromHuddle(e) || !n || typeof n !== "object") return;
   const title = text(n.title, 100);
   if (!title) return;
   const target = n.target && UUID.test(n.target.serverId) && UUID.test(n.target.channelId) ? { serverId: n.target.serverId, channelId: n.target.channelId } : null;
   const tag = text(n.tag, 64);
+  try {
+    showToast({ title, body: text(n.body, 250), tag, target }); // Huddle's own popup, with a box to reply in
+  } catch (err) {
+    console.error("Couldn't show the reply popup, using a system notification", err);
+    showSystemNotification({ title, body: text(n.body, 250), tag, target });
+  }
+  if (win && !win.isFocused()) win.flashFrame(true);
+});
+
+/** The plain system notification (no reply box): kept as a fallback if the popup can't be made. */
+function showSystemNotification({ title, body, tag, target }) {
+  if (!Notification.isSupported()) return;
   if (tag) liveNotes.get(tag)?.close();
-  const note = new Notification({ title, body: text(n.body, 250), silent: true, icon: fs.existsSync(ICON) ? ICON : undefined }); // Huddle plays its own chime
+  const note = new Notification({ title, body, silent: true, icon: fs.existsSync(ICON) ? ICON : undefined }); // Huddle plays its own chime
   if (tag) liveNotes.set(tag, note);
   note.on("click", () => {
     showWindow();
@@ -355,7 +445,119 @@ ipcMain.on("notify", (e, n) => {
   });
   note.on("close", () => tag && liveNotes.get(tag) === note && liveNotes.delete(tag));
   note.show();
-  if (win && !win.isFocused()) win.flashFrame(true);
+}
+
+// ---------- reply popups ----------
+// A small Huddle-styled popup in the corner of the screen: read the message, type a reply and send it, mark it read, or open it.
+const TOAST_PAGE = path.join(__dirname, "toast.html");
+const TOAST_W = 380;
+const TOAST_H = 178;
+const MAX_TOASTS = 3;
+const toasts = []; // newest first: { win, tag, target, timer, held }
+const toastFor = (e) => toasts.find((t) => !t.win.isDestroyed() && t.win.webContents.id === e.sender.id);
+
+function layoutToasts() {
+  const wa = screen.getPrimaryDisplay().workArea;
+  toasts.forEach((t, i) => {
+    if (!t.win.isDestroyed()) t.win.setBounds({ x: wa.x + wa.width - TOAST_W, y: wa.y + wa.height - TOAST_H * (i + 1), width: TOAST_W, height: TOAST_H });
+  });
+}
+function closeToast(t) {
+  clearTimeout(t.timer);
+  const i = toasts.indexOf(t);
+  if (i >= 0) toasts.splice(i, 1);
+  if (!t.win.isDestroyed()) t.win.close();
+  layoutToasts();
+}
+function armToast(t, ms = 9000) {
+  clearTimeout(t.timer);
+  if (!t.held) t.timer = setTimeout(() => closeToast(t), ms);
+}
+function showToast({ title, body, tag, target }) {
+  const content = { title, body, canReply: !!target };
+  const existing = tag ? toasts.find((t) => t.tag === tag && !t.win.isDestroyed()) : null;
+  if (existing) { // another message in the same conversation: update the popup instead of stacking a new one
+    existing.target = target;
+    existing.win.webContents.send("toast:show", content);
+    armToast(existing);
+    return;
+  }
+  const w = new BrowserWindow({
+    width: TOAST_W,
+    height: TOAST_H,
+    frame: false,
+    transparent: true,
+    resizable: false,
+    maximizable: false,
+    minimizable: false,
+    fullscreenable: false,
+    skipTaskbar: true,
+    alwaysOnTop: true,
+    hasShadow: false,
+    show: false,
+    title: "Huddle",
+    webPreferences: { preload: path.join(__dirname, "toast-preload.js"), contextIsolation: true, sandbox: true, nodeIntegration: false },
+  });
+  const t = { win: w, tag, target, timer: null, held: false, content };
+  toasts.unshift(t);
+  if (toasts.length > MAX_TOASTS) closeToast(toasts[toasts.length - 1]);
+  layoutToasts();
+  w.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
+  w.webContents.on("will-navigate", (ev) => ev.preventDefault());
+  w.on("closed", () => { clearTimeout(t.timer); const i = toasts.indexOf(t); if (i >= 0) toasts.splice(i, 1); layoutToasts(); });
+  void w.loadFile(TOAST_PAGE);
+}
+ipcMain.on("toast:ready", (e) => {
+  const t = toastFor(e);
+  if (!t) return;
+  e.sender.send("toast:show", t.content);
+  t.win.showInactive(); // appears without taking focus from what you're doing
+  armToast(t);
+});
+ipcMain.on("toast:close", (e) => { const t = toastFor(e); if (t) closeToast(t); });
+ipcMain.on("toast:hold", (e, on) => {
+  const t = toastFor(e);
+  if (!t) return;
+  t.held = !!on;
+  if (on) clearTimeout(t.timer);
+  else armToast(t, 4000);
+});
+ipcMain.on("toast:open", (e) => {
+  const t = toastFor(e);
+  if (!t) return;
+  showWindow();
+  if (t.target) win?.webContents.send("notification-click", t.target);
+  closeToast(t);
+});
+ipcMain.on("toast:markread", (e) => {
+  const t = toastFor(e);
+  if (!t) return;
+  if (t.target) win?.webContents.send("notification-markread", t.target);
+  closeToast(t);
+});
+// Replying: the popup hands the text to the Huddle page, which sends it with the person's own session, then says how it went.
+const pendingReplies = new Map();
+let replySeq = 0;
+ipcMain.handle("toast:reply", async (e, raw) => {
+  const t = toastFor(e);
+  const body = text(raw, 2000).trim();
+  if (!t || !t.target || !body) return { ok: false, error: "Nothing to send." };
+  if (!win || win.isDestroyed()) return { ok: false, error: "Huddle isn't running." };
+  const id = ++replySeq;
+  const result = await new Promise((resolve) => {
+    pendingReplies.set(id, resolve);
+    setTimeout(() => pendingReplies.delete(id) && resolve({ ok: false, error: "That took too long. Try again." }), 12000);
+    win.webContents.send("notification-reply", { id, target: t.target, text: body });
+  });
+  if (result.ok) setTimeout(() => closeToast(t), 1100);
+  return result;
+});
+ipcMain.on("reply-result", (e, p) => {
+  if (!fromHuddle(e) || !p || !Number.isInteger(p.id)) return;
+  const resolve = pendingReplies.get(p.id);
+  if (!resolve) return;
+  pendingReplies.delete(p.id);
+  resolve({ ok: !!p.ok, error: text(p.error, 120) });
 });
 
 ipcMain.on("badge", (e, p) => {
@@ -368,7 +570,52 @@ ipcMain.on("badge", (e, p) => {
     win.setOverlayIcon(ok ? nativeImage.createFromDataURL(p.iconDataUrl) : null, count ? `${count} unread` : "");
   }
   tray?.setToolTip(count ? `Huddle (${count} unread)` : "Huddle");
+  setTrayUnread(count > 0);
 });
+
+// ---------- starting with the computer ----------
+/** True when the system started Huddle at sign-in with the "background" choice (see applyStartup). */
+const launchedHidden = process.argv.includes("--hidden") || (() => { try { return !!app.getLoginItemSettings().wasOpenedAsHidden; } catch { return false; } })();
+const autostartFile = () => path.join(process.env.XDG_CONFIG_HOME || path.join(require("node:os").homedir(), ".config"), "autostart", "huddle.desktop");
+
+/** Makes the computer's startup list match the person's choices. Only an installed app does this, so a dev run never registers itself. */
+function applyStartup() {
+  if (!app.isPackaged) return;
+  const args = settings.startInBackground ? ["--hidden"] : [];
+  try {
+    if (process.platform === "linux") {
+      const file = autostartFile();
+      if (!settings.launchAtStartup) return void fs.rmSync(file, { force: true });
+      const exe = process.env.APPIMAGE || process.execPath;
+      fs.mkdirSync(path.dirname(file), { recursive: true });
+      fs.writeFileSync(file, `[Desktop Entry]\nType=Application\nName=Huddle\nExec="${exe}" ${args.join(" ")}\nTerminal=false\nX-GNOME-Autostart-enabled=true\n`);
+    } else {
+      app.setLoginItemSettings({ openAtLogin: settings.launchAtStartup, openAsHidden: settings.startInBackground, args });
+    }
+  } catch (e) {
+    console.error("Couldn't update the start-with-computer setting", e);
+  }
+}
+function setStartup(patch) {
+  if (typeof patch.launchAtStartup === "boolean") settings.launchAtStartup = patch.launchAtStartup;
+  if (typeof patch.startInBackground === "boolean") settings.startInBackground = patch.startInBackground;
+  saveSettings();
+  applyStartup();
+  buildMenus();
+}
+const startupState = () => ({ supported: app.isPackaged, launch: settings.launchAtStartup, background: settings.startInBackground });
+ipcMain.handle("startup:get", (e) => (fromHuddle(e) ? startupState() : null));
+ipcMain.handle("startup:set", (e, v) => {
+  if (!fromHuddle(e) || !v || typeof v !== "object") return null;
+  setStartup({ launchAtStartup: v.launch, startInBackground: v.background });
+  return startupState();
+});
+function startupItems() {
+  return [
+    { label: "Start Huddle when I sign in to my computer", type: "checkbox", checked: settings.launchAtStartup, click: (item) => setStartup({ launchAtStartup: item.checked }) },
+    { label: "Start in the background (don't show the window)", type: "checkbox", checked: settings.startInBackground, enabled: settings.launchAtStartup, click: (item) => setStartup({ startInBackground: item.checked }) },
+  ];
+}
 
 // ---------- tray and menus ----------
 function toggleCloseToTray(item) {
@@ -394,6 +641,7 @@ function huddleMenuTemplate() {
   return [
     { label: "Change server…", click: changeServer },
     { label: "Keep running in the tray when closed", type: "checkbox", checked: settings.closeToTray, click: toggleCloseToTray },
+    ...startupItems(),
     ...updateMenuItems(),
     { type: "separator" },
     { label: "Zoom in", accelerator: "CmdOrCtrl+=", click: () => zoom(0.5) },
@@ -425,6 +673,7 @@ function buildMenus() {
   const trayItems = [
     { label: "Open Huddle", click: showWindow },
     { label: "Keep running in the tray when closed", type: "checkbox", checked: settings.closeToTray, click: toggleCloseToTray },
+    ...startupItems(),
     { label: "Change server…", click: changeServer },
     ...updateMenuItems(),
     { type: "separator" },
@@ -440,10 +689,19 @@ function buildMenus() {
     Menu.setApplicationMenu(null); // no "File Edit View Window" bar: the logo in the title bar opens the Huddle menu
   }
 }
+// The tray icon gets a red dot while there are unread messages, so you can tell at a glance without opening Huddle.
+let trayImages = null;
+function setTrayUnread(unread) {
+  if (!tray || !trayImages) return;
+  tray.setImage(unread ? trayImages.unread : trayImages.normal);
+}
 function createTray() {
   const img = nativeImage.createFromPath(TRAY_ICON);
   if (img.isEmpty()) return;
-  tray = new Tray(img.resize({ width: isMac ? 18 : 20, height: isMac ? 18 : 20 }));
+  const size = { width: isMac ? 18 : 20, height: isMac ? 18 : 20 };
+  const unreadImg = nativeImage.createFromPath(TRAY_ICON_UNREAD);
+  trayImages = { normal: img.resize(size), unread: unreadImg.isEmpty() ? img.resize(size) : unreadImg.resize(size) };
+  tray = new Tray(trayImages.normal);
   tray.setToolTip("Huddle");
   tray.on("click", showWindow);
 }
@@ -464,9 +722,12 @@ if (!app.requestSingleInstanceLock()) {
     session.defaultSession.setPermissionRequestHandler((_wc, permission, callback) => callback(allowed.has(permission)));
     session.defaultSession.setPermissionCheckHandler((_wc, permission) => allowed.has(permission));
     createTray();
+    applyStartup();
+    // Opened by the computer at sign-in with "background" chosen: no splash and no window (needs the tray to get back in).
+    startHidden = launchedHidden && settings.launchAtStartup && settings.startInBackground && !!tray;
     initUpdater();
     buildMenus();
-    showSplash();
+    if (!startHidden) showSplash();
     setSplash("Starting…");
     startupUpdate()
       .catch((e) => { console.error("Startup update check failed", e); return "none"; })

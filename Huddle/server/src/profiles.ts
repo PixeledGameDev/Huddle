@@ -14,13 +14,14 @@ export const profilesRouter = Router();
 export const NAME_FONTS = ["default", "serif", "mono", "handwriting", "script", "display", "retro", "techno", "elegant", "impact"] as const;
 
 export async function getProfile(userId: string) {
-  const r = await one<any>(`select id, username, display_name, bio, accent, status_text, avatar_version, created_at, huddle_admin, presence, dm_privacy, banner_version, name_font from users where id = $1`, [userId]);
+  const r = await one<any>(`select id, username, display_name, bio, accent, status_text, avatar_version, created_at, huddle_admin, presence, dm_privacy, banner_version, name_font, pronouns from users where id = $1`, [userId]);
   if (!r) return null;
   return {
     id: r.id as string,
     username: r.username as string,
     displayName: (r.display_name ?? null) as string | null,
     bio: r.bio as string,
+    pronouns: (r.pronouns ?? "") as string,
     accent: (r.accent ?? null) as string | null,
     statusText: r.status_text as string,
     avatarVersion: r.avatar_version as number,
@@ -104,6 +105,7 @@ const profileSchema = z
   .object({
     displayName: z.string().trim().max(32).nullable().transform((v) => (v ? v : null)),
     bio: z.string().trim().max(190),
+    pronouns: z.string().trim().max(24),
     accent: z.string().regex(/^#[0-9a-fA-F]{6}$/, "Pick a valid color.").nullable(),
     statusText: z.string().trim().max(80),
     presence: z.enum(["online", "idle", "dnd", "invisible"]),
@@ -116,7 +118,7 @@ profilesRouter.patch("/me/profile", h(async (req, res) => {
   const user = req.user!;
   rateLimit(`profile:${user.id}`, 20, 60_000);
   const patch = profileSchema.parse(req.body);
-  const columns: Record<string, string> = { displayName: "display_name", bio: "bio", accent: "accent", statusText: "status_text", presence: "presence", dmPrivacy: "dm_privacy", nameFont: "name_font" };
+  const columns: Record<string, string> = { displayName: "display_name", bio: "bio", accent: "accent", pronouns: "pronouns", statusText: "status_text", presence: "presence", dmPrivacy: "dm_privacy", nameFont: "name_font" };
   const entries = Object.entries(patch).filter(([, v]) => v !== undefined);
   if (!entries.length) throw new HttpError(400, "Nothing to update.");
   const sets = entries.map(([k], i) => `${columns[k]} = $${i + 2}`).join(", ");

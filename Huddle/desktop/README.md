@@ -44,7 +44,7 @@ Without R2 (local development), put the installers and a `latest.json` (made by
 npm run dist        # builds for the system you're on, into desktop/dist
 ```
 
-Windows gets an installer (`.exe`), macOS a `.dmg` and `.zip`, Linux an `.AppImage` and `.deb`. You can only build for
+Only Windows is built: you get an installer (`.exe`). You can only build for
 the system you're on, so the easiest way to get all three is the GitHub Actions workflow in
 `.github/workflows/desktop.yml`: open the repo's **Actions** tab, pick **Desktop app**, **Run workflow**, and download
 the files from the finished run (or push a tag such as `desktop-v1.0.0`).
