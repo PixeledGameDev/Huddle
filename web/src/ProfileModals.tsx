@@ -402,6 +402,10 @@ export function MyProfileModal({ me, onClose, onUser, onDeleted, onError, onOpen
                   </select>
                 </label>
               </div>
+              <label className="check">
+                <input type="checkbox" checked={prefs.lowMemory} onChange={(e) => updatePrefs({ ...prefs, lowMemory: e.target.checked })} />
+                <span>Low memory mode<small className="muted">Turns off blur effects, animations and background pictures, and keeps fewer old messages loaded. Huddle looks a little plainer but uses noticeably less memory.</small></span>
+              </label>
               {desktop ? (
                 <div className="stack tight">
                   <button type="button" onClick={onOpenThemes}>Custom themes…</button>

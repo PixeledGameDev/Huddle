@@ -206,9 +206,26 @@ function Main({ me, initialServerId, onUser, onLogout }: { me: User; initialServ
     setMsgs((prev) => {
       const cur = prev[m.channelId];
       if (!cur || cur.items.some((x) => x.id === m.id)) return prev;
-      return { ...prev, [m.channelId]: { ...cur, items: [...cur.items, m] } };
+      const cap = document.documentElement.dataset.lowmem ? 300 : 800; // a channel left open for days shouldn't grow forever
+      let items = [...cur.items, m];
+      let hasMore = cur.hasMore;
+      if (items.length > cap) { items = items.slice(-cap + 100); hasMore = true; }
+      return { ...prev, [m.channelId]: { ...cur, items, hasMore } };
     });
   }, []);
+
+  // Keep memory down: conversations you aren't looking at only hold their newest messages. Opening one again keeps those and loads older ones on request.
+  useEffect(() => {
+    if (!channelId) return;
+    const keep = document.documentElement.dataset.lowmem ? 30 : 60;
+    setMsgs((prev) => {
+      let next: MsgState | null = null;
+      for (const [cid, st] of Object.entries(prev)) {
+        if (cid !== channelId && st.items.length > keep) (next ??= { ...prev })[cid] = { items: st.items.slice(-keep), hasMore: true };
+      }
+      return next ?? prev;
+    });
+  }, [channelId]);
 
   const removeMessage = useCallback((channel: string, id: string) => {
     setMsgs((prev) => {

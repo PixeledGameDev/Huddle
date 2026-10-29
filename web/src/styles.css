@@ -1105,3 +1105,23 @@ a.pill { color: inherit; }
   .auth.lp .lp-nav { padding-top: max(14px, env(safe-area-inset-top)); }
   body { overscroll-behavior: none; }
 }
+
+/* Low memory mode: no blur, no animation, no background pictures, solid panels. The blur effects alone keep a lot of graphics memory busy. */
+html[data-lowmem] *, html[data-lowmem] *::before, html[data-lowmem] *::after {
+  backdrop-filter: none !important; -webkit-backdrop-filter: none !important;
+  animation-duration: .001ms !important; animation-delay: 0s !important; animation-iteration-count: 1 !important;
+  transition-duration: .001ms !important; transition-delay: 0s !important;
+  scroll-behavior: auto !important;
+}
+html[data-lowmem] { --theme-image-app: none !important; --theme-image-chat: none !important; --theme-image-side: none !important; }
+html[data-lowmem] body { background-image: none !important; }
+html[data-lowmem] .nav, html[data-lowmem] .main, html[data-lowmem] .members, html[data-lowmem] .modal, html[data-lowmem] .dlg, html[data-lowmem] .qs,
+html[data-lowmem] .menu, html[data-lowmem] .picker, html[data-lowmem] .gif-picker, html[data-lowmem] .toast, html[data-lowmem] .auth-card,
+html[data-lowmem] .update-banner, html[data-lowmem] .maint-card, html[data-lowmem] .lp-nav { box-shadow: none !important; }
+html[data-lowmem] .nav { background: var(--side) !important; }
+html[data-lowmem] .main { background: var(--panel) !important; }
+html[data-lowmem] .members { background: var(--surface2) !important; }
+html[data-lowmem] .modal, html[data-lowmem] .dlg, html[data-lowmem] .qs, html[data-lowmem] .menu, html[data-lowmem] .picker, html[data-lowmem] .gif-picker,
+html[data-lowmem] .toast, html[data-lowmem] .auth-card, html[data-lowmem] .update-banner, html[data-lowmem] .maint-card, html[data-lowmem] .modal > header { background: var(--panel) !important; }
+html[data-lowmem] .lp-nav { background: var(--bg) !important; }
+html[data-lowmem] .backdrop { background: rgba(5, 8, 18, .78); }

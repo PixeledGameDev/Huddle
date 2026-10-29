@@ -573,6 +573,26 @@ ipcMain.on("badge", (e, p) => {
   setTrayUnread(count > 0);
 });
 
+// ---------- memory readout ----------
+/** Shows how much memory Huddle is using, split by part, so it's clear what is big. */
+async function showMemory() {
+  const mb = (kb) => Math.round(kb / 1024);
+  const groups = { Page: 0, Graphics: 0, Main: 0, Other: 0 };
+  let total = 0;
+  for (const p of app.getAppMetrics()) {
+    const kb = p.memory?.privateBytes ?? p.memory?.workingSetSize ?? 0;
+    total += kb;
+    const g = p.type === "Tab" ? "Page" : p.type === "GPU" ? "Graphics" : p.type === "Browser" ? "Main" : "Other";
+    groups[g] += kb;
+  }
+  const lines = Object.entries(groups).filter(([, v]) => v > 0).map(([k, v]) => `${k}: ${mb(v)} MB`).join("\n");
+  await showDialog({
+    type: "info",
+    message: `Huddle is using about ${mb(total)} MB`,
+    detail: `${lines}\n\nTip: Settings → Theme → Low memory mode lowers the Page and Graphics numbers.`,
+  });
+}
+
 // ---------- starting with the computer ----------
 /** True when the system started Huddle at sign-in with the "background" choice (see applyStartup). */
 const launchedHidden = process.argv.includes("--hidden") || (() => { try { return !!app.getLoginItemSettings().wasOpenedAsHidden; } catch { return false; } })();
@@ -642,6 +662,7 @@ function huddleMenuTemplate() {
     { label: "Change server…", click: changeServer },
     { label: "Keep running in the tray when closed", type: "checkbox", checked: settings.closeToTray, click: toggleCloseToTray },
     ...startupItems(),
+    { label: "Memory usage…", click: () => void showMemory() },
     ...updateMenuItems(),
     { type: "separator" },
     { label: "Zoom in", accelerator: "CmdOrCtrl+=", click: () => zoom(0.5) },
@@ -674,6 +695,7 @@ function buildMenus() {
     { label: "Open Huddle", click: showWindow },
     { label: "Keep running in the tray when closed", type: "checkbox", checked: settings.closeToTray, click: toggleCloseToTray },
     ...startupItems(),
+    { label: "Memory usage…", click: () => void showMemory() },
     { label: "Change server…", click: changeServer },
     ...updateMenuItems(),
     { type: "separator" },

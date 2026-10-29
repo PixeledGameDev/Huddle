@@ -11,6 +11,16 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "5.14",
+    date: "2026-10-28",
+    title: "Lower memory use",
+    changes: [
+      "New Low memory mode in Settings → Theme: it turns off blur effects, animations and background pictures, and keeps fewer old messages loaded, so Huddle uses much less memory.",
+      "Conversations you aren't looking at now only keep their newest messages in memory, and very long-running channels no longer grow without limit. Scroll up and use “Load earlier messages” to see older ones.",
+      "Desktop app: new Memory usage item in the Huddle menu shows how much memory Huddle is using and which part uses it.",
+    ],
+  },
+  {
     version: "5.13",
     date: "2026-10-28",
     title: "Huddle on your phone",
