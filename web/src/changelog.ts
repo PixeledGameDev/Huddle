@@ -11,6 +11,17 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "5.15",
+    date: "2026-10-28",
+    title: "Desktop app: far less memory in the tray",
+    changes: [
+      "Desktop app: after Huddle has been hidden in the tray for a few minutes, it now closes its window's page completely, which frees most of its memory. Opening it again rebuilds it in a second or two.",
+      "While it's closed, a small connection keeps working: direct messages, @mentions and @everyone still pop up, the tray icon still shows the red dot, and you can still reply from the popup.",
+      "Clicking a popup opens Huddle straight to that conversation. You can turn this off with “Free up memory when hidden in the tray” in the Huddle menu.",
+      "Unread counts for messages that arrive while the window is unloaded aren't kept once you open Huddle again, but the messages are all there.",
+    ],
+  },
+  {
     version: "5.14",
     date: "2026-10-28",
     title: "Lower memory use",

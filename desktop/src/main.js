@@ -1,3 +1,5 @@
+const { io: socketIo } = require("socket.io-client");
+const { Background } = require("./background");
 const { app, BrowserWindow, Menu, Tray, Notification, ipcMain, nativeImage, net, screen, session, shell } = require("electron");
 const fs = require("node:fs");
 const path = require("node:path");
@@ -28,6 +30,8 @@ const DEFAULTS = {
   maximized: false,
   launchAtStartup: true, // open Huddle when the person signs in to their computer
   startInBackground: false, // ...and if so, whether to leave the window closed (it's still in the tray)
+  unloadWhenHidden: true, // free the page's memory after Huddle has sat hidden in the tray for a while
+  notifyPrefs: null, // a copy of the page's notification choices, so popups still follow them while the page is unloaded
 };
 let settings = { ...DEFAULTS };
 const settingsFile = () => path.join(app.getPath("userData"), "settings.json");
@@ -257,7 +261,74 @@ function visibleBounds(b) {
   return onScreen ? b : { width: b.width, height: b.height };
 }
 
+// ---------- freeing memory while hidden in the tray ----------
+// A Huddle window is a whole browser page (hundreds of MB). After it has been hidden in the tray for a few minutes it is closed
+// for real and a small connection in this process takes over: messages for you still pop up, and clicking one rebuilds the page.
+const UNLOAD_AFTER_MS = 3 * 60_000;
+const DEFAULT_NOTIFY = { enabled: true, sound: true, preview: true, dms: true, mentions: true, everyone: true };
+let unloadTimer = null;
+let keepAlive = false; // true while the page is intentionally gone, so closing it doesn't quit the app
+let background = null;
+let pendingTarget = null; // a popup was clicked while the page was gone: open this once it's back
+
+function armUnload() {
+  clearTimeout(unloadTimer);
+  if (!settings.unloadWhenHidden || !win || win.isDestroyed() || win.isVisible() || win.isMinimized()) return;
+  unloadTimer = setTimeout(() => void unloadWindow(), UNLOAD_AFTER_MS);
+}
+async function unloadWindow() {
+  if (quitting || !tray || !win || win.isDestroyed() || win.isVisible() || win.isMinimized() || background) return;
+  const bg = new Background({
+    origin: new URL(serverUrl()).origin,
+    session: session.defaultSession,
+    getPrefs: () => ({ ...DEFAULT_NOTIFY, ...(settings.notifyPrefs ?? {}) }),
+    io: socketIo,
+    onNote: (note) => {
+      showToast(note);
+      if (bg.ctx.prefs.sound) shell.beep();
+    },
+    onUnread: (count) => {
+      tray?.setToolTip(count ? `Huddle (${count} unread)` : "Huddle");
+      setTrayUnread(count > 0);
+    },
+  });
+  // Only let go of the page once the replacement is really listening. If it can't connect (offline, signed out), keep the page.
+  if (!(await bg.start())) { bg.stop(); armUnload(); return; }
+  if (quitting || !win || win.isDestroyed() || win.isVisible()) { bg.stop(); return; }
+  background = bg;
+  keepAlive = true;
+  win.destroy();
+  win = null;
+}
+function stopBackground() {
+  clearTimeout(unloadTimer);
+  background?.stop();
+  background = null;
+  keepAlive = false;
+}
+/** Opens the conversation a popup was about, rebuilding the page first if it was unloaded. */
+function openTarget(target) {
+  if (!target) return showWindow();
+  const ready = win && !win.isDestroyed();
+  if (!ready) pendingTarget = target;
+  showWindow();
+  if (ready) win.webContents.send("notification-click", target);
+}
+ipcMain.on("page-ready", (e) => { // the page has set up its listeners: hand over a click that happened while it was gone
+  if (!fromHuddle(e) || !pendingTarget) return;
+  e.sender.send("notification-click", pendingTarget);
+  pendingTarget = null;
+});
+ipcMain.on("notify-prefs", (e, p) => {
+  if (!fromHuddle(e) || !p || typeof p !== "object") return;
+  const out = {};
+  for (const k of Object.keys(DEFAULT_NOTIFY)) out[k] = typeof p[k] === "boolean" ? p[k] : DEFAULT_NOTIFY[k];
+  settings.notifyPrefs = out;
+  saveSettings();
+});
+
 function createWindow() {
+  stopBackground(); // the real page is about to take over, so the stand-in connection isn't needed
   const b = visibleBounds(settings.bounds);
   win = new BrowserWindow({
     width: 1200,
@@ -302,6 +373,7 @@ function createWindow() {
     if (startHidden) {
       startHidden = false; // opened with the computer in the background: stay in the tray until the person opens it
       closeSplash();
+      armUnload(); // and free the page too if nobody opens it soon
       return;
     }
     win.show();
@@ -323,6 +395,9 @@ function createWindow() {
     e.preventDefault();
     win.hide();
   });
+  win.on("hide", armUnload);
+  win.on("show", () => clearTimeout(unloadTimer));
+  win.on("restore", () => clearTimeout(unloadTimer));
   win.on("closed", () => { win = null; });
 
   // Only Huddle itself loads in this window. Everything else opens in the person's own browser.
@@ -439,10 +514,7 @@ function showSystemNotification({ title, body, tag, target }) {
   if (tag) liveNotes.get(tag)?.close();
   const note = new Notification({ title, body, silent: true, icon: fs.existsSync(ICON) ? ICON : undefined }); // Huddle plays its own chime
   if (tag) liveNotes.set(tag, note);
-  note.on("click", () => {
-    showWindow();
-    if (target) win?.webContents.send("notification-click", target);
-  });
+  note.on("click", () => openTarget(target));
   note.on("close", () => tag && liveNotes.get(tag) === note && liveNotes.delete(tag));
   note.show();
 }
@@ -525,14 +597,16 @@ ipcMain.on("toast:hold", (e, on) => {
 ipcMain.on("toast:open", (e) => {
   const t = toastFor(e);
   if (!t) return;
-  showWindow();
-  if (t.target) win?.webContents.send("notification-click", t.target);
+  openTarget(t.target);
   closeToast(t);
 });
 ipcMain.on("toast:markread", (e) => {
   const t = toastFor(e);
   if (!t) return;
-  if (t.target) win?.webContents.send("notification-markread", t.target);
+  if (t.target) {
+    if (win && !win.isDestroyed()) win.webContents.send("notification-markread", t.target);
+    background?.markRead(t.target.channelId);
+  }
   closeToast(t);
 });
 // Replying: the popup hands the text to the Huddle page, which sends it with the person's own session, then says how it went.
@@ -542,7 +616,23 @@ ipcMain.handle("toast:reply", async (e, raw) => {
   const t = toastFor(e);
   const body = text(raw, 2000).trim();
   if (!t || !t.target || !body) return { ok: false, error: "Nothing to send." };
-  if (!win || win.isDestroyed()) return { ok: false, error: "Huddle isn't running." };
+  if (!win || win.isDestroyed()) {
+    // The page is unloaded: send the message straight from here with the saved sign-in.
+    try {
+      const r = await session.defaultSession.fetch(`${new URL(serverUrl()).origin}/api/channels/${t.target.channelId}/messages`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ content: body }),
+      });
+      if (!r.ok) return { ok: false, error: text((await r.json().catch(() => ({}))).error, 120) || "Couldn't send." };
+      background?.markRead(t.target.channelId);
+      setTimeout(() => closeToast(t), 1100);
+      return { ok: true };
+    } catch {
+      return { ok: false, error: "Couldn't reach Huddle." };
+    }
+  }
   const id = ++replySeq;
   const result = await new Promise((resolve) => {
     pendingReplies.set(id, resolve);
@@ -572,6 +662,14 @@ ipcMain.on("badge", (e, p) => {
   tray?.setToolTip(count ? `Huddle (${count} unread)` : "Huddle");
   setTrayUnread(count > 0);
 });
+
+function toggleUnload(item) {
+  settings.unloadWhenHidden = item.checked;
+  saveSettings();
+  if (item.checked) armUnload();
+  else clearTimeout(unloadTimer);
+  buildMenus();
+}
 
 // ---------- memory readout ----------
 /** Shows how much memory Huddle is using, split by part, so it's clear what is big. */
@@ -662,6 +760,7 @@ function huddleMenuTemplate() {
     { label: "Change server…", click: changeServer },
     { label: "Keep running in the tray when closed", type: "checkbox", checked: settings.closeToTray, click: toggleCloseToTray },
     ...startupItems(),
+    { label: "Free up memory when hidden in the tray", type: "checkbox", checked: settings.unloadWhenHidden, click: toggleUnload },
     { label: "Memory usage…", click: () => void showMemory() },
     ...updateMenuItems(),
     { type: "separator" },
@@ -695,6 +794,7 @@ function buildMenus() {
     { label: "Open Huddle", click: showWindow },
     { label: "Keep running in the tray when closed", type: "checkbox", checked: settings.closeToTray, click: toggleCloseToTray },
     ...startupItems(),
+    { label: "Free up memory when hidden in the tray", type: "checkbox", checked: settings.unloadWhenHidden, click: toggleUnload },
     { label: "Memory usage…", click: () => void showMemory() },
     { label: "Change server…", click: changeServer },
     ...updateMenuItems(),
@@ -763,6 +863,6 @@ if (!app.requestSingleInstanceLock()) {
         }
       });
   });
-  app.on("before-quit", () => { quitting = true; });
-  app.on("window-all-closed", () => { if (!isMac) app.quit(); });
+  app.on("before-quit", () => { quitting = true; stopBackground(); });
+  app.on("window-all-closed", () => { if (!isMac && !keepAlive) app.quit(); });
 }

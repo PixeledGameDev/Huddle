@@ -34,6 +34,7 @@ export function loadNotifyPrefs(): NotifyPrefs {
 }
 export function saveNotifyPrefs(p: NotifyPrefs) {
   try { localStorage.setItem(KEY, JSON.stringify(p)); } catch { /* storage unavailable */ }
+  window.huddleDesktop?.syncNotifyPrefs?.(p); // the desktop app keeps a copy for when its page is unloaded to save memory
 }
 
 export type Permission = "granted" | "denied" | "default" | "unsupported";
@@ -83,6 +84,8 @@ export function setNotificationOpener(fn: (t: Target) => void) {
   onOpen = fn;
   unsubscribeDesktop?.();
   unsubscribeDesktop = window.huddleDesktop?.onNotificationClick((t) => t && onOpen(t)) ?? null;
+  window.huddleDesktop?.syncNotifyPrefs?.(loadNotifyPrefs());
+  window.huddleDesktop?.pageReady?.(); // a popup clicked while the page was unloaded is waiting to be opened
 }
 
 /** Called once by the app: what to do when someone replies to, or marks read, a desktop notification popup. */
