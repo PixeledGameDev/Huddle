@@ -1,6 +1,6 @@
 const { io: socketIo } = require("socket.io-client");
 const { Background } = require("./background");
-const { app, BrowserWindow, Menu, Tray, Notification, ipcMain, nativeImage, net, screen, session, shell } = require("electron");
+const { app, BrowserWindow, Menu, Tray, Notification, ipcMain, nativeImage, net, screen, session, shell, webContents } = require("electron");
 const fs = require("node:fs");
 const path = require("node:path");
 const { fileURLToPath } = require("node:url");
@@ -30,6 +30,7 @@ const DEFAULTS = {
   maximized: false,
   launchAtStartup: true, // open Huddle when the person signs in to their computer
   startInBackground: false, // ...and if so, whether to leave the window closed (it's still in the tray)
+  lowGraphics: true, // draw with the processor instead of the graphics card: the graphics process is the biggest single user of memory
   unloadWhenHidden: true, // free the page's memory after Huddle has sat hidden in the tray for a while
   notifyPrefs: null, // a copy of the page's notification choices, so popups still follow them while the page is unloaded
 };
@@ -41,6 +42,12 @@ function loadSettings() {
   } catch {
     settings = { ...DEFAULTS };
   }
+}
+// This one has to be decided before Electron starts its graphics process, which is earlier than the settings are normally read.
+try {
+  if (JSON.parse(fs.readFileSync(settingsFile(), "utf8")).lowGraphics !== false) app.disableHardwareAcceleration();
+} catch {
+  app.disableHardwareAcceleration(); // no settings yet: the default is on
 }
 let saveTimer = null;
 function saveSettings() {
@@ -264,7 +271,7 @@ function visibleBounds(b) {
 // ---------- freeing memory while hidden in the tray ----------
 // A Huddle window is a whole browser page (hundreds of MB). After it has been hidden in the tray for a few minutes it is closed
 // for real and a small connection in this process takes over: messages for you still pop up, and clicking one rebuilds the page.
-const UNLOAD_AFTER_MS = 3 * 60_000;
+const UNLOAD_AFTER_MS = 2 * 60_000;
 const DEFAULT_NOTIFY = { enabled: true, sound: true, preview: true, dms: true, mentions: true, everyone: true };
 let unloadTimer = null;
 let keepAlive = false; // true while the page is intentionally gone, so closing it doesn't quit the app
@@ -299,6 +306,13 @@ async function unloadWindow() {
   keepAlive = true;
   win.destroy();
   win = null;
+  setTimeout(collectGarbage, 3000); // hand back what the page used right away instead of whenever the engine gets round to it
+}
+function collectGarbage() {
+  try {
+    require("node:v8").setFlagsFromString("--expose-gc");
+    require("node:vm").runInNewContext("gc")();
+  } catch { /* not available: the engine will do it on its own */ }
 }
 function stopBackground() {
   clearTimeout(unloadTimer);
@@ -671,23 +685,51 @@ function toggleUnload(item) {
   buildMenus();
 }
 
+async function toggleLowGraphics(item) {
+  const on = item.checked;
+  const go = await showDialog({
+    type: "info",
+    message: on ? "Use less graphics memory?" : "Go back to the graphics card?",
+    detail: on
+      ? "Huddle will draw with the processor instead of the graphics card, which uses far less memory. It needs a restart."
+      : "Huddle will use the graphics card again, which uses more memory. It needs a restart.",
+    buttons: ["Restart now", "Cancel"],
+    defaultId: 0,
+    cancelId: 1,
+  });
+  if (go !== 0) { buildMenus(); return; } // put the tick back where it was
+  settings.lowGraphics = on;
+  clearTimeout(saveTimer);
+  try { fs.writeFileSync(settingsFile(), JSON.stringify(settings, null, 2)); } catch { /* the restart will use the old setting */ }
+  quitting = true;
+  app.relaunch();
+  app.quit();
+}
+
 // ---------- memory readout ----------
 /** Shows how much memory Huddle is using, split by part, so it's clear what is big. */
 async function showMemory() {
   const mb = (kb) => Math.round(kb / 1024);
+  const titles = new Map();
+  for (const wc of webContents.getAllWebContents()) {
+    try { titles.set(wc.getOSProcessId(), wc.getTitle() || "Huddle"); } catch { /* already closed */ }
+  }
   const groups = { Page: 0, Graphics: 0, Main: 0, Other: 0 };
+  const windows = new Set();
   let total = 0;
   for (const p of app.getAppMetrics()) {
     const kb = p.memory?.privateBytes ?? p.memory?.workingSetSize ?? 0;
     total += kb;
     const g = p.type === "Tab" ? "Page" : p.type === "GPU" ? "Graphics" : p.type === "Browser" ? "Main" : "Other";
     groups[g] += kb;
+    if (p.type === "Tab" && titles.has(p.pid)) windows.add(titles.get(p.pid));
   }
+  const loaded = !!win && !win.isDestroyed();
   const lines = Object.entries(groups).filter(([, v]) => v > 0).map(([k, v]) => `${k}: ${mb(v)} MB`).join("\n");
   await showDialog({
     type: "info",
     message: `Huddle is using about ${mb(total)} MB`,
-    detail: `${lines}\n\nTip: Settings → Theme → Low memory mode lowers the Page and Graphics numbers.`,
+    detail: `${lines}\n\n${loaded ? "The Huddle page is loaded." : "The Huddle page is unloaded to save memory."}${windows.size ? `\nOpen: ${[...windows].join(", ")}` : ""}\nGraphics: ${settings.lowGraphics ? "software drawing (low memory)" : "graphics card"}`,
   });
 }
 
@@ -761,6 +803,7 @@ function huddleMenuTemplate() {
     { label: "Keep running in the tray when closed", type: "checkbox", checked: settings.closeToTray, click: toggleCloseToTray },
     ...startupItems(),
     { label: "Free up memory when hidden in the tray", type: "checkbox", checked: settings.unloadWhenHidden, click: toggleUnload },
+    { label: "Use less graphics memory (restarts Huddle)", type: "checkbox", checked: settings.lowGraphics, click: toggleLowGraphics },
     { label: "Memory usage…", click: () => void showMemory() },
     ...updateMenuItems(),
     { type: "separator" },
@@ -795,6 +838,7 @@ function buildMenus() {
     { label: "Keep running in the tray when closed", type: "checkbox", checked: settings.closeToTray, click: toggleCloseToTray },
     ...startupItems(),
     { label: "Free up memory when hidden in the tray", type: "checkbox", checked: settings.unloadWhenHidden, click: toggleUnload },
+    { label: "Use less graphics memory (restarts Huddle)", type: "checkbox", checked: settings.lowGraphics, click: toggleLowGraphics },
     { label: "Memory usage…", click: () => void showMemory() },
     { label: "Change server…", click: changeServer },
     ...updateMenuItems(),

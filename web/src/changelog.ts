@@ -11,6 +11,16 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "5.16",
+    date: "2026-10-29",
+    title: "Desktop app: even less memory",
+    changes: [
+      "Desktop app: Huddle now draws with your processor instead of your graphics card by default. The graphics process was the biggest single user of memory, and a chat app doesn't need it. You can switch it back with “Use less graphics memory” in the Huddle menu (it restarts the app).",
+      "Huddle now closes its page after 2 minutes in the tray (it was 3) and tidies up its memory straight away afterwards.",
+      "The Memory usage readout now says whether the page is loaded or unloaded, and which windows are open.",
+    ],
+  },
+  {
     version: "5.15",
     date: "2026-10-28",
     title: "Desktop app: far less memory in the tray",
