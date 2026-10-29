@@ -1098,3 +1098,10 @@ a.pill { color: inherit; }
 .qs-foot { display: flex; flex-wrap: wrap; gap: 6px 16px; padding: 10px 16px; border-top: 1px solid var(--line); font-size: 12px; }
 .qs-foot kbd { padding: 1px 6px; margin-right: 3px; border-radius: 6px; border: 1px solid var(--line); background: color-mix(in srgb, var(--text) 6%, transparent); font: inherit; font-size: 11px; }
 @media (max-width: 560px) { .qs-backdrop { padding-top: 4vh; } .qs-foot span:last-child { display: none; } }
+
+/* installed on a phone: keep clear of the notch, status bar and home bar */
+@media (display-mode: standalone) {
+  .app { padding-top: max(var(--gap), env(safe-area-inset-top)); padding-bottom: max(var(--gap), env(safe-area-inset-bottom)); padding-left: max(var(--gap), env(safe-area-inset-left)); padding-right: max(var(--gap), env(safe-area-inset-right)); }
+  .auth.lp .lp-nav { padding-top: max(14px, env(safe-area-inset-top)); }
+  body { overscroll-behavior: none; }
+}

@@ -24,6 +24,7 @@ import { notifyIncoming, setNotificationActions, setNotificationOpener, updateBa
 import Members from "./Members";
 import { AddServerModal, SettingsModal } from "./Modals";
 import { PollModal } from "./Polls";
+import { useInstall } from "./Install";
 import { QuickSwitcher, type JumpTarget } from "./QuickSwitcher";
 import { MyProfileModal, ProfileCard } from "./ProfileModals";
 import { can, canAny, isOwner } from "./permissions";
@@ -130,6 +131,7 @@ function Main({ me, initialServerId, onUser, onLogout }: { me: User; initialServ
   const [membersOpen, setMembersOpen] = useState(() => (wide() ? localStorage.getItem("huddle.members") !== "closed" : false));
   const [showFriends, setShowFriends] = useState(false);
   const [quick, setQuick] = useState(false); // the Ctrl+K quick switcher
+  const install = useInstall();
   const lastServerRef = useRef<string | null>(null);
 
   const socketRef = useRef<Socket | null>(null);
@@ -820,6 +822,8 @@ function Main({ me, initialServerId, onUser, onLogout }: { me: User; initialServ
           <MoreMenu
             badge={unseenUpdates}
             items={[
+              ...(install.canPrompt ? [{ label: "Install Huddle", hint: "Add it to your home screen or desktop", onClick: () => void install.prompt() }] : []),
+              ...(install.needsIosSteps ? [{ label: "Install Huddle", hint: "Add it to your home screen", onClick: () => void alertDialog("Tap the Share button in Safari, then choose Add to Home Screen. Huddle then opens like a normal app, full screen.", { title: "Install Huddle", confirmLabel: "Got it" }) }] : []),
               { label: "Quick switcher", hint: "Jump anywhere · Ctrl+K", onClick: () => setQuick(true) },
               { label: "Settings", hint: "Profile, theme, notifications and more", onClick: () => setModal("myprofile") },
               { label: "What's new", hint: unseenUpdates ? "New updates" : undefined, onClick: () => { markUpdatesSeen(); setUnseenUpdates(false); setModal("changelog"); } },

@@ -11,6 +11,16 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "5.13",
+    date: "2026-10-28",
+    title: "Huddle on your phone",
+    changes: [
+      "Huddle can now be installed like an app on your phone or computer. Open it in Chrome, Edge or Safari and use ⋯ → Install Huddle.",
+      "Once installed it opens full screen with its own icon, fits around the notch and home bar, and opens faster.",
+      "On iPhone and iPad, tap Share then Add to Home Screen. The ⋯ menu shows the steps.",
+    ],
+  },
+  {
     version: "5.12",
     date: "2026-10-28",
     title: "Reply from notifications",
