@@ -16,7 +16,7 @@ export const CHANGELOG: ChangelogEntry[] = [
     version: "5.19",
     date: "2026-10-30",
     desktop: true,
-    title: "Huddle desktop 2.0",
+    title: "Desktop app: troubleshooting tools",
     changes: [
       "Desktop app: a new Troubleshooting menu (in the Huddle menu and the tray) copies debug info you can paste when asking for help, and opens the folder with Huddle's log files.",
       "Desktop app: updated to the latest version of Electron, the engine Huddle runs on, which brings newer security fixes.",
