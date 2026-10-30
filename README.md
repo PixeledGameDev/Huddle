@@ -207,8 +207,7 @@ direct messages. Their actions otherwise look like any admin's (for example, del
   can't reply to the bot. If a regular user already owns the username `Huddle`, the bot stays off and a message is
   logged at startup until that account is renamed.
 - **Giving it out.** Admins can give Huddle Admin to anyone by username from the panel, and take it from anyone except
-  the permanent accounts. `PixeledFaggy` is permanent, and so is every name in the optional `HUDDLE_ADMIN_USERNAMES`
-  environment variable (comma-separated). These are applied each time the server starts, **only if the account
+  the permanent accounts: every name in the `HUDDLE_ADMIN_USERNAMES` environment variable (comma-separated) is permanent. These are applied each time the server starts, **only if the account
   already exists**, so register the account first, then restart. Granting is never tied to sign-up, so nobody can claim
   it by registering a name early.
 - **Site-wide bans.** From the panel, ban anyone for 1 hour, 1 day, 1 week, 30 days, or permanently, with an optional

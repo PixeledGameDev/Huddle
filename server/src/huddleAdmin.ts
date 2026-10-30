@@ -17,11 +17,10 @@ import { dropUser, emitServer, emitUser, joinAllServers, joinServerRooms, leaveU
  *
  * What it does not do: read anyone's direct messages. DMs have no admins, and that doesn't change here.
  *
- * Accounts listed below (plus HUDDLE_ADMIN_USERNAMES, comma-separated) are granted Huddle Admin whenever the server
+ * Accounts named in HUDDLE_ADMIN_USERNAMES (comma-separated) are granted Huddle Admin whenever the server
  * starts, if the account exists, and can't have it removed through the app. Granting is deliberately not tied to
  * registration, so nobody can get it by signing up with one of these names first.
  */
-const FOUNDING_ADMINS = ["PixeledFaggy"];
 const BOT_NAME = "Huddle";
 
 export async function bootstrapHuddle() {
@@ -33,7 +32,7 @@ export async function bootstrapHuddle() {
     console.error(`A user already has the username "${BOT_NAME}", so the Huddle bot is unavailable until that account is renamed.`);
   }
 
-  const names = [...FOUNDING_ADMINS, ...(process.env.HUDDLE_ADMIN_USERNAMES ?? "").split(",")].map((s) => s.trim().replace(/^@/, "")).filter(Boolean);
+  const names = (process.env.HUDDLE_ADMIN_USERNAMES ?? "").split(",").map((s) => s.trim().replace(/^@/, "")).filter(Boolean);
   for (const name of names) {
     const granted = await q<{ id: string }>(
       `update users set huddle_admin = true, huddle_admin_locked = true where lower(username) = lower($1) and not is_bot and not (huddle_admin and huddle_admin_locked) returning id`,

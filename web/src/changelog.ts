@@ -13,7 +13,7 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
-    version: "5.17",
+    version: "5.18",
     date: "2026-10-29",
     desktop: true,
     title: "What's new after a desktop update",
