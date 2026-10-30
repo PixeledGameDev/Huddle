@@ -5,6 +5,8 @@ interface HuddleDesktopBridge {
   version: string;
   notify(n: { title: string; body: string; tag?: string; target?: { serverId: string; channelId: string } }): void;
   setBadge(count: number, iconDataUrl: string | null): void;
+  /** Present from desktop app 1.9 on: the app's version, and the version it was just updated from (once, the first time the page loads after an update). */
+  getUpdateInfo?(): Promise<{ version: string; justUpdatedFrom: string | null } | null>;
   /** Present from desktop app 1.7 on: lets the app keep popups working while its page is unloaded to save memory. */
   syncNotifyPrefs?(prefs: object): void;
   pageReady?(): void;

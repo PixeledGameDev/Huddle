@@ -1125,3 +1125,6 @@ html[data-lowmem] .modal, html[data-lowmem] .dlg, html[data-lowmem] .qs, html[da
 html[data-lowmem] .toast, html[data-lowmem] .auth-card, html[data-lowmem] .update-banner, html[data-lowmem] .maint-card, html[data-lowmem] .modal > header { background: var(--panel) !important; }
 html[data-lowmem] .lp-nav { background: var(--bg) !important; }
 html[data-lowmem] .backdrop { background: rgba(5, 8, 18, .78); }
+
+.whatsnew-actions { display: flex; align-items: center; justify-content: space-between; gap: 12px; position: sticky; bottom: 0; padding: 12px 0 4px; background: var(--panel); }
+.whatsnew-actions .primary { padding: 9px 22px; border-radius: 999px; }

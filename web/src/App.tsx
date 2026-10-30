@@ -7,7 +7,8 @@ import Auth from "./Auth";
 import { Logo } from "./Logo";
 import { MaintenancePill, MaintenanceScreen, SiteUpdateBanner, pokeMaintenance, useMaintenance } from "./Maintenance";
 import Changelog from "./Changelog";
-import { hasUnseenUpdates, markUpdatesSeen } from "./changelog";
+import { getSeenVersion, hasUnseenUpdates, LATEST_VERSION, markUpdatesSeen } from "./changelog";
+import WhatsNew from "./WhatsNew";
 import Chat from "./Chat";
 import { InvitePage } from "./Invites";
 import DmPanel from "./DmPanel";
@@ -96,7 +97,7 @@ interface Toast { id: number; text: string; error?: boolean }
 type MsgState = Record<string, { items: Message[]; hasMore: boolean }>;
 type TypingState = Record<string, Record<string, { name: string; until: number }>>;
 type Unread = { channels: Record<string, number>; servers: Record<string, number> };
-type Modal = "add" | "settings" | "legacy" | "friends" | "poll" | "myprofile" | "changelog" | "huddle" | "suggestions" | "themes" | null;
+type Modal = "whatsnew" | "add" | "settings" | "legacy" | "friends" | "poll" | "myprofile" | "changelog" | "huddle" | "suggestions" | "themes" | null;
 
 function Main({ me, initialServerId, onUser, onLogout }: { me: User; initialServerId?: string; onUser: (u: User) => void; onLogout: () => void }) {
   const [servers, setServers] = useState<ServerSummary[]>([]);
@@ -118,6 +119,24 @@ function Main({ me, initialServerId, onUser, onLogout }: { me: User; initialServ
   const [gifsEnabled, setGifsEnabled] = useState(false);
   const [dms, setDms] = useState<DmSummary[]>([]);
   const [unseenUpdates, setUnseenUpdates] = useState(hasUnseenUpdates);
+  const seenAtStart = useRef(getSeenVersion()); // what this browser had seen before this visit, so "what's new" can show only the difference
+
+  // After Huddle has changed since you were last here, show what's new once. Someone brand new has nothing to catch up on.
+  useEffect(() => {
+    if (seenAtStart.current === null) { markUpdatesSeen(); setUnseenUpdates(false); return; }
+    if (seenAtStart.current === LATEST_VERSION) return;
+    const t = window.setTimeout(() => setModal((m) => m ?? "whatsnew"), 1500); // let the app settle first, and never cover something you opened
+    return () => clearTimeout(t);
+  }, []);
+  // The desktop app just installed an update: show what's new once, even if the website itself hasn't changed.
+  const [desktopUpdate, setDesktopUpdate] = useState<string | null>(null);
+  useEffect(() => {
+    window.huddleDesktop?.getUpdateInfo?.().then((info) => {
+      if (!info?.justUpdatedFrom) return;
+      setDesktopUpdate(info.version);
+      window.setTimeout(() => setModal((m) => m ?? "whatsnew"), 1500);
+    }, () => {});
+  }, []);
   // The "Download app" button only appears when there's something to download, and never inside the desktop app itself.
   const [appAvailable, setAppAvailable] = useState(false);
   useEffect(() => {
@@ -966,6 +985,14 @@ function Main({ me, initialServerId, onUser, onLogout }: { me: User; initialServ
       )}
       {modal === "poll" && channel && <PollModal channelName={channel.name} onClose={() => setModal(null)} onCreate={createPoll} />}
       {modal === "changelog" && <Changelog onClose={() => setModal(null)} />}
+      {modal === "whatsnew" && (
+        <WhatsNew
+          since={seenAtStart.current}
+          desktopVersion={desktopUpdate}
+          onClose={() => { markUpdatesSeen(); setUnseenUpdates(false); setModal(null); }}
+          onAll={() => { markUpdatesSeen(); setUnseenUpdates(false); setModal("changelog"); }}
+        />
+      )}
       {modal === "suggestions" && (
         <SuggestionsModal
           admin={!!me.huddleAdmin}

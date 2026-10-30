@@ -41,6 +41,7 @@ contextBridge.exposeInMainWorld("huddleDesktop", {
     return () => ipcRenderer.removeListener("notification-markread", handler);
   },
   // Present from desktop 1.7: lets the app keep notifications working while the page is unloaded to save memory.
+  getUpdateInfo: () => ipcRenderer.invoke("update-info"),
   syncNotifyPrefs: (prefs) => ipcRenderer.send("notify-prefs", prefs),
   pageReady: () => ipcRenderer.send("page-ready"),
   onNotificationClick: (cb) => {

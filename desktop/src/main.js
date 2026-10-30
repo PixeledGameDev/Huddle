@@ -30,6 +30,7 @@ const DEFAULTS = {
   maximized: false,
   launchAtStartup: true, // open Huddle when the person signs in to their computer
   startInBackground: false, // ...and if so, whether to leave the window closed (it's still in the tray)
+  lastRunVersion: null, // the app version that last ran, to notice when an update has just been installed
   lowGraphics: true, // draw with the processor instead of the graphics card: the graphics process is the biggest single user of memory
   unloadWhenHidden: true, // free the page's memory after Huddle has sat hidden in the tray for a while
   notifyPrefs: null, // a copy of the page's notification choices, so popups still follow them while the page is unloaded
@@ -277,6 +278,20 @@ let unloadTimer = null;
 let keepAlive = false; // true while the page is intentionally gone, so closing it doesn't quit the app
 let background = null;
 let pendingTarget = null; // a popup was clicked while the page was gone: open this once it's back
+
+let justUpdatedFrom = null;
+/** Noticing an update: if this isn't the version that last ran, remember what it was updated from until the page asks once. */
+function noteVersionChange() {
+  const now = app.getVersion();
+  if (settings.lastRunVersion && settings.lastRunVersion !== now) justUpdatedFrom = settings.lastRunVersion;
+  if (settings.lastRunVersion !== now) { settings.lastRunVersion = now; saveSettings(); }
+}
+ipcMain.handle("update-info", (e) => {
+  if (!fromHuddle(e)) return null;
+  const info = { version: app.getVersion(), justUpdatedFrom };
+  justUpdatedFrom = null; // only the first page load after an update gets to show it
+  return info;
+});
 
 function armUnload() {
   clearTimeout(unloadTimer);
@@ -883,6 +898,7 @@ if (!app.requestSingleInstanceLock()) {
   app.on("second-instance", showWindow);
   app.whenReady().then(() => {
     loadSettings();
+    noteVersionChange();
     // Huddle needs no browser-style permissions beyond copying to the clipboard and going fullscreen.
     const allowed = new Set(["clipboard-sanitized-write", "fullscreen"]);
     session.defaultSession.setPermissionRequestHandler((_wc, permission, callback) => callback(allowed.has(permission)));

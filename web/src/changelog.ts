@@ -7,11 +7,33 @@ export interface ChangelogEntry {
   date: string; // YYYY-MM-DD
   title: string;
   changes: string[];
+  /** Mostly about the desktop app: shown after a desktop update even if the website itself hasn't changed since you last looked. */
+  desktop?: boolean;
 }
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "5.17",
+    date: "2026-10-29",
+    desktop: true,
+    title: "What's new after a desktop update",
+    changes: [
+      "Desktop app: after Huddle updates itself, it now shows what's new the first time you open it, even if the website itself hasn't changed.",
+      "Huddle's desktop app now uses about 110 MB while hidden in the tray, down from around 280 MB.",
+    ],
+  },
+  {
+    version: "5.17",
+    date: "2026-10-29",
+    title: "“What's new” after updates",
+    changes: [
+      "After Huddle changes, a What's new window now shows you just what's new since your last visit, once, instead of only a small dot.",
+      "It lists up to the six newest updates, with a link to the full history. Open it any time from the ⋯ menu.",
+    ],
+  },
+  {
     version: "5.16",
+    desktop: true,
     date: "2026-10-29",
     title: "Desktop app: even less memory",
     changes: [
@@ -22,6 +44,7 @@ export const CHANGELOG: ChangelogEntry[] = [
   },
   {
     version: "5.15",
+    desktop: true,
     date: "2026-10-28",
     title: "Desktop app: far less memory in the tray",
     changes: [
@@ -33,6 +56,7 @@ export const CHANGELOG: ChangelogEntry[] = [
   },
   {
     version: "5.14",
+    desktop: true,
     date: "2026-10-28",
     title: "Lower memory use",
     changes: [
@@ -53,6 +77,7 @@ export const CHANGELOG: ChangelogEntry[] = [
   },
   {
     version: "5.12",
+    desktop: true,
     date: "2026-10-28",
     title: "Reply from notifications",
     changes: [
@@ -74,6 +99,7 @@ export const CHANGELOG: ChangelogEntry[] = [
   },
   {
     version: "5.10",
+    desktop: true,
     date: "2026-10-28",
     title: "Unread dot in the desktop tray",
     changes: [
@@ -83,6 +109,7 @@ export const CHANGELOG: ChangelogEntry[] = [
   },
   {
     version: "5.9",
+    desktop: true,
     date: "2026-10-28",
     title: "Desktop app 1.4",
     changes: [
@@ -112,6 +139,7 @@ export const CHANGELOG: ChangelogEntry[] = [
   },
   {
     version: "5.6",
+    desktop: true,
     date: "2026-10-27",
     title: "A better desktop installer",
     changes: [
@@ -122,6 +150,7 @@ export const CHANGELOG: ChangelogEntry[] = [
   },
   {
     version: "5.5",
+    desktop: true,
     date: "2026-10-27",
     title: "Desktop app updates on the splash screen",
     changes: [
@@ -416,6 +445,21 @@ export const CHANGELOG: ChangelogEntry[] = [
 
 export const LATEST_VERSION = CHANGELOG[0].version;
 const SEEN_KEY = "huddle.seenVersion";
+
+/** The version this browser last looked at, or null if it never has (a brand-new visitor, or cleared storage). */
+export function getSeenVersion(): string | null {
+  try {
+    return localStorage.getItem(SEEN_KEY);
+  } catch {
+    return null;
+  }
+}
+
+/** The entries added since `seen`, newest first. If that version isn't in the log any more, the newest few. */
+export function entriesSince(seen: string | null): ChangelogEntry[] {
+  const i = CHANGELOG.findIndex((e) => e.version === seen);
+  return i >= 0 ? CHANGELOG.slice(0, i) : CHANGELOG.slice(0, 3);
+}
 
 export function hasUnseenUpdates(): boolean {
   try {
