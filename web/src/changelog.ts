@@ -13,6 +13,16 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "5.19",
+    date: "2026-10-30",
+    desktop: true,
+    title: "Huddle desktop 2.0",
+    changes: [
+      "Desktop app: a new Troubleshooting menu (in the Huddle menu and the tray) copies debug info you can paste when asking for help, and opens the folder with Huddle's log files.",
+      "Desktop app: updated to the latest version of Electron, the engine Huddle runs on, which brings newer security fixes.",
+    ],
+  },
+  {
     version: "5.18",
     date: "2026-10-29",
     desktop: true,

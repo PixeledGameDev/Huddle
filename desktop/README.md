@@ -6,6 +6,8 @@ window. It doesn't contain Huddle itself: it loads your server's web app, so it'
 
 ## Run it
 
+You need Node 22 or newer.
+
 ```
 cd desktop
 npm install
@@ -109,3 +111,14 @@ that isn't your Huddle server. Browser permissions such as camera, microphone an
 
 `npm test` checks the address handling and link-safety helpers. The rest (windows, tray, notifications) needs a real
 desktop to try out.
+
+## Logs and troubleshooting
+
+Open the Huddle menu (or right-click the tray icon) → **Troubleshooting**:
+
+- **Copy debug info** puts the app's versions, settings, memory use and the latest log lines on the clipboard, ready to
+  paste when asking for help. It never includes messages, passwords or sign-in details, and only the server's host name.
+- **Open logs folder** opens the folder with `huddle.log` (and the two previous ones, `huddle.1.log` and `huddle.2.log`).
+  They are small and roll over by themselves. On Windows the folder is `%APPDATA%\Huddle\logs`.
+
+If the app itself ever crashes, a crash report is saved on your computer (and only there; nothing is sent anywhere).

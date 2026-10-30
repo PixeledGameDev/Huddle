@@ -1,11 +1,13 @@
 const { io: socketIo } = require("socket.io-client");
 const { Background } = require("./background");
-const { app, BrowserWindow, Menu, Tray, Notification, ipcMain, nativeImage, net, screen, session, shell, webContents } = require("electron");
+const { app, BrowserWindow, clipboard, crashReporter, Menu, Tray, Notification, ipcMain, nativeImage, net, screen, session, shell, webContents } = require("electron");;
 const fs = require("node:fs");
 const path = require("node:path");
 const { fileURLToPath } = require("node:url");
 const { normalizeServerUrl, sameOrigin, isSafeExternal } = require("./url");
 const { updateFeedUrl, canAutoUpdate, createUpdater } = require("./update");
+const { createLogger } = require("./log");
+const { formatDebugInfo } = require("./debuginfo");
 
 /**
  * Huddle desktop: a window onto your Huddle server, plus the desktop extras (system notifications, an unread badge,
@@ -21,6 +23,17 @@ const TRAY_ICON = path.join(__dirname, "..", "build", "tray.png");
 const TRAY_ICON_UNREAD = path.join(__dirname, "..", "build", "tray-unread.png");
 
 app.setAppUserModelId("app.huddle.desktop");
+
+// ---------- log file and crash reports ----------
+// Errors and crashes go to a small rotating log in the app's data folder (Troubleshooting → Open logs folder).
+// Crash reports are kept on this computer only; nothing is ever sent anywhere.
+const logger = createLogger({ dir: path.join(app.getPath("userData"), "logs"), echo: !app.isPackaged });
+try { crashReporter.start({ uploadToServer: false, compress: true }); } catch (e) { logger.error("Crash reports unavailable", e); }
+process.on("uncaughtExceptionMonitor", (e) => logger.error("Uncaught error", e)); // only watches: the usual behavior still happens
+process.on("unhandledRejection", (e) => logger.error("Unhandled rejection", e));
+app.on("render-process-gone", (_e, wc, d) => logger.error(`Page process gone (${d?.reason}, exit ${d?.exitCode}):`, wc?.getURL?.() ?? ""));
+app.on("child-process-gone", (_e, d) => logger.error(`${d?.type} process gone (${d?.reason}, exit ${d?.exitCode})`, d?.name ?? ""));
+logger.info(`Huddle ${app.getVersion()} starting · Electron ${process.versions.electron} · ${process.platform} ${process.arch}${app.isPackaged ? "" : " · from source"}`);
 
 // ---------- settings (a small JSON file in the user's app data folder) ----------
 const DEFAULTS = {
@@ -58,7 +71,7 @@ function saveSettings() {
       fs.mkdirSync(path.dirname(settingsFile()), { recursive: true });
       fs.writeFileSync(settingsFile(), JSON.stringify(settings, null, 2));
     } catch (e) {
-      console.error("Couldn't save settings", e);
+      logger.error("Couldn't save settings", e);
     }
   }, 300);
 }
@@ -193,7 +206,7 @@ function initUpdater() {
     const { autoUpdater } = require("electron-updater");
     updater = createUpdater({
       autoUpdater,
-      log: (...a) => console.error(...a),
+      log: (...a) => logger.error(...a),
       onState: (state) => {
         buildMenus();
         for (const w of BrowserWindow.getAllWindows()) if (w !== splash && !w.isDestroyed()) w.webContents.send("update:state", state);
@@ -201,7 +214,7 @@ function initUpdater() {
       },
     });
   } catch (e) {
-    console.error("Automatic updates are unavailable", e);
+    logger.error("Automatic updates are unavailable", e);
   }
 }
 const feedUrl = () => updateFeedUrl(serverUrl());
@@ -451,7 +464,7 @@ function createWindow() {
     if (items.length) items.push({ type: "separator" });
     if (params.linkURL && isSafeExternal(params.linkURL)) {
       items.push({ label: "Open link in browser", click: () => void shell.openExternal(params.linkURL) });
-      items.push({ label: "Copy link address", click: () => require("electron").clipboard.writeText(params.linkURL) });
+      items.push({ label: "Copy link address", click: () => clipboard.writeText(params.linkURL) });
       items.push({ type: "separator" });
     }
     if (params.isEditable) items.push({ role: "cut" }, { role: "copy" }, { role: "paste" }, { role: "selectAll" });
@@ -531,7 +544,7 @@ ipcMain.on("notify", (e, n) => {
   try {
     showToast({ title, body: text(n.body, 250), tag, target }); // Huddle's own popup, with a box to reply in
   } catch (err) {
-    console.error("Couldn't show the reply popup, using a system notification", err);
+    logger.error("Couldn't show the reply popup, using a system notification", err);
     showSystemNotification({ title, body: text(n.body, 250), tag, target });
   }
   if (win && !win.isFocused()) win.flashFrame(true);
@@ -722,31 +735,84 @@ async function toggleLowGraphics(item) {
 }
 
 // ---------- memory readout ----------
-/** Shows how much memory Huddle is using, split by part, so it's clear what is big. */
-async function showMemory() {
+/** How much memory Huddle is using, split by part (in MB), and whether the page is loaded. */
+function measureMemory() {
   const mb = (kb) => Math.round(kb / 1024);
   const titles = new Map();
   for (const wc of webContents.getAllWebContents()) {
     try { titles.set(wc.getOSProcessId(), wc.getTitle() || "Huddle"); } catch { /* already closed */ }
   }
-  const groups = { Page: 0, Graphics: 0, Main: 0, Other: 0 };
+  const kbs = { Page: 0, Graphics: 0, Main: 0, Other: 0 };
   const windows = new Set();
   let total = 0;
   for (const p of app.getAppMetrics()) {
     const kb = p.memory?.privateBytes ?? p.memory?.workingSetSize ?? 0;
     total += kb;
     const g = p.type === "Tab" ? "Page" : p.type === "GPU" ? "Graphics" : p.type === "Browser" ? "Main" : "Other";
-    groups[g] += kb;
+    kbs[g] += kb;
     if (p.type === "Tab" && titles.has(p.pid)) windows.add(titles.get(p.pid));
   }
-  const loaded = !!win && !win.isDestroyed();
-  const lines = Object.entries(groups).filter(([, v]) => v > 0).map(([k, v]) => `${k}: ${mb(v)} MB`).join("\n");
+  const groups = Object.fromEntries(Object.entries(kbs).map(([k, v]) => [k, mb(v)]));
+  return { total: mb(total), groups, windows: [...windows], pageLoaded: !!win && !win.isDestroyed() };
+}
+/** Shows how much memory Huddle is using, split by part, so it's clear what is big. */
+async function showMemory() {
+  const m = measureMemory();
+  const lines = Object.entries(m.groups).filter(([, v]) => v > 0).map(([k, v]) => `${k}: ${v} MB`).join("\n");
   await showDialog({
     type: "info",
-    message: `Huddle is using about ${mb(total)} MB`,
-    detail: `${lines}\n\n${loaded ? "The Huddle page is loaded." : "The Huddle page is unloaded to save memory."}${windows.size ? `\nOpen: ${[...windows].join(", ")}` : ""}\nGraphics: ${settings.lowGraphics ? "software drawing (low memory)" : "graphics card"}`,
+    message: `Huddle is using about ${m.total} MB`,
+    detail: `${lines}\n\n${m.pageLoaded ? "The Huddle page is loaded." : "The Huddle page is unloaded to save memory."}${m.windows.length ? `\nOpen: ${m.windows.join(", ")}` : ""}\nGraphics: ${settings.lowGraphics ? "software drawing (low memory)" : "graphics card"}`,
   });
 }
+
+// ---------- troubleshooting ----------
+function countCrashDumps() {
+  let n = 0;
+  const walk = (dir, depth) => {
+    try {
+      for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+        if (e.isDirectory() && depth < 3) walk(path.join(dir, e.name), depth + 1);
+        else if (e.name.endsWith(".dmp")) n++;
+      }
+    } catch { /* no crash folder yet */ }
+  };
+  walk(app.getPath("crashDumps"), 0);
+  return n;
+}
+async function copyDebugInfo() {
+  const m = measureMemory();
+  clipboard.writeText(formatDebugInfo({
+    appVersion: app.getVersion(),
+    packaged: app.isPackaged,
+    electron: process.versions.electron,
+    chrome: process.versions.chrome,
+    node: process.versions.node,
+    platform: process.platform,
+    arch: process.arch,
+    osVersion: process.getSystemVersion(),
+    serverUrl: serverUrl(),
+    uptimeSeconds: process.uptime(),
+    update: updater?.getState() ?? { status: "unavailable" },
+    memory: m,
+    settings,
+    crashDumps: countCrashDumps(),
+    logTail: logger.tail(25),
+  }));
+  await showDialog({ type: "info", message: "Debug info copied.", detail: "Paste it wherever you're asking for help. It has versions, settings and the latest log lines, but no messages, passwords or sign-in details." });
+}
+async function openLogsFolder() {
+  try { fs.mkdirSync(logger.dir, { recursive: true }); } catch { /* shell.openPath reports it below */ }
+  const err = await shell.openPath(logger.dir);
+  if (err) await showDialog({ type: "warning", message: "Couldn't open the logs folder.", detail: logger.dir });
+}
+const troubleshootingItem = () => ({
+  label: "Troubleshooting",
+  submenu: [
+    { label: "Copy debug info", click: () => void copyDebugInfo() },
+    { label: "Open logs folder", click: () => void openLogsFolder() },
+  ],
+});
 
 // ---------- starting with the computer ----------
 /** True when the system started Huddle at sign-in with the "background" choice (see applyStartup). */
@@ -768,7 +834,7 @@ function applyStartup() {
       app.setLoginItemSettings({ openAtLogin: settings.launchAtStartup, openAsHidden: settings.startInBackground, args });
     }
   } catch (e) {
-    console.error("Couldn't update the start-with-computer setting", e);
+    logger.error("Couldn't update the start-with-computer setting", e);
   }
 }
 function setStartup(patch) {
@@ -820,6 +886,7 @@ function huddleMenuTemplate() {
     { label: "Free up memory when hidden in the tray", type: "checkbox", checked: settings.unloadWhenHidden, click: toggleUnload },
     { label: "Use less graphics memory (restarts Huddle)", type: "checkbox", checked: settings.lowGraphics, click: toggleLowGraphics },
     { label: "Memory usage…", click: () => void showMemory() },
+    troubleshootingItem(),
     ...updateMenuItems(),
     { type: "separator" },
     { label: "Zoom in", accelerator: "CmdOrCtrl+=", click: () => zoom(0.5) },
@@ -855,6 +922,7 @@ function buildMenus() {
     { label: "Free up memory when hidden in the tray", type: "checkbox", checked: settings.unloadWhenHidden, click: toggleUnload },
     { label: "Use less graphics memory (restarts Huddle)", type: "checkbox", checked: settings.lowGraphics, click: toggleLowGraphics },
     { label: "Memory usage…", click: () => void showMemory() },
+    troubleshootingItem(),
     { label: "Change server…", click: changeServer },
     ...updateMenuItems(),
     { type: "separator" },
@@ -912,7 +980,7 @@ if (!app.requestSingleInstanceLock()) {
     if (!startHidden) showSplash();
     setSplash("Starting…");
     startupUpdate()
-      .catch((e) => { console.error("Startup update check failed", e); return "none"; })
+      .catch((e) => { logger.error("Startup update check failed", e); return "none"; })
       .then((outcome) => {
         if (outcome === "installing") return; // the installer takes over from here
         setSplash("Opening Huddle…");
