@@ -51,6 +51,13 @@ class Background {
     this.socket = null;
     this.ctx = { meId: null, presence: "online", dmIds: new Set(), serverNames: new Map(), prefs: getPrefs() };
     this.unread = new Map(); // channelId -> how many
+    this.idle = false; // the computer is idle: told to the server so others see "Idle" (when the person's status is Online)
+  }
+
+  /** The computer went idle or came back. Tells the server now if connected, and again after any reconnect. */
+  setIdle(idle) {
+    this.idle = !!idle;
+    if (this.socket?.connected) this.socket.emit("presence.auto", { idle: this.idle });
   }
 
   async get(path) {
@@ -80,6 +87,7 @@ class Background {
         s.on("presence.self", (p) => { this.ctx.presence = p?.presence ?? "online"; });
         s.on("server.removed", () => {});
         s.on("connect", () => { // after a reconnect, learn about servers and conversations joined meanwhile
+          if (this.idle) s.emit("presence.auto", { idle: true });
           this.get("/api/servers").then((r) => { this.ctx.serverNames = new Map(r.servers.map((x) => [x.id, x.name])); }, () => {});
           this.get("/api/dms").then((r) => { this.ctx.dmIds = new Set(r.dms.map((d) => d.id)); }, () => {});
         });

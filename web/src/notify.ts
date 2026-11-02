@@ -1,4 +1,5 @@
 import { plainPreview } from "./format";
+import { DEFAULT_QUIET, isQuiet, sanitizeQuiet, type QuietHours } from "./quiet";
 import type { Message } from "./types";
 
 /**
@@ -16,17 +17,22 @@ export interface NotifyPrefs {
   dms: boolean;
   mentions: boolean;
   everyone: boolean;
+  quiet: QuietHours; // a daily window with no popups or sounds
 }
+/** The on/off choices (everything in NotifyPrefs except the quiet-hours schedule). */
+export type NotifyFlag = Exclude<keyof NotifyPrefs, "quiet">;
 export type Target = { serverId: string; channelId: string };
 
 const KEY = "huddle.notifications";
-const DEFAULTS: NotifyPrefs = { enabled: true, sound: true, preview: true, dms: true, mentions: true, everyone: true };
+const DEFAULTS: NotifyPrefs = { enabled: true, sound: true, preview: true, dms: true, mentions: true, everyone: true, quiet: DEFAULT_QUIET };
+const FLAGS: NotifyFlag[] = ["enabled", "sound", "preview", "dms", "mentions", "everyone"];
 
 export function loadNotifyPrefs(): NotifyPrefs {
   try {
     const p = JSON.parse(localStorage.getItem(KEY) ?? "{}");
-    const out = { ...DEFAULTS };
-    for (const k of Object.keys(DEFAULTS) as (keyof NotifyPrefs)[]) if (typeof p[k] === "boolean") out[k] = p[k];
+    const out: NotifyPrefs = { ...DEFAULTS };
+    for (const k of FLAGS) if (typeof p[k] === "boolean") out[k] = p[k];
+    out.quiet = sanitizeQuiet(p.quiet);
     return out;
   } catch {
     return { ...DEFAULTS };
@@ -125,6 +131,7 @@ export type Kind = "dm" | "mention" | "everyone";
 export function notifyIncoming(m: Message, kind: Kind, where: { serverName: string }) {
   const p = loadNotifyPrefs();
   if (!p.enabled || !(kind === "dm" ? p.dms : kind === "mention" ? p.mentions : p.everyone)) return;
+  if (isQuiet(p.quiet)) return; // quiet hours: no sound, no popup (the unread badge still counts)
   if (p.sound) playChime();
   if (document.hasFocus()) return; // you're looking at Huddle; the in-app badge and toast are enough
 

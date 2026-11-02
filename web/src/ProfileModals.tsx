@@ -313,7 +313,7 @@ export function MyProfileModal({ me, onClose, onUser, onDeleted, onError, onOpen
   const TABS: { id: SettingsTab; label: string; icon: string }[] = [
     { id: "profile", label: "Profile", icon: "👤" },
     { id: "theme", label: "Theme", icon: "🎨" },
-    { id: "startup", label: "Startup", icon: "🚀" },
+    { id: "startup", label: "Desktop app", icon: "🖥️" },
     { id: "notifications", label: "Notifications", icon: "🔔" },
     { id: "account", label: "Account", icon: "🔒" },
   ];

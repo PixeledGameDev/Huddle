@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "build": "tsc -p .",
-    "typecheck": "tsc -p . --noEmit"
+    "typecheck": "tsc -p . --noEmit",
+    "test": "tsx --test test/*.test.ts"
   },
   "dependencies": {
     "@node-rs/argon2": "^2.0.2",

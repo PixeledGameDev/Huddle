@@ -1,6 +1,6 @@
 const { io: socketIo } = require("socket.io-client");
 const { Background } = require("./background");
-const { app, BrowserWindow, clipboard, crashReporter, Menu, Tray, Notification, ipcMain, nativeImage, net, screen, session, shell, webContents } = require("electron");;
+const { app, BrowserWindow, clipboard, crashReporter, Menu, Tray, Notification, ipcMain, nativeImage, net, powerMonitor, screen, session, shell, webContents } = require("electron");;
 const fs = require("node:fs");
 const path = require("node:path");
 const { fileURLToPath } = require("node:url");
@@ -8,6 +8,9 @@ const { normalizeServerUrl, sameOrigin, isSafeExternal } = require("./url");
 const { updateFeedUrl, canAutoUpdate, createUpdater } = require("./update");
 const { createLogger } = require("./log");
 const { formatDebugInfo } = require("./debuginfo");
+const { isQuiet, sanitizeQuiet } = require("./quiet");
+const { createIdleTracker, sanitizeIdleSettings } = require("./idle");
+const { createUpdateScheduler, createUpdateNotifier } = require("./updatecheck");
 
 /**
  * Huddle desktop: a window onto your Huddle server, plus the desktop extras (system notifications, an unread badge,
@@ -47,6 +50,8 @@ const DEFAULTS = {
   lowGraphics: true, // draw with the processor instead of the graphics card: the graphics process is the biggest single user of memory
   unloadWhenHidden: true, // free the page's memory after Huddle has sat hidden in the tray for a while
   notifyPrefs: null, // a copy of the page's notification choices, so popups still follow them while the page is unloaded
+  autoIdle: true, // show as Idle to others after some time away from the computer
+  autoIdleMinutes: 10,
 };
 let settings = { ...DEFAULTS };
 const settingsFile = () => path.join(app.getPath("userData"), "settings.json");
@@ -198,7 +203,6 @@ ipcMain.on("dialog:size", (e, height) => {
 
 // ---------- automatic updates ----------
 let updater = null;
-const UPDATE_CHECK_EVERY_MS = 4 * 60 * 60 * 1000;
 
 function initUpdater() {
   if (!canAutoUpdate({ isPackaged: app.isPackaged, platform: process.platform, env: process.env })) return;
@@ -210,7 +214,7 @@ function initUpdater() {
       onState: (state) => {
         buildMenus();
         for (const w of BrowserWindow.getAllWindows()) if (w !== splash && !w.isDestroyed()) w.webContents.send("update:state", state);
-        if (state.status === "ready") announceUpdate(state);
+        updateNotifier?.consider(state);
       },
     });
   } catch (e) {
@@ -218,14 +222,31 @@ function initUpdater() {
   }
 }
 const feedUrl = () => updateFeedUrl(serverUrl());
-let announcedVersion = null;
-/** Tells the person (once per version) that an update is waiting, even if the window is closed to the tray. */
-function announceUpdate(state) {
-  if (announcedVersion === state.version || !Notification.isSupported()) return;
-  announcedVersion = state.version;
-  const note = new Notification({ title: "Huddle update ready", body: `Version ${state.version} is downloaded. Click to restart and install it.`, silent: true, icon: fs.existsSync(ICON) ? ICON : undefined });
-  note.on("click", installUpdate);
-  note.show();
+let updateScheduler = null;
+let updateNotifier = null;
+/**
+ * Looks for updates every 45 minutes, soon after the computer wakes up or the window is opened, and again within minutes if a
+ * check fails (a free server may still be waking up). When an update is ready a Huddle popup says so, with a reminder a day later.
+ */
+function startUpdateChecks() {
+  if (!updater) return;
+  updateNotifier = createUpdateNotifier({ show: showUpdateReady, isQuiet: quietNow });
+  updateScheduler = createUpdateScheduler({ check: () => updater.check(feedUrl()) });
+  updateScheduler.start();
+  setInterval(() => updateNotifier.consider(updater.getState()), 60 * 60_000).unref(); // reminders, and a popup held back by quiet hours
+  updateNotifier.consider(updater.getState());
+}
+/** "Update ready" popup, with Restart now / Later. Falls back to a system notification if the popup can't be drawn. */
+function showUpdateReady(version) {
+  try {
+    showToast({ title: `Huddle ${version} is ready`, body: "Restart Huddle to finish updating.", tag: "huddle-update", target: null, update: version });
+  } catch (e) {
+    logger.error("Couldn't show the update popup, using a system notification", e);
+    if (!Notification.isSupported()) return;
+    const note = new Notification({ title: "Huddle update ready", body: `Version ${version} is downloaded. Click to restart and install it.`, silent: true, icon: fs.existsSync(ICON) ? ICON : undefined });
+    note.on("click", installUpdate);
+    note.show();
+  }
 }
 function installUpdate() {
   if (updater?.getState().status !== "ready") return;
@@ -286,7 +307,9 @@ function visibleBounds(b) {
 // A Huddle window is a whole browser page (hundreds of MB). After it has been hidden in the tray for a few minutes it is closed
 // for real and a small connection in this process takes over: messages for you still pop up, and clicking one rebuilds the page.
 const UNLOAD_AFTER_MS = 2 * 60_000;
-const DEFAULT_NOTIFY = { enabled: true, sound: true, preview: true, dms: true, mentions: true, everyone: true };
+const DEFAULT_NOTIFY = { enabled: true, sound: true, preview: true, dms: true, mentions: true, everyone: true, quiet: { enabled: false, from: "22:00", to: "07:00" } };
+/** Quiet hours are on and it's inside them: no popups, sounds or flashing (badges and the tray dot still update). */
+const quietNow = () => isQuiet(settings.notifyPrefs?.quiet);
 let unloadTimer = null;
 let keepAlive = false; // true while the page is intentionally gone, so closing it doesn't quit the app
 let background = null;
@@ -319,14 +342,16 @@ async function unloadWindow() {
     getPrefs: () => ({ ...DEFAULT_NOTIFY, ...(settings.notifyPrefs ?? {}) }),
     io: socketIo,
     onNote: (note) => {
+      if (quietNow()) return;
       showToast(note);
       if (bg.ctx.prefs.sound) shell.beep();
     },
     onUnread: (count) => {
-      tray?.setToolTip(count ? `Huddle (${count} unread)` : "Huddle");
-      setTrayUnread(count > 0);
+      unreadCount = count;
+      refreshTray();
     },
   });
+  bg.setIdle(idleTracker?.isIdle() ?? false);
   // Only let go of the page once the replacement is really listening. If it can't connect (offline, signed out), keep the page.
   if (!(await bg.start())) { bg.stop(); armUnload(); return; }
   if (quitting || !win || win.isDestroyed() || win.isVisible()) { bg.stop(); return; }
@@ -364,7 +389,8 @@ ipcMain.on("page-ready", (e) => { // the page has set up its listeners: hand ove
 ipcMain.on("notify-prefs", (e, p) => {
   if (!fromHuddle(e) || !p || typeof p !== "object") return;
   const out = {};
-  for (const k of Object.keys(DEFAULT_NOTIFY)) out[k] = typeof p[k] === "boolean" ? p[k] : DEFAULT_NOTIFY[k];
+  for (const k of Object.keys(DEFAULT_NOTIFY)) if (k !== "quiet") out[k] = typeof p[k] === "boolean" ? p[k] : DEFAULT_NOTIFY[k];
+  out.quiet = sanitizeQuiet(p.quiet);
   settings.notifyPrefs = out;
   saveSettings();
 });
@@ -485,6 +511,7 @@ function showSetup() {
   void win?.loadFile(SETUP_PAGE);
 }
 function showWindow() {
+  updateScheduler?.poke(); // opening Huddle is a good moment to look for an update
   if (!win) return createWindow();
   if (win.isMinimized()) win.restore();
   win.show();
@@ -539,6 +566,7 @@ ipcMain.on("notify", (e, n) => {
   if (!fromHuddle(e) || !n || typeof n !== "object") return;
   const title = text(n.title, 100);
   if (!title) return;
+  if (quietNow() && n.tag !== "huddle-test") return; // quiet hours, except the "Send a test" button, which should always answer
   const target = n.target && UUID.test(n.target.serverId) && UUID.test(n.target.channelId) ? { serverId: n.target.serverId, channelId: n.target.channelId } : null;
   const tag = text(n.tag, 64);
   try {
@@ -583,15 +611,17 @@ function closeToast(t) {
   if (!t.win.isDestroyed()) t.win.close();
   layoutToasts();
 }
-function armToast(t, ms = 9000) {
+function armToast(t, ms = t.ms ?? 9000) {
   clearTimeout(t.timer);
   if (!t.held) t.timer = setTimeout(() => closeToast(t), ms);
 }
-function showToast({ title, body, tag, target }) {
-  const content = { title, body, canReply: !!target };
+function showToast({ title, body, tag, target, update = null }) {
+  const actions = update ? [{ id: "restart", label: "Restart now", primary: true }, { id: "later", label: "Later" }] : [];
+  const content = { title, body, canReply: !!target, actions };
   const existing = tag ? toasts.find((t) => t.tag === tag && !t.win.isDestroyed()) : null;
   if (existing) { // another message in the same conversation: update the popup instead of stacking a new one
     existing.target = target;
+    existing.update = update;
     existing.win.webContents.send("toast:show", content);
     armToast(existing);
     return;
@@ -612,7 +642,7 @@ function showToast({ title, body, tag, target }) {
     title: "Huddle",
     webPreferences: { preload: path.join(__dirname, "toast-preload.js"), contextIsolation: true, sandbox: true, nodeIntegration: false },
   });
-  const t = { win: w, tag, target, timer: null, held: false, content };
+  const t = { win: w, tag, target, timer: null, held: false, content, update, ms: update ? 25_000 : undefined };
   toasts.unshift(t);
   if (toasts.length > MAX_TOASTS) closeToast(toasts[toasts.length - 1]);
   layoutToasts();
@@ -629,6 +659,17 @@ ipcMain.on("toast:ready", (e) => {
   armToast(t);
 });
 ipcMain.on("toast:close", (e) => { const t = toastFor(e); if (t) closeToast(t); });
+ipcMain.on("toast:action", (e, id) => {
+  const t = toastFor(e);
+  if (!t?.update) return;
+  if (id === "restart") {
+    closeToast(t);
+    installUpdate();
+  } else if (id === "later") {
+    updateNotifier?.snooze();
+    closeToast(t);
+  }
+});
 ipcMain.on("toast:hold", (e, on) => {
   const t = toastFor(e);
   if (!t) return;
@@ -701,8 +742,8 @@ ipcMain.on("badge", (e, p) => {
     const ok = count > 0 && typeof p.iconDataUrl === "string" && p.iconDataUrl.startsWith("data:image/png;base64,") && p.iconDataUrl.length < 60000;
     win.setOverlayIcon(ok ? nativeImage.createFromDataURL(p.iconDataUrl) : null, count ? `${count} unread` : "");
   }
-  tray?.setToolTip(count ? `Huddle (${count} unread)` : "Huddle");
-  setTrayUnread(count > 0);
+  unreadCount = count;
+  refreshTray();
 });
 
 function toggleUnload(item) {
@@ -814,6 +855,41 @@ const troubleshootingItem = () => ({
   ],
 });
 
+// ---------- away from the computer ----------
+let idleTracker = null;
+const idleState = () => ({ enabled: settings.autoIdle, minutes: settings.autoIdleMinutes, idle: idleTracker?.isIdle() ?? false });
+/** After a while without keyboard or mouse use (or a locked screen, or sleep) Huddle tells the server you're away, and when you're back. */
+function initIdle() {
+  idleTracker = createIdleTracker({
+    getIdleSeconds: () => powerMonitor.getSystemIdleTime(),
+    enabled: settings.autoIdle,
+    minutes: settings.autoIdleMinutes,
+    onChange: (idle) => {
+      background?.setIdle(idle);
+      if (win && !win.isDestroyed()) win.webContents.send("idle:change", idle);
+    },
+  });
+  setInterval(() => idleTracker.check(), 15_000).unref();
+  powerMonitor.on("lock-screen", () => idleTracker.setLocked(true));
+  powerMonitor.on("suspend", () => idleTracker.setLocked(true));
+  const back = () => {
+    idleTracker.setLocked(false);
+    setTimeout(() => updateScheduler?.poke(), 15_000).unref(); // give the network a moment to come back, then look for an update
+  };
+  powerMonitor.on("unlock-screen", back);
+  powerMonitor.on("resume", back);
+}
+ipcMain.handle("idle:get", (e) => (fromHuddle(e) ? idleState() : null));
+ipcMain.handle("idle:set", (e, v) => {
+  if (!fromHuddle(e) || !v || typeof v !== "object") return null;
+  const next = sanitizeIdleSettings(v, { enabled: settings.autoIdle, minutes: settings.autoIdleMinutes });
+  settings.autoIdle = next.enabled;
+  settings.autoIdleMinutes = next.minutes;
+  saveSettings();
+  idleTracker?.configure(next);
+  return idleState();
+});
+
 // ---------- starting with the computer ----------
 /** True when the system started Huddle at sign-in with the "background" choice (see applyStartup). */
 const launchedHidden = process.argv.includes("--hidden") || (() => { try { return !!app.getLoginItemSettings().wasOpenedAsHidden; } catch { return false; } })();
@@ -868,8 +944,9 @@ function changeServer() {
   showWindow();
   showSetup();
 }
-function updateMenuItems() {
+function updateMenuItems({ hideReady = false } = {}) {
   const s = updater?.getState();
+  if (s?.status === "ready" && hideReady) return []; // the tray menu shows it at the top instead
   const items = [{ type: "separator" }];
   if (s?.status === "ready") items.push({ label: `Restart to update to ${s.version}`, click: installUpdate });
   else if (s?.status === "downloading") items.push({ label: `Downloading update${s.percent ? ` (${s.percent}%)` : ""}…`, enabled: false });
@@ -915,7 +992,10 @@ ipcMain.on("titlebar:colors", (e, c) => {
 });
 
 function buildMenus() {
+  const ready = updater?.getState();
+  const updateReady = ready?.status === "ready";
   const trayItems = [
+    ...(updateReady ? [{ label: `Restart to update to ${ready.version}`, click: installUpdate }, { type: "separator" }] : []),
     { label: "Open Huddle", click: showWindow },
     { label: "Keep running in the tray when closed", type: "checkbox", checked: settings.closeToTray, click: toggleCloseToTray },
     ...startupItems(),
@@ -924,11 +1004,12 @@ function buildMenus() {
     { label: "Memory usage…", click: () => void showMemory() },
     troubleshootingItem(),
     { label: "Change server…", click: changeServer },
-    ...updateMenuItems(),
+    ...updateMenuItems({ hideReady: updateReady }),
     { type: "separator" },
     { label: "Quit Huddle", click: () => { quitting = true; app.quit(); } },
   ];
   tray?.setContextMenu(Menu.buildFromTemplate(trayItems));
+  refreshTray();
 
   if (isMac) {
     // macOS always has a menu bar at the top of the screen, so keep a normal one there.
@@ -940,6 +1021,14 @@ function buildMenus() {
 }
 // The tray icon gets a red dot while there are unread messages, so you can tell at a glance without opening Huddle.
 let trayImages = null;
+let unreadCount = 0;
+/** The tray's hover text and dot: how many unread messages, and whether an update is waiting. */
+function refreshTray() {
+  if (!tray) return;
+  const ready = updater?.getState().status === "ready";
+  tray.setToolTip(`Huddle${unreadCount ? ` (${unreadCount} unread)` : ""}${ready ? " · update ready" : ""}`);
+  setTrayUnread(unreadCount > 0);
+}
 function setTrayUnread(unread) {
   if (!tray || !trayImages) return;
   tray.setImage(unread ? trayImages.unread : trayImages.normal);
@@ -972,6 +1061,7 @@ if (!app.requestSingleInstanceLock()) {
     session.defaultSession.setPermissionRequestHandler((_wc, permission, callback) => callback(allowed.has(permission)));
     session.defaultSession.setPermissionCheckHandler((_wc, permission) => allowed.has(permission));
     createTray();
+    initIdle();
     applyStartup();
     // Opened by the computer at sign-in with "background" chosen: no splash and no window (needs the tray to get back in).
     startHidden = launchedHidden && settings.launchAtStartup && settings.startInBackground && !!tray;
@@ -986,9 +1076,7 @@ if (!app.requestSingleInstanceLock()) {
         setSplash("Opening Huddle…");
         if (!win) createWindow();
         app.on("activate", showWindow);
-        if (updater) {
-          setInterval(() => void updater.check(feedUrl()), UPDATE_CHECK_EVERY_MS).unref();
-        }
+        startUpdateChecks();
       });
   });
   app.on("before-quit", () => { quitting = true; stopBackground(); });

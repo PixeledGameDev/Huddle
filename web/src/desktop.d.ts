@@ -25,7 +25,12 @@ interface HuddleDesktopBridge {
   /** Present from desktop app 1.3 on. */
   getStartup?(): Promise<{ supported: boolean; launch: boolean; background: boolean } | null>;
   setStartup?(v: { launch: boolean; background: boolean }): Promise<{ supported: boolean; launch: boolean; background: boolean } | null>;
+  /** Present from desktop app 1.9.2 on: showing as Idle to others after time away from the computer (or a locked screen). `idle` is true right now. */
+  getIdleSettings?(): Promise<DesktopIdleSettings | null>;
+  setIdleSettings?(v: { enabled: boolean; minutes: number }): Promise<DesktopIdleSettings | null>;
+  onIdleChange?(cb: (idle: boolean) => void): () => void;
 }
+interface DesktopIdleSettings { enabled: boolean; minutes: number; idle: boolean }
 interface DesktopUpdateState { status: "idle" | "checking" | "downloading" | "ready" | "error" | "unsupported"; version?: string; percent?: number; message?: string; upToDate?: boolean }
 interface Window {
   huddleDesktop?: HuddleDesktopBridge;

@@ -4,6 +4,7 @@ import { userFromCookie } from "./auth";
 import { one, q } from "./db";
 import { inMaintenance } from "./maintenance";
 import { isHuddleAdmin } from "./perms";
+import { effectiveStatus } from "./idlestatus";
 
 let io: IOServer;
 const online = new Map<string, Set<string>>(); // userId -> socket ids
@@ -12,11 +13,16 @@ export type Presence = "online" | "idle" | "dnd" | "invisible";
 export type PublicStatus = "online" | "idle" | "dnd" | "offline";
 const presenceOf = new Map<string, Presence>(); // what each connected person chose
 
+/**
+ * Connections (from the desktop app) that say their computer is idle: no keyboard or mouse use for a while, or the screen
+ * is locked. It only matters for someone who chose "Online": they then look Idle, but only when every one of their open
+ * connections is idle, so being active on your phone or in a browser tab keeps you Online. It never changes what the person chose.
+ */
+const idleSockets = new Set<string>();
+
 /** What other people see: someone who is invisible looks offline. */
 export function statusOf(userId: string): PublicStatus {
-  if (!online.has(userId)) return "offline";
-  const p = presenceOf.get(userId) ?? "online";
-  return p === "invisible" ? "offline" : p;
+  return effectiveStatus(presenceOf.get(userId) ?? "online", online.get(userId) ?? [], idleSockets);
 }
 export const isOnline = (userId: string) => statusOf(userId) !== "offline";
 /** Everyone with an open connection, including people who appear offline (used for vote eligibility). */
@@ -98,8 +104,11 @@ export function initRealtime(httpServer: http.Server) {
 
       const set = online.get(user.id) ?? new Set<string>();
       const first = set.size === 0;
+      const before = statusOf(user.id);
       set.add(socket.id);
       online.set(user.id, set);
+      // A new connection that hasn't said it's idle brings someone who looked Idle back to Online.
+      if (!first && statusOf(user.id) !== before) void announcePresence(user.id).catch(() => {});
       if (first) {
         const chosen = await one<{ presence: Presence }>(`select presence from users where id = $1`, [user.id]);
         presenceOf.set(user.id, chosen?.presence ?? "online");
@@ -123,11 +132,30 @@ export function initRealtime(httpServer: http.Server) {
       }
     });
 
+    // The desktop app says its computer is idle (or back). Changes closer together than a second are ignored.
+    let lastAuto = 0;
+    socket.on("presence.auto", (p: { idle?: unknown }) => {
+      const t = Date.now();
+      if (typeof p?.idle !== "boolean" || t - lastAuto < 1000) return;
+      lastAuto = t;
+      const before = statusOf(user.id);
+      if (p.idle) idleSockets.add(socket.id);
+      else idleSockets.delete(socket.id);
+      if (statusOf(user.id) !== before) void announcePresence(user.id).catch(() => {});
+    });
+
     socket.on("disconnecting", () => {
       const rooms = [...socket.rooms].filter((r) => r.startsWith("server:"));
       const set = online.get(user.id);
-      if (!set) return;
+      if (!set) {
+        idleSockets.delete(socket.id);
+        return;
+      }
+      const before = statusOf(user.id);
       set.delete(socket.id);
+      idleSockets.delete(socket.id);
+      // Closing the one connection that was active leaves only idle ones: the person now looks Idle.
+      if (set.size > 0 && statusOf(user.id) !== before) void announcePresence(user.id).catch(() => {});
       if (set.size === 0) {
         const wasVisible = statusOf(user.id) !== "offline";
         online.delete(user.id);

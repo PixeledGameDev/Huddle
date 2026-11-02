@@ -13,6 +13,18 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "5.20",
+    date: "2026-11-02",
+    desktop: true,
+    title: "Desktop app: update popups, Idle status and quiet hours",
+    changes: [
+      "Desktop app: when an update is ready you get a Huddle popup with Restart now and Later buttons, and a reminder the next day if you wait. The tray menu also puts a restart button at the top.",
+      "Desktop app: Huddle now looks for updates about every 45 minutes, when your computer wakes up and when you open the window, and tries again within minutes if the server was asleep.",
+      "Desktop app: you show as Idle to others after 10 minutes away from your computer, or when the screen is locked. It only applies while your status is Online and your other devices are inactive. Change the time or turn it off under Profile → Desktop app.",
+      "Quiet hours: choose a time window, like 10 pm to 7 am, when Huddle makes no sounds or popups. Unread counts still update. Find it under Profile → Notifications.",
+    ],
+  },
+  {
     version: "5.19",
     date: "2026-10-30",
     desktop: true,

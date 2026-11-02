@@ -112,6 +112,18 @@ that isn't your Huddle server. Browser permissions such as camera, microphone an
 `npm test` checks the address handling and link-safety helpers. The rest (windows, tray, notifications) needs a real
 desktop to try out.
 
+## Updates, away status and quiet hours
+
+- **Updates:** the app looks for an update about every 45 minutes, when the computer wakes up or unlocks, and when the window is
+  opened. If a check fails (a free server may still be waking up) it tries again after 5 minutes, then 10, 20, 40, and every hour.
+  When an update is downloaded, a Huddle popup offers **Restart now** or **Later**, and reminds again a day later. The tray menu
+  shows a restart item at the top until it is installed.
+- **Idle status:** after 5 to 60 minutes (10 by default) without the keyboard or mouse, or when the screen is locked or the
+  computer sleeps, the app tells the server, and others see you as Idle. It applies only to the status Online, only when all of
+  your open connections are idle, and it never changes the status you chose. Set it under Profile → Desktop app.
+- **Quiet hours:** a daily window (set under Profile → Notifications) with no popups, sounds or taskbar flashing. Unread counts and
+  badges still update.
+
 ## Logs and troubleshooting
 
 Open the Huddle menu (or right-click the tray icon) → **Troubleshooting**:

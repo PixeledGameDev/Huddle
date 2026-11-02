@@ -28,6 +28,14 @@ contextBridge.exposeInMainWorld("huddleDesktop", {
   // Present from desktop 1.3: whether Huddle opens with the computer, and whether it shows its window when it does.
   getStartup: () => ipcRenderer.invoke("startup:get"),
   setStartup: (v) => ipcRenderer.invoke("startup:set", v),
+  // Present from desktop 1.9.2: showing as Idle after time away from the computer. onIdleChange(true/false) fires when it starts and ends.
+  getIdleSettings: () => ipcRenderer.invoke("idle:get"),
+  setIdleSettings: (v) => ipcRenderer.invoke("idle:set", v),
+  onIdleChange: (cb) => {
+    const handler = (_event, idle) => cb(!!idle);
+    ipcRenderer.on("idle:change", handler);
+    return () => ipcRenderer.removeListener("idle:change", handler);
+  },
   // Present from desktop 1.4: replying to, and marking read, a message straight from its popup.
   onNotificationReply: (cb) => {
     const handler = (_event, r) => cb(r);

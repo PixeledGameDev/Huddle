@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { loadNotifyPrefs, permissionState, requestPermission, saveNotifyPrefs, sendTestNotification, type NotifyPrefs, type Permission } from "./notify";
+import { loadNotifyPrefs, permissionState, requestPermission, saveNotifyPrefs, sendTestNotification, type NotifyFlag, type NotifyPrefs, type Permission } from "./notify";
+import { isQuiet } from "./quiet";
 
 /** The "Notifications" section of Profile & appearance. */
 export function NotificationSettings() {
@@ -12,7 +13,7 @@ export function NotificationSettings() {
     setP(next);
     saveNotifyPrefs(next);
   };
-  const box = (key: keyof NotifyPrefs, label: string, disabled = false) => (
+  const box = (key: NotifyFlag, label: string, disabled = false) => (
     <label className="check">
       <input type="checkbox" checked={p[key]} disabled={disabled} onChange={(e) => update({ [key]: e.target.checked })} /> {label}
     </label>
@@ -28,6 +29,16 @@ export function NotificationSettings() {
         {box("everyone", "When someone uses @everyone")}
         {box("sound", "Play a sound")}
         {box("preview", "Show message text in notifications")}
+      </fieldset>
+      <label className="check">
+        <input type="checkbox" checked={p.quiet.enabled} onChange={(e) => update({ quiet: { ...p.quiet, enabled: e.target.checked } })} /> Quiet hours: no popups or sounds during these times
+      </label>
+      <fieldset className="stack tight" disabled={!p.quiet.enabled}>
+        <div className="row">
+          <label>From <input type="time" value={p.quiet.from} onChange={(e) => update({ quiet: { ...p.quiet, from: e.target.value || p.quiet.from } })} /></label>
+          <label>to <input type="time" value={p.quiet.to} onChange={(e) => update({ quiet: { ...p.quiet, to: e.target.value || p.quiet.to } })} /></label>
+        </div>
+        <small className="muted">Messages still count as unread and show on badges. {isQuiet(p.quiet) && "Quiet hours are active right now."}</small>
       </fieldset>
       {!desktop && perm === "default" && (
         <button type="button" onClick={async () => setPerm(await requestPermission())}>Allow notifications in this browser</button>

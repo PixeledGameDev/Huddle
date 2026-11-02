@@ -5,6 +5,7 @@
   <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'self'; img-src 'self'" />
   <title>Huddle</title>
   <style>
+    [hidden] { display: none !important; } /* the page's own display rules must not bring back what is meant to be hidden */
     html, body { margin: 0; height: 100%; background: transparent; overflow: hidden; }
     body { padding: 10px; box-sizing: border-box; font: 14px "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif; color: #e6e9f2; }
     main {
@@ -26,6 +27,11 @@
     .row { display: flex; gap: 6px; align-items: center; }
     .link { font: inherit; font-size: 12px; font-weight: 600; color: #8ea2f5; background: none; border: 0; cursor: pointer; padding: 2px 4px; }
     .link:hover { text-decoration: underline; }
+    .actions { display: flex; gap: 8px; align-items: center; justify-content: flex-end; }
+    .actions button { font: inherit; font-weight: 600; padding: 7px 16px; border-radius: 999px; border: 1px solid #2d3550; background: transparent; color: #c3cae0; cursor: pointer; }
+    .actions button:hover { background: rgba(255, 255, 255, .08); }
+    .actions button.primary { color: #fff; border-color: #5d7af0; background: #5d7af0; }
+    .actions button.primary:hover { background: #7088f3; }
     .status { flex: 1; font-size: 12px; color: #9aa3bd; text-align: right; }
     .status.err { color: #f07a76; } .status.ok { color: #5cc98a; }
     @keyframes slide { from { opacity: 0; transform: translateX(24px); } }
@@ -37,6 +43,7 @@
     <header><img src="../build/icon.png" alt="" /><b id="title"></b><button class="x" id="close" aria-label="Dismiss">✕</button></header>
     <p class="body" id="body" title="Open in Huddle"></p>
     <div>
+      <div class="actions" id="actions" hidden></div>
       <form id="form" autocomplete="off"><input id="reply" placeholder="Reply…" maxlength="2000" aria-label="Reply" /><button class="send" id="send" disabled>Send</button></form>
       <div class="row"><button class="link" id="read" type="button">Mark as read</button><button class="link" id="open" type="button">Open</button><span class="status" id="status" role="status"></span></div>
     </div>

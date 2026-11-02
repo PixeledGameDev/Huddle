@@ -363,6 +363,12 @@ function Main({ me, initialServerId, onUser, onLogout }: { me: User; initialServ
     socketRef.current = s;
     let connectedBefore = false;
 
+    // The desktop app tells us when the computer is idle (no keyboard or mouse for a while, or a locked screen), so others see "Idle".
+    const desktop = window.huddleDesktop;
+    const tellIdle = (idle: boolean) => { s.emit("presence.auto", { idle }); };
+    s.on("connect", () => { void desktop?.getIdleSettings?.().then((v) => { if (v?.idle) tellIdle(true); }, () => {}); });
+    const stopIdle = desktop?.onIdleChange?.(tellIdle);
+
     s.on("connect", () => {
       if (connectedBefore) {
         // Reconnected: catch up on anything missed while offline.
@@ -471,6 +477,7 @@ function Main({ me, initialServerId, onUser, onLogout }: { me: User; initialServ
     });
 
     return () => {
+      stopIdle?.();
       s.disconnect();
     };
   }, [addMessage, applyReaction, loadMessages, loadServer, onUser, patchMessage, push, refreshDms, removeMessage]);
