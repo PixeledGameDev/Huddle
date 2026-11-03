@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { browserSupportsWebAuthn, startRegistration } from "@simplewebauthn/browser";
 import { api } from "./api";
 import { qrModules } from "./qr";
+import { Icon } from "./Icon";
 
 interface Security {
   totpEnabled: boolean;
@@ -116,7 +117,7 @@ export function SecuritySettings({ onError }: { onError: (e: unknown) => void })
           <ul className="passkey-list">
             {passkeys.map((p) => (
               <li key={p.id}>
-                <span aria-hidden="true">🔑</span>
+                <Icon name="key" />
                 <div>
                   <b>{p.name}</b>
                   <small className="muted">Added {new Date(p.createdAt).toLocaleDateString()}{p.lastUsedAt ? ` · last used ${new Date(p.lastUsedAt).toLocaleDateString()}` : " · never used"}</small>

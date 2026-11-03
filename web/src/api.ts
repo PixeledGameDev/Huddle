@@ -1,4 +1,5 @@
 import type { Attachment } from "./types";
+import { trackUpload } from "./uploadProgress";
 
 export class ApiError extends Error {
   constructor(message: string, public status: number, public data: any) {
@@ -21,17 +22,33 @@ export async function api<T = any>(path: string, method = "GET", body?: unknown)
   return data as T;
 }
 
-/** Uploads one file as a raw body. Throws ApiError with a readable message on failure. */
-export async function uploadFile(channelId: string, file: File): Promise<Attachment> {
-  const res = await fetch(`/api/channels/${channelId}/files?name=${encodeURIComponent(file.name)}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/octet-stream" },
-    body: file,
-    credentials: "same-origin",
+/**
+ * Uploads one file as a raw body. Throws ApiError with a readable message on failure.
+ * (Not fetch, because only XMLHttpRequest reports how much has been sent: the desktop app shows it on the taskbar button.)
+ */
+export function uploadFile(channelId: string, file: File): Promise<Attachment> {
+  const track = trackUpload(file.size);
+  return new Promise<Attachment>((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    const fail = (message: string, status = 0, data: unknown = {}) => {
+      track.done();
+      reject(new ApiError(message, status, data));
+    };
+    xhr.open("POST", `/api/channels/${channelId}/files?name=${encodeURIComponent(file.name)}`);
+    xhr.setRequestHeader("Content-Type", "application/octet-stream");
+    xhr.upload.onprogress = (e) => { if (e.lengthComputable) track.progress(e.loaded); };
+    xhr.onload = () => {
+      let data: any = {};
+      try { data = JSON.parse(xhr.responseText); } catch { /* not JSON */ }
+      if (xhr.status < 200 || xhr.status >= 300) return fail(data.error ?? "Upload failed.", xhr.status, data);
+      track.done();
+      resolve(data.attachment as Attachment);
+    };
+    xhr.onerror = () => fail("Upload failed. Check your connection.");
+    xhr.onabort = () => fail("Upload cancelled.");
+    xhr.ontimeout = () => fail("Upload timed out.");
+    xhr.send(file);
   });
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new ApiError(data.error ?? "Upload failed.", res.status, data);
-  return data.attachment as Attachment;
 }
 
 /** Raw-body upload (images). Throws ApiError with a readable message on failure. */

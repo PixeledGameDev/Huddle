@@ -5,6 +5,7 @@ import { EmojiTab } from "./EmojiSettings";
 import { RolesTab } from "./Roles";
 import type { BanEntry, DeletedMessage, ServerDetail, ServerSummary, Settings } from "./types";
 import { dateTimeOf, extractInviteCode, fmtDuration, fmtSize, hue, squareImage } from "./util";
+import { Icon } from "./Icon";
 
 export function Modal({ title, onClose, children, variant }: { title: string; onClose: () => void; children: React.ReactNode; variant?: "profile" | "settings" }) {
   useEffect(() => {
@@ -16,9 +17,9 @@ export function Modal({ title, onClose, children, variant }: { title: string; on
     <div className="backdrop" onMouseDown={onClose}>
       <div className={variant === "profile" ? "modal profile-modal" : variant === "settings" ? "modal settings-modal" : "modal"} role="dialog" aria-modal="true" aria-label={title} onMouseDown={(e) => e.stopPropagation()}>
         {variant === "profile" ? (
-          <button className="icon ghost modal-close floating" aria-label="Close" onClick={onClose}>✕</button>
+          <button className="icon ghost modal-close floating" aria-label="Close" onClick={onClose}><Icon name="close" /></button>
         ) : (
-          <header><h2>{title}</h2><button className="icon ghost modal-close" aria-label="Close" onClick={onClose}>✕</button></header>
+          <header><h2>{title}</h2><button className="icon ghost modal-close" aria-label="Close" onClick={onClose}><Icon name="close" /></button></header>
         )}
         {children}
       </div>

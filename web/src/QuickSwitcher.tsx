@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Avatar } from "./Avatar";
 import type { Channel, DmSummary, ServerSummary } from "./types";
 import { hue, nameOfUser } from "./util";
+import { Icon } from "./Icon";
 
 export type JumpTarget = { kind: "server" | "channel" | "dm"; serverId: string; channelId?: string };
 
@@ -150,7 +151,7 @@ export function QuickSwitcher({ servers, channels, activeServer, dms, unread, on
             </button>
           ))}
         </div>
-        <footer className="qs-foot muted"><span><kbd>↑</kbd><kbd>↓</kbd> to move</span><span><kbd>Enter</kbd> to open</span><span><kbd>Esc</kbd> to close</span><span>Start with <kbd>#</kbd> for channels or <kbd>@</kbd> for people</span></footer>
+        <footer className="qs-foot muted"><span><kbd><Icon name="arrow-up" /></kbd><kbd><Icon name="arrow-down" /></kbd> to move</span><span><kbd>Enter</kbd> to open</span><span><kbd>Esc</kbd> to close</span><span>Start with <kbd>#</kbd> for channels or <kbd>@</kbd> for people</span></footer>
       </div>
     </div>
   );

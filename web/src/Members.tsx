@@ -4,6 +4,7 @@ import { StatusDot } from "./Status";
 import type { Member, ServerDetail, ServerRole } from "./types";
 import { nameOfUser } from "./util";
 import { useRoster } from "./useRoster";
+import { Icon } from "./Icon";
 
 interface Props {
   server: ServerDetail;
@@ -89,7 +90,7 @@ export default function Members({ server, onOpenProfile, onClose }: Props) {
   const sections = buildSections(server);
   return (
     <aside className="members" aria-label="Members">
-      <header className="members-top"><strong>Members</strong><button className="icon ghost show-sm" onClick={onClose} aria-label="Close member list">✕</button></header>
+      <header className="members-top"><strong>Members</strong><button className="icon ghost show-sm" onClick={onClose} aria-label="Close member list"><Icon name="close" /></button></header>
       {sections.map((s) => <SectionList key={s.key} section={s} server={server} onOpenProfile={onOpenProfile} />)}
     </aside>
   );

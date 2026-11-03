@@ -34,6 +34,7 @@ import { FriendsPanel, MoreMenu } from "./NavParts";
 import type { Channel, DmSummary, Member, Message, Poll, Reaction, ServerDetail, ServerSummary, User, Vote, PublicStatus } from "./types";
 import { actionVerb, fmtDuration, hue, nameOfUser } from "./util";
 import VoteBanner from "./VoteBanner";
+import { Icon } from "./Icon";
 
 export default function App() {
   const [me, setMe] = useState<User | null | undefined>(undefined);
@@ -53,7 +54,7 @@ export default function App() {
   if (me === undefined) return <div className="boot">Loading…</div>;
   if (maint.state.active && !me?.huddleAdmin) {
     if (adminSignIn && !me) {
-      return <Auth onAuth={(u) => { setMe(u); setAdminSignIn(false); }} intro={<><p className="notice" role="status">Huddle is in maintenance. Only Huddle Admins can sign in right now.</p><button type="button" className="link left" onClick={() => setAdminSignIn(false)}>← Back</button></>} />;
+      return <Auth onAuth={(u) => { setMe(u); setAdminSignIn(false); }} intro={<><p className="notice" role="status">Huddle is in maintenance. Only Huddle Admins can sign in right now.</p><button type="button" className="link left" onClick={() => setAdminSignIn(false)}><Icon name="arrow-left" /> Back</button></>} />;
     }
     return (
       <MaintenanceScreen
@@ -771,7 +772,7 @@ function Main({ me, initialServerId, onUser, onLogout }: { me: User; initialServ
       <aside className="nav" aria-label="Navigation">
         <header className="nav-top">
           <div className="brand"><Logo /><strong>Huddle</strong></div>
-          <button className="icon ghost show-sm" onClick={() => setNavOpen(false)} aria-label="Hide navigation">✕</button>
+          <button className="icon ghost show-sm" onClick={() => setNavOpen(false)} aria-label="Hide navigation"><Icon name="close" /></button>
         </header>
 
         <div className="servers" aria-label="Servers">
@@ -814,7 +815,7 @@ function Main({ me, initialServerId, onUser, onLogout }: { me: User; initialServ
                   {(unread.servers[d.id] ?? 0) > 0 && <span className="badge inline" aria-label={`${unread.servers[d.id]} unread`}>{unread.servers[d.id]}</span>}
                 </button>
                 <span className="chan-tools">
-                  <button className="icon ghost" aria-label={`Remove ${nameOfUser(d.user)} from messages`} title="Remove from messages" onClick={() => void removeDm(d)}>✕</button>
+                  <button className="icon ghost" aria-label={`Remove ${nameOfUser(d.user)} from messages`} title="Remove from messages" onClick={() => void removeDm(d)}><Icon name="close" /></button>
                 </span>
               </div>
             ))}
@@ -828,7 +829,7 @@ function Main({ me, initialServerId, onUser, onLogout }: { me: User; initialServ
               </div>
               <span className="server-actions">
                 <button className="pill sm shine" title="Copy an invite link" onClick={invite}>Invite</button>
-                {hasSettings && <button className="icon ghost" aria-label="Server settings" title="Server settings" onClick={() => setModal("settings")}>⚙</button>}
+                {hasSettings && <button className="icon ghost" aria-label="Server settings" title="Server settings" onClick={() => setModal("settings")}><Icon name="settings" /></button>}
               </span>
             </div>
             <div className="channels">
@@ -844,8 +845,8 @@ function Main({ me, initialServerId, onUser, onLogout }: { me: User; initialServ
                   </button>
                   {canChannels && (
                     <span className="chan-tools">
-                      <button className="icon ghost" aria-label={`Rename #${c.name}`} title="Rename channel" onClick={() => renameChannel(c)}>✎</button>
-                      <button className="icon ghost" aria-label={`Delete #${c.name}`} title="Delete channel" onClick={() => deleteChannel(c)}>✕</button>
+                      <button className="icon ghost" aria-label={`Rename #${c.name}`} title="Rename channel" onClick={() => renameChannel(c)}><Icon name="edit" /></button>
+                      <button className="icon ghost" aria-label={`Delete #${c.name}`} title="Delete channel" onClick={() => deleteChannel(c)}><Icon name="close" /></button>
                     </span>
                   )}
                 </div>
@@ -884,7 +885,7 @@ function Main({ me, initialServerId, onUser, onLogout }: { me: User; initialServ
       <main className="main">
         {inDm && !activeDm ? (
           <>
-          <header className="chat-head topbar"><button className="icon ghost menu-btn" onClick={() => setNavOpen((o) => !o)} aria-label={navOpen ? "Hide navigation" : "Show navigation"} aria-expanded={navOpen}>☰</button></header>
+          <header className="chat-head topbar"><button className="icon ghost menu-btn" onClick={() => setNavOpen((o) => !o)} aria-label={navOpen ? "Hide navigation" : "Show navigation"} aria-expanded={navOpen}><Icon name="menu" /></button></header>
           <div className="welcome">
             <h2>Direct messages</h2>
             <p className="muted">{dms.length ? "Pick a conversation from the Messages tab." : "Open someone's profile in a server and choose Message to start a conversation."}</p>
@@ -892,7 +893,7 @@ function Main({ me, initialServerId, onUser, onLogout }: { me: User; initialServ
           </>
         ) : !inDm && !activeId && servers.length === 0 ? (
           <>
-          <header className="chat-head topbar"><button className="icon ghost menu-btn" onClick={() => setNavOpen((o) => !o)} aria-label={navOpen ? "Hide navigation" : "Show navigation"} aria-expanded={navOpen}>☰</button></header>
+          <header className="chat-head topbar"><button className="icon ghost menu-btn" onClick={() => setNavOpen((o) => !o)} aria-label={navOpen ? "Hide navigation" : "Show navigation"} aria-expanded={navOpen}><Icon name="menu" /></button></header>
           <div className="welcome">
             <h2>Welcome, {myName}</h2>
             <p className="muted">Create a server for your friends, or join one with an invite code.</p>

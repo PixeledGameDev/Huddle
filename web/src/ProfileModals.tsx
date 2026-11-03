@@ -14,6 +14,7 @@ import { loadPrefs, savePrefs, type Prefs } from "./prefs";
 import { can, canModerateMember } from "./permissions";
 import type { DmPrivacy, Friendship, Member, Permission, ServerDetail, ServerRole, User } from "./types";
 import { actionVerb, bannerImage, hue, nameOfUser, squareImage } from "./util";
+import { Icon, type IconName } from "./Icon";
 
 interface Mutual { id: string; username: string; displayName: string | null; avatarVersion: number; accent: string | null }
 interface ProfileData {
@@ -159,7 +160,7 @@ export function ProfileCard({ userId, serverId, server, meId, onClose, onEdit, o
                 {!data?.blockedByMe && data?.friendship === "none" && <button className="pill" onClick={() => void friendAction("add")}>Add friend</button>}
                 {data?.friendship === "outgoing" && <button className="pill" onClick={() => void friendAction("cancel")}>Cancel request</button>}
                 {data?.friendship === "incoming" && <button className="pill" onClick={() => void friendAction("accept")}>Accept request</button>}
-                {data?.friendship === "friends" && <button className="pill" onClick={() => void friendAction("remove")}>Friends ✓</button>}
+                {data?.friendship === "friends" && <button className="pill" onClick={() => void friendAction("remove")}>Friends <Icon name="check" /></button>}
                 {p.statusText && !data?.blockedByMe && !replying && <button className="pill" onClick={() => setReplying(true)}>Reply to status</button>}
                 <button className="pill danger" onClick={() => void toggleBlock()}>{data?.blockedByMe ? "Unblock" : "Block"}</button>
               </>
@@ -310,12 +311,12 @@ export function MyProfileModal({ me, onClose, onUser, onDeleted, onError, onOpen
   };
 
   const desktop = !!window.huddleDesktop;
-  const TABS: { id: SettingsTab; label: string; icon: string }[] = [
-    { id: "profile", label: "Profile", icon: "👤" },
-    { id: "theme", label: "Theme", icon: "🎨" },
-    { id: "startup", label: "Desktop app", icon: "🖥️" },
-    { id: "notifications", label: "Notifications", icon: "🔔" },
-    { id: "account", label: "Account", icon: "🔒" },
+  const TABS: { id: SettingsTab; label: string; icon: IconName }[] = [
+    { id: "profile", label: "Profile", icon: "user" },
+    { id: "theme", label: "Theme", icon: "palette" },
+    { id: "startup", label: "Desktop app", icon: "monitor" },
+    { id: "notifications", label: "Notifications", icon: "bell" },
+    { id: "account", label: "Account", icon: "lock" },
   ];
   const onTabKey = (e: React.KeyboardEvent) => {
     const i = TABS.findIndex((t) => t.id === tab);
@@ -333,7 +334,7 @@ export function MyProfileModal({ me, onClose, onUser, onDeleted, onError, onOpen
         <div className="settings-tabs" role="tablist" aria-orientation="vertical" aria-label="Settings sections" onKeyDown={onTabKey}>
           {TABS.map((t) => (
             <button key={t.id} id={`settings-tab-${t.id}`} role="tab" type="button" aria-selected={tab === t.id} aria-controls="settings-panel" tabIndex={tab === t.id ? 0 : -1} className={tab === t.id ? "on" : ""} onClick={() => setTab(t.id)}>
-              <span aria-hidden="true">{t.icon}</span>{t.label}
+              <span aria-hidden="true"><Icon name={t.icon} /></span>{t.label}
             </button>
           ))}
         </div>
@@ -378,7 +379,7 @@ export function MyProfileModal({ me, onClose, onUser, onDeleted, onError, onOpen
                 </div>
                 <div className="save-row">
                   <button className="primary" disabled={busy}>{busy ? "Saving…" : "Save profile"}</button>
-                  {saved && <span className="saved" role="status">✓ Saved</span>}
+                  {saved && <span className="saved" role="status"><Icon name="check" /> Saved</span>}
                 </div>
               </form>
             </>

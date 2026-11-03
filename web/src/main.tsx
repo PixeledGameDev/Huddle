@@ -3,6 +3,7 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import App from "./App";
 import { DialogHost } from "./Dialogs";
+import { IconSprite } from "./Icon";
 import { TitleBar } from "./TitleBar";
 import { applyPrefs, loadPrefs } from "./prefs";
 import { applyActiveTheme } from "./themes";
@@ -14,6 +15,7 @@ window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () 
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
+    <IconSprite />
     <TitleBar />
     <App />
     <DialogHost />

@@ -43,7 +43,7 @@ form.addEventListener("submit", async (e) => {
   busy = true; send.disabled = true; say("Sending…");
   const r = await window.huddleToast.reply(value).catch(() => ({ ok: false, error: "Couldn't send." }));
   busy = false;
-  if (r?.ok) { input.value = ""; input.disabled = true; say("Sent ✓", "ok"); }
+  if (r?.ok) { input.value = ""; input.disabled = true; say("Sent", "ok"); }
   else { send.disabled = !input.value.trim(); say(r?.error || "Couldn't send.", "err"); }
 });
 $("close").addEventListener("click", () => window.huddleToast.close());

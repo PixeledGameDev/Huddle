@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { api } from "./api";
 import { Logo } from "./Logo";
+import { Icon, type IconName } from "./Icon";
 
 export interface SiteStats { users: number; servers: number }
 
@@ -135,7 +136,7 @@ export function Preview() {
             <div className="lp-msg">
               <span className="lp-av" style={avatar(160)}>J</span>
               <div><b>Jordan</b> <small>Today 7:44 PM</small>
-                <p className="lp-quote">↪ Maya: Who&rsquo;s in for game night&hellip;</p>
+                <p className="lp-quote"><Icon name="reply" /> Maya: Who&rsquo;s in for game night&hellip;</p>
                 <p>Count me in. I&rsquo;ll bring snacks.</p>
               </div>
             </div>
@@ -159,15 +160,15 @@ export function Preview() {
   );
 }
 
-const FEATURES: { icon: string; title: string; text: string }[] = [
-  { icon: "🏠", title: "Servers and channels", text: "Make a home for any group and split it into channels. Share an invite link and people are in." },
-  { icon: "⚡", title: "Instant, live chat", text: "Messages, edits, replies, reactions and typing indicators show up for everyone the moment they happen." },
-  { icon: "💬", title: "Direct messages and friends", text: "Chat one to one, keep a friends list, reply to someone's status, and tidy your conversations whenever you like." },
-  { icon: "🎭", title: "Roles and permissions", text: "Ranked roles with fine-grained permissions. Let people pick their own roles, and show them off in the member list." },
-  { icon: "🗳️", title: "Vote moderation", text: "Turn it on and members can vote to kick, time out or temporarily ban, so moderation isn't left to one person." },
-  { icon: "🎉", title: "Polls, GIFs and stickers", text: "Settle debates with polls, and give every server its own custom emoji and stickers." },
-  { icon: "🎨", title: "Make it yours", text: "Profile pictures, banners, bios, statuses, accent colours and name fonts, plus light and dark themes." },
-  { icon: "🔒", title: "Private and safe", text: "Authenticator-app sign-in, recovery codes, blocking, and your choice of who can start a conversation with you." },
+const FEATURES: { icon: IconName; title: string; text: string }[] = [
+  { icon: "home", title: "Servers and channels", text: "Make a home for any group and split it into channels. Share an invite link and people are in." },
+  { icon: "zap", title: "Instant, live chat", text: "Messages, edits, replies, reactions and typing indicators show up for everyone the moment they happen." },
+  { icon: "message", title: "Direct messages and friends", text: "Chat one to one, keep a friends list, reply to someone's status, and tidy your conversations whenever you like." },
+  { icon: "shield", title: "Roles and permissions", text: "Ranked roles with fine-grained permissions. Let people pick their own roles, and show them off in the member list." },
+  { icon: "vote", title: "Vote moderation", text: "Turn it on and members can vote to kick, time out or temporarily ban, so moderation isn't left to one person." },
+  { icon: "sparkles", title: "Polls, GIFs and stickers", text: "Settle debates with polls, and give every server its own custom emoji and stickers." },
+  { icon: "palette", title: "Make it yours", text: "Profile pictures, banners, bios, statuses, accent colours and name fonts, plus light and dark themes." },
+  { icon: "lock", title: "Private and safe", text: "Authenticator-app sign-in, recovery codes, blocking, and your choice of who can start a conversation with you." },
 ];
 
 export function Features() {
@@ -181,7 +182,7 @@ export function Features() {
       <div className="lp-grid">
         {FEATURES.map((f, i) => (
           <article key={f.title} className="lp-card lp-reveal" style={{ transitionDelay: `${(i % 4) * 70}ms` }}>
-            <span className="lp-ico" aria-hidden="true">{f.icon}</span>
+            <span className="lp-ico" aria-hidden="true"><Icon name={f.icon} /></span>
             <h3>{f.title}</h3>
             <p>{f.text}</p>
           </article>
@@ -230,7 +231,7 @@ export function Trust({ showDownload }: { showDownload: boolean }) {
         <h2>Stay in control of your space</h2>
         <ul className="lp-points">
           {points.map(([t, d]) => (
-            <li key={t}><span aria-hidden="true">✓</span><div><b>{t}</b><p>{d}</p></div></li>
+            <li key={t}><span aria-hidden="true"><Icon name="check" /></span><div><b>{t}</b><p>{d}</p></div></li>
           ))}
         </ul>
       </div>
@@ -241,7 +242,7 @@ export function Trust({ showDownload }: { showDownload: boolean }) {
         {showDownload ? (
           <a className="pill primary lp-big" href="/download" target="_blank" rel="noopener">Download the app</a>
         ) : (
-          <p className="lp-sub">You&rsquo;re already using it. 🎉</p>
+          <p className="lp-sub">You&rsquo;re already using it.</p>
         )}
       </div>
     </section>

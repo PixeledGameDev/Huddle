@@ -7,6 +7,7 @@ import { Emoji } from "./Rich";
 import { searchShortcodes } from "./shortcodes";
 import { useServerAssets } from "./ServerAssets";
 import { fmtSize, looksLikeVideo, MAX_ATTACHMENTS, MAX_FILE_BYTES, MAX_VIDEO_BYTES, nameOfUser, timeOf } from "./util";
+import { Icon } from "./Icon";
 
 export interface ComposerHandle { addFiles: (files: FileList | File[]) => void }
 
@@ -192,7 +193,7 @@ const Composer = forwardRef<ComposerHandle, Props>(function Composer(props, ref)
         <div className="reply-bar">
           <span>Replying to <strong>{replyTo.authorName}</strong></span>
           <span className="reply-snippet">{plainPreview(replyTo.content).slice(0, 80) || "an attachment"}</span>
-          <button className="icon" aria-label="Cancel reply" onClick={onCancelReply}>✕</button>
+          <button className="icon" aria-label="Cancel reply" onClick={onCancelReply}><Icon name="close" /></button>
         </div>
       )}
       {pending.length > 0 && (
@@ -201,13 +202,13 @@ const Composer = forwardRef<ComposerHandle, Props>(function Composer(props, ref)
             <li key={p.key} className={p.status}>
               <span className="pending-name">{p.name}</span>
               <small>{p.status === "uploading" ? "Uploading…" : p.status === "error" ? p.error : fmtSize(p.size)}</small>
-              <button className="icon" aria-label={`Remove ${p.name}`} onClick={() => setPending((x) => x.filter((y) => y.key !== p.key))}>✕</button>
+              <button className="icon" aria-label={`Remove ${p.name}`} onClick={() => setPending((x) => x.filter((y) => y.key !== p.key))}><Icon name="close" /></button>
             </li>
           ))}
         </ul>
       )}
       <div className="compose-row">
-        <button className="tool" aria-label="Attach files" title="Attach files (or drop or paste them)" disabled={pending.length >= MAX_ATTACHMENTS} onClick={() => fileRef.current?.click()}>📎</button>
+        <button className="tool" aria-label="Attach files" title="Attach files (or drop or paste them)" disabled={pending.length >= MAX_ATTACHMENTS} onClick={() => fileRef.current?.click()}><Icon name="paperclip" /></button>
         <input ref={fileRef} type="file" multiple hidden onChange={(e) => { if (e.target.files) addFiles(e.target.files); e.target.value = ""; }} />
         <div className="ta-wrap">
           {suggestions.length > 0 && (
@@ -253,7 +254,7 @@ const Composer = forwardRef<ComposerHandle, Props>(function Composer(props, ref)
           />
         </div>
         <div className="tool-wrap" onClick={(e) => e.stopPropagation()}>
-          <button className="tool" aria-label="Create a poll" title="Create a poll" onClick={onOpenPoll}>📊</button>
+          <button className="tool" aria-label="Create a poll" title="Create a poll" onClick={onOpenPoll}><Icon name="poll" /></button>
         </div>
         {gifsEnabled && (
           <div className="tool-wrap" onClick={(e) => e.stopPropagation()}>
@@ -266,7 +267,7 @@ const Composer = forwardRef<ComposerHandle, Props>(function Composer(props, ref)
         <div className="tool-wrap" onClick={(e) => e.stopPropagation()}>
           {assets.stickers.length > 0 && (
             <span className="tool-wrap" onClick={(e) => e.stopPropagation()}>
-              <button className="tool" aria-label="Send a sticker" title="Stickers" aria-expanded={panel === STICKER_PANEL} onClick={() => setPanel(panel === STICKER_PANEL ? null : STICKER_PANEL)}>🏷</button>
+              <button className="tool" aria-label="Send a sticker" title="Stickers" aria-expanded={panel === STICKER_PANEL} onClick={() => setPanel(panel === STICKER_PANEL ? null : STICKER_PANEL)}><Icon name="sticker" /></button>
               {panel === STICKER_PANEL && (
                 <div className="picker up sticker-picker" role="menu">
                   {assets.stickers.map((s) => (
@@ -278,7 +279,7 @@ const Composer = forwardRef<ComposerHandle, Props>(function Composer(props, ref)
               )}
             </span>
           )}
-          <button className="tool" aria-label="Add emoji" aria-expanded={panel === "emoji"} onClick={() => setPanel(panel === "emoji" ? null : "emoji")}>☺</button>
+          <button className="tool" aria-label="Add emoji" aria-expanded={panel === "emoji"} onClick={() => setPanel(panel === "emoji" ? null : "emoji")}><Icon name="smile" /></button>
           {panel === "emoji" && <EmojiPicker className="up" onPick={insertEmoji} />}
         </div>
       </div>

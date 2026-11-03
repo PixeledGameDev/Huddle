@@ -124,6 +124,17 @@ desktop to try out.
 - **Quiet hours:** a daily window (set under Profile → Notifications) with no popups, sounds or taskbar flashing. Unread counts and
   badges still update.
 
+## Links, the taskbar and the right-click menu
+
+- **`huddle://` links:** the installed app registers itself for `huddle://invite/CODE` (and `huddle://open`). The invite page in a
+  browser shows "Open this invite there". Only those two exact shapes are accepted: any website can hand the app a link, so
+  anything else is ignored, and an invite link only opens the invite page, where joining still needs a click.
+  The link is registered when the installed app starts (a development copy never registers it).
+- **Taskbar (Windows):** right-click the Huddle icon for Open Huddle, Check for updates and Quit Huddle (which closes the tray icon too).
+  While files upload, the taskbar button shows their combined progress.
+- **Right-click menu:** suggestions and "Add to dictionary" for a misspelled word, "Copy image" and "Save image as…" on pictures,
+  and "Open link in browser" / "Copy link address" on web links.
+
 ## Logs and troubleshooting
 
 Open the Huddle menu (or right-click the tray icon) → **Troubleshooting**:

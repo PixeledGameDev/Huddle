@@ -18,7 +18,10 @@ export function fetchInvite(code: string, fresh = false): Promise<InviteInfo> {
 }
 
 /** The card itself: server icon, name, and counts, with an action slot. */
-export function InviteCard({ info, code, action, label = "You've been invited to join" }: { info: InviteInfo; code: string; action?: ReactNode; label?: string }) {
+/** Only Windows has the desktop app, and only a browser needs the link (the app itself is already open). */
+const canOpenInApp = () => !window.huddleDesktop && /Windows/i.test(navigator.userAgent);
+
+export function InviteCard({ info, code, action, label = "You've been invited to join", openInApp = false }: { info: InviteInfo; code: string; action?: ReactNode; label?: string; openInApp?: boolean }) {
   const [badIcon, setBadIcon] = useState(false);
   return (
     <div className="invite-card">
@@ -38,6 +41,9 @@ export function InviteCard({ info, code, action, label = "You've been invited to
         </div>
         {action}
       </div>
+      {openInApp && canOpenInApp() && (
+        <small className="muted">Have the Huddle desktop app? <a href={`huddle://invite/${code}`}>Open this invite there</a></small>
+      )}
     </div>
   );
 }
@@ -100,7 +106,7 @@ export function InvitePage({ code, me, onAuth, onDone }: { code: string; me: Use
       </main>
     );
   }
-  if (!me) return <Auth onAuth={onAuth} intro={<InviteCard info={info} code={code} />} />;
+  if (!me) return <Auth onAuth={onAuth} intro={<InviteCard info={info} code={code} openInApp />} />;
 
   async function join() {
     setBusy(true);
@@ -117,7 +123,7 @@ export function InvitePage({ code, me, onAuth, onDone }: { code: string; me: Use
   return (
     <main className="auth">
       <div className="auth-card">
-        <InviteCard info={info} code={code} />
+        <InviteCard info={info} code={code} openInApp />
         {error && <p className="error" role="alert">{error}</p>}
         {info.joined ? (
           <button className="primary" onClick={() => onDone(info.serverId)}>You're already in. Open it</button>

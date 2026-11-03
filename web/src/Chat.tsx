@@ -5,6 +5,7 @@ import { Avatar } from "./Avatar";
 import { Name } from "./Name";
 import type { Attachment, Channel, DmSummary, Member, Message, ServerSummary, User } from "./types";
 import { nameOfUser } from "./util";
+import { Icon } from "./Icon";
 
 interface Props {
   channel: Channel | undefined;
@@ -111,7 +112,7 @@ export default function Chat(p: Props) {
       }}
     >
       <header className="chat-head topbar">
-        <button className="icon ghost menu-btn" onClick={p.onToggleNav} aria-label={p.navOpen ? "Hide navigation" : "Show navigation"} aria-expanded={p.navOpen}>☰</button>
+        <button className="icon ghost menu-btn" onClick={p.onToggleNav} aria-label={p.navOpen ? "Hide navigation" : "Show navigation"} aria-expanded={p.navOpen}><Icon name="menu" /></button>
         <div className="title">
           {p.dm ? (
             <span className="dm-head">
@@ -124,7 +125,7 @@ export default function Chat(p: Props) {
           )}
         </div>
         <div className="top-actions">
-          {p.showMembersToggle && <button className="icon ghost" onClick={p.onToggleMembers} aria-label={p.membersOpen ? "Hide member list" : "Show member list"} aria-expanded={p.membersOpen} title="Members">👥</button>}
+          {p.showMembersToggle && <button className="icon ghost" onClick={p.onToggleMembers} aria-label={p.membersOpen ? "Hide member list" : "Show member list"} aria-expanded={p.membersOpen} title="Members"><Icon name="users" /></button>}
         </div>
       </header>
       {dragging && <div className="drop-hint">Drop files to attach them to {p.dm ? nameOfUser(p.dm.user) : `#${channel.name}`}</div>}

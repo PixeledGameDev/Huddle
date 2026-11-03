@@ -6,6 +6,7 @@ import { Name } from "./Name";
 import { StatusDot } from "./Status";
 import type { FriendUser } from "./types";
 import { nameOfUser } from "./util";
+import { Icon } from "./Icon";
 
 interface FriendsData { friends: FriendUser[]; incoming: FriendUser[]; outgoing: FriendUser[] }
 
@@ -37,8 +38,8 @@ export function FriendsPanel({ data, onOpenProfile, onMessage, onError, onOpenFu
           )))}</ul>
         </>
       )}
-      {online.length > 0 && (<><h3 className="group">Online · {online.length}</h3><ul className="list">{online.map((u) => row(u, <button className="icon ghost" aria-label={`Message ${nameOfUser(u)}`} title="Message" onClick={() => onMessage(u.id)}>💬</button>))}</ul></>)}
-      {offline.length > 0 && (<><h3 className="group">Offline · {offline.length}</h3><ul className="list dim">{offline.map((u) => row(u, <button className="icon ghost" aria-label={`Message ${nameOfUser(u)}`} title="Message" onClick={() => onMessage(u.id)}>💬</button>))}</ul></>)}
+      {online.length > 0 && (<><h3 className="group">Online · {online.length}</h3><ul className="list">{online.map((u) => row(u, <button className="icon ghost" aria-label={`Message ${nameOfUser(u)}`} title="Message" onClick={() => onMessage(u.id)}><Icon name="message" /></button>))}</ul></>)}
+      {offline.length > 0 && (<><h3 className="group">Offline · {offline.length}</h3><ul className="list dim">{offline.map((u) => row(u, <button className="icon ghost" aria-label={`Message ${nameOfUser(u)}`} title="Message" onClick={() => onMessage(u.id)}><Icon name="message" /></button>))}</ul></>)}
       {data.friends.length === 0 && data.incoming.length === 0 && <p className="side-empty">No friends yet. Open someone's profile and choose Add friend.</p>}
     </div>
   );

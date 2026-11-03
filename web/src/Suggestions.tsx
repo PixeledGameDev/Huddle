@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { confirmDialog } from "./Dialogs";
 import { api } from "./api";
 import { Modal } from "./Modals";
+import { Icon } from "./Icon";
 
 export interface Suggestion {
   id: string;
@@ -131,7 +132,7 @@ export function SuggestionsModal({ admin, onClose, onNotice, onError }: { admin:
           {items.map((s) => (
             <li key={s.id} className="suggest-item">
               <button className={s.voted ? "vote on" : "vote"} aria-pressed={s.voted} aria-label={`${s.voted ? "Remove your vote from" : "Vote for"} ${s.title}`} onClick={() => vote(s)}>
-                <span aria-hidden="true">▲</span>
+                <Icon name="chevron-up" />
                 <strong>{s.votes}</strong>
               </button>
               <div className="suggest-main">

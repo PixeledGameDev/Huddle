@@ -4,6 +4,7 @@ import { api } from "./api";
 import { Modal } from "./Modals";
 import { PERMISSION_INFO, canEditRole, can, isOwner } from "./permissions";
 import type { Permission, ServerDetail } from "./types";
+import { Icon } from "./Icon";
 
 const PRESET_COLORS = ["#e74c3c", "#e67e22", "#f1c40f", "#2ecc71", "#1abc9c", "#3498db", "#9b59b6", "#e84393"];
 
@@ -99,8 +100,8 @@ export function RolesTab({ server, onError }: { server: ServerDetail; onError: (
                 <span className="role-name"><i className="role-dot big" style={{ background: r.color ?? "var(--dim)" }} />{r.name}<small className="muted"> · {r.memberCount} {r.memberCount === 1 ? "member" : "members"}</small></span>
                 {editable ? (
                   <span className="role-tools">
-                    <button className="icon" aria-label={`Move ${r.name} up`} title="Higher rank" disabled={i === 0 || !canEditRole(server, roles[i - 1])} onClick={() => run(() => api(`/servers/${server.id}/roles/${r.id}/move`, "POST", { direction: "up" }))}>↑</button>
-                    <button className="icon" aria-label={`Move ${r.name} down`} title="Lower rank" disabled={i === roles.length - 1} onClick={() => run(() => api(`/servers/${server.id}/roles/${r.id}/move`, "POST", { direction: "down" }))}>↓</button>
+                    <button className="icon" aria-label={`Move ${r.name} up`} title="Higher rank" disabled={i === 0 || !canEditRole(server, roles[i - 1])} onClick={() => run(() => api(`/servers/${server.id}/roles/${r.id}/move`, "POST", { direction: "up" }))}><Icon name="arrow-up" /></button>
+                    <button className="icon" aria-label={`Move ${r.name} down`} title="Lower rank" disabled={i === roles.length - 1} onClick={() => run(() => api(`/servers/${server.id}/roles/${r.id}/move`, "POST", { direction: "down" }))}><Icon name="arrow-down" /></button>
                     <button onClick={() => setEditing(editing === r.id ? null : r.id)}>{editing === r.id ? "Close" : "Edit"}</button>
                     <button className="danger" onClick={async () => { if (await confirmDialog(`Delete the ${r.name} role? Everyone who has it loses it.`)) void run(() => api(`/servers/${server.id}/roles/${r.id}`, "DELETE")); }}>Delete</button>
                   </span>

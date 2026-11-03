@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Modal } from "./Modals";
 import type { Message, Poll } from "./types";
 import { fmtRemaining } from "./util";
+import { Icon } from "./Icon";
 
 interface CardProps {
   message: Message;
@@ -48,7 +49,7 @@ export function PollCard({ poll, canClose, timedOut, nameOf, onVote, onClose }: 
               onClick={() => toggle(o.id)}
             >
               <span className="poll-bar" style={{ width: `${(o.count / total) * 100}%` }} />
-              <span className="poll-text">{mine ? "✓ " : ""}{o.text}</span>
+              <span className="poll-text">{mine && <><Icon name="check" /> </>}{o.text}</span>
               <span className="poll-count">{o.count}</span>
             </button>
           );
@@ -97,7 +98,7 @@ export function PollModal({ channelName, onClose, onCreate }: { channelName: str
           {options.map((o, i) => (
             <div className="opt-row" key={i}>
               <input value={o} maxLength={80} placeholder={`Option ${i + 1}`} aria-label={`Option ${i + 1}`} onChange={(e) => setOptions((p) => p.map((x, j) => (j === i ? e.target.value : x)))} />
-              {options.length > 2 && <button type="button" className="icon" aria-label={`Remove option ${i + 1}`} onClick={() => setOptions((p) => p.filter((_, j) => j !== i))}>✕</button>}
+              {options.length > 2 && <button type="button" className="icon" aria-label={`Remove option ${i + 1}`} onClick={() => setOptions((p) => p.filter((_, j) => j !== i))}><Icon name="close" /></button>}
             </div>
           ))}
           {options.length < 10 && <button type="button" className="link left" onClick={() => setOptions((p) => [...p, ""])}>+ Add option</button>}

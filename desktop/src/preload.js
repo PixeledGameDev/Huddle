@@ -29,6 +29,8 @@ contextBridge.exposeInMainWorld("huddleDesktop", {
   getStartup: () => ipcRenderer.invoke("startup:get"),
   setStartup: (v) => ipcRenderer.invoke("startup:set", v),
   // Present from desktop 1.9.2: showing as Idle after time away from the computer. onIdleChange(true/false) fires when it starts and ends.
+  // Present from desktop 1.9.3: progress (0 to 1, or -1 for none) on the taskbar button while files upload.
+  setProgress: (fraction) => ipcRenderer.send("progress:set", fraction),
   getIdleSettings: () => ipcRenderer.invoke("idle:get"),
   setIdleSettings: (v) => ipcRenderer.invoke("idle:set", v),
   onIdleChange: (cb) => {

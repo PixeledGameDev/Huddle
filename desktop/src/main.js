@@ -11,6 +11,8 @@ const { formatDebugInfo } = require("./debuginfo");
 const { isQuiet, sanitizeQuiet } = require("./quiet");
 const { createIdleTracker, sanitizeIdleSettings } = require("./idle");
 const { createUpdateScheduler, createUpdateNotifier } = require("./updatecheck");
+const { parseLaunchArgs, invitePath, jumpListTasks } = require("./deeplink");
+const { buildContextMenu } = require("./contextmenu");
 
 /**
  * Huddle desktop: a window onto your Huddle server, plus the desktop extras (system notifications, an unread badge,
@@ -485,16 +487,14 @@ function createWindow() {
     if (isMainFrame && code !== -3) void win?.loadFile(SETUP_PAGE, { query: { failed: "1" } }); // -3 = a navigation that was replaced
   });
   wc.on("context-menu", (_e, params) => {
-    const items = [];
-    for (const word of params.dictionarySuggestions ?? []) items.push({ label: word, click: () => wc.replaceMisspelling(word) });
-    if (items.length) items.push({ type: "separator" });
-    if (params.linkURL && isSafeExternal(params.linkURL)) {
-      items.push({ label: "Open link in browser", click: () => void shell.openExternal(params.linkURL) });
-      items.push({ label: "Copy link address", click: () => clipboard.writeText(params.linkURL) });
-      items.push({ type: "separator" });
-    }
-    if (params.isEditable) items.push({ role: "cut" }, { role: "copy" }, { role: "paste" }, { role: "selectAll" });
-    else if (params.selectionText) items.push({ role: "copy" });
+    const items = buildContextMenu(params, {
+      replaceMisspelling: (w) => wc.replaceMisspelling(w),
+      addToDictionary: (w) => wc.session.addWordToSpellCheckerDictionary(w),
+      openExternal: (u) => void shell.openExternal(u),
+      copyText: (t) => clipboard.writeText(t),
+      copyImage: (x, y) => wc.copyImageAt(x, y),
+      saveImage: (u) => wc.downloadURL(u), // Electron asks where to save it
+    }, { isSafeExternal });
     if (items.length) Menu.buildFromTemplate(items).popup({ window: win });
   });
 
@@ -505,7 +505,9 @@ function loadApp() {
   if (!win) return;
   const url = serverUrl();
   if (!url) return showSetup();
-  void win.loadURL(url).catch(() => {}); // failures are handled by did-fail-load
+  const target = initialPath ? new URL(initialPath, url).toString() : url; // a huddle:// link that arrived while the window was closed
+  initialPath = null;
+  void win.loadURL(target).catch(() => {}); // failures are handled by did-fail-load
 }
 function showSetup() {
   void win?.loadFile(SETUP_PAGE);
@@ -516,6 +518,37 @@ function showWindow() {
   if (win.isMinimized()) win.restore();
   win.show();
   win.focus();
+}
+
+// ---------- links and launch commands ----------
+// huddle://invite/CODE links, and the taskbar jump list's Open / Check for updates / Quit, all arrive as command-line arguments:
+// when Huddle starts, or in the "second instance" that Windows launches while Huddle is already running.
+let initialPath = null; // a page of the Huddle server to open as soon as the window exists
+function openServerPage(pagePath) {
+  const base = serverUrl();
+  if (!base) return showWindow();
+  if (!win || win.isDestroyed()) {
+    initialPath = pagePath; // the window was closed for real: it opens straight on this page
+    return showWindow();
+  }
+  showWindow();
+  void win.loadURL(new URL(pagePath, base).toString()).catch(() => {});
+}
+function handleLaunch(argv) {
+  const a = parseLaunchArgs(argv);
+  if (a.quit) {
+    quitting = true;
+    app.quit();
+    return;
+  }
+  if (a.checkUpdates) {
+    showWindow();
+    void checkNow();
+    return;
+  }
+  const page = invitePath(a.deepLink);
+  if (page) return openServerPage(page);
+  showWindow();
 }
 
 // ---------- who is allowed to talk to the main process ----------
@@ -744,6 +777,12 @@ ipcMain.on("badge", (e, p) => {
   }
   unreadCount = count;
   refreshTray();
+});
+
+/** Upload progress on the taskbar button: 0 to 1, or -1 when nothing is uploading. */
+ipcMain.on("progress:set", (e, f) => {
+  if (!fromHuddle(e) || !win || win.isDestroyed() || typeof f !== "number" || !Number.isFinite(f)) return;
+  win.setProgressBar(f < 0 ? -1 : Math.min(1, f));
 });
 
 function toggleUnload(item) {
@@ -1052,8 +1091,12 @@ app.on("web-contents-created", (_e, contents) => {
 if (!app.requestSingleInstanceLock()) {
   app.quit();
 } else {
-  app.on("second-instance", showWindow);
+  app.on("second-instance", (_e, argv) => handleLaunch(argv));
+  app.on("open-url", (e, url) => { e.preventDefault(); handleLaunch([url]); }); // macOS delivers links this way
   app.whenReady().then(() => {
+    const launch = parseLaunchArgs(process.argv);
+    if (launch.quit) return app.quit(); // "Quit Huddle" from the taskbar when Huddle isn't running: nothing to do
+    initialPath = invitePath(launch.deepLink);
     loadSettings();
     noteVersionChange();
     // Huddle needs no browser-style permissions beyond copying to the clipboard and going fullscreen.
@@ -1062,6 +1105,12 @@ if (!app.requestSingleInstanceLock()) {
     session.defaultSession.setPermissionCheckHandler((_wc, permission) => allowed.has(permission));
     createTray();
     initIdle();
+    if (app.isPackaged) {
+      try { app.setAsDefaultProtocolClient("huddle"); } catch (e) { logger.error("Couldn't register huddle:// links", e); }
+      if (process.platform === "win32") {
+        try { app.setUserTasks(jumpListTasks(process.execPath)); } catch (e) { logger.error("Couldn't set the taskbar jump list", e); }
+      }
+    }
     applyStartup();
     // Opened by the computer at sign-in with "background" chosen: no splash and no window (needs the tray to get back in).
     startHidden = launchedHidden && settings.launchAtStartup && settings.startInBackground && !!tray;

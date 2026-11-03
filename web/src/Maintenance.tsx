@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "./api";
 import { Logo } from "./Logo";
+import { Icon } from "./Icon";
 
 export interface MaintenanceState { active: boolean; endsAt: string | null; startedAt: string | null; message: string | null; now?: string; build?: string }
 const OFF: MaintenanceState = { active: false, endsAt: null, startedAt: null, message: null };
@@ -108,7 +109,7 @@ export function SiteUpdateBanner() {
       <span className="lp-live" aria-hidden="true" />
       <span>Huddle was updated. Reload to get the latest version.</span>
       <button type="button" className="primary" onClick={() => window.location.reload()}>Reload</button>
-      <button type="button" className="icon ghost" aria-label="Dismiss" onClick={() => setHidden(true)}>✕</button>
+      <button type="button" className="icon ghost" aria-label="Dismiss" onClick={() => setHidden(true)}><Icon name="close" /></button>
     </div>
   );
 }

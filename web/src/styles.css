@@ -918,7 +918,7 @@ input:focus, select:focus, textarea:focus { outline: 0; border-color: color-mix(
 button.primary.lp-big, a.primary.lp-big { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
 a.pill { color: inherit; }
 .lp-ticks { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 8px 18px; color: var(--dim); font-size: 14px; font-weight: 600; }
-.lp-ticks li::before { content: "✓"; color: var(--good); margin-right: 6px; font-weight: 800; }
+.lp-ticks li::before { content: ""; display: inline-block; width: 1em; height: 1em; margin-right: 6px; vertical-align: -.15em; background: var(--good); -webkit-mask: var(--ico-check) center / contain no-repeat; mask: var(--ico-check) center / contain no-repeat; }
 .lp-sub { margin: 0; color: var(--dim); font-size: 14px; }
 .lp-sub b { color: var(--text); }
 .lp-form { display: grid; }
@@ -1128,3 +1128,15 @@ html[data-lowmem] .backdrop { background: rgba(5, 8, 18, .78); }
 
 .whatsnew-actions { display: flex; align-items: center; justify-content: space-between; gap: 12px; position: sticky; bottom: 0; padding: 12px 0 4px; background: var(--panel); }
 .whatsnew-actions .primary { padding: 9px 22px; border-radius: 999px; }
+
+/* ---- icons (see Icon.tsx and icons.svg) ---- */
+.ico { width: 1.15em; height: 1.15em; flex: none; vertical-align: -.2em; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+button.icon .ico { width: 1.3em; height: 1.3em; vertical-align: middle; }
+.icon.ghost .ico { width: 18px; height: 18px; }
+.tool .ico { width: 20px; height: 20px; vertical-align: middle; }
+.settings-tabs button span .ico { width: 20px; height: 20px; vertical-align: middle; }
+.lp-ico .ico { width: 26px; height: 26px; vertical-align: middle; }
+.tb-caret .ico { width: 14px; height: 14px; }
+.qs-foot kbd .ico { width: 12px; height: 12px; vertical-align: -.1em; }
+.lp-ticks li span .ico, .saved .ico { width: 1em; height: 1em; stroke-width: 2.6; }
+:root { --ico-check: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5 12.5l4.5 4.5L19 7.5'/%3E%3C/svg%3E"); }

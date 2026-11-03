@@ -13,6 +13,19 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "5.21",
+    date: "2026-11-03",
+    desktop: true,
+    title: "Desktop app: invite links, taskbar menu and new icons",
+    changes: [
+      "Desktop app: invite links can now open straight in the app. On an invite page in your browser, choose \"Open this invite there\". You still decide whether to join.",
+      "Desktop app: right-click the Huddle icon on the taskbar for Open Huddle, Check for updates and Quit Huddle.",
+      "Desktop app: the taskbar icon shows a progress bar while files are uploading.",
+      "Desktop app: right-click a misspelled word to add it to the dictionary, and right-click a picture to copy it or save it.",
+      "New icons: buttons, tabs and menus now use a matching set of drawn icons instead of emoji and symbols, so they look the same on every device and follow your theme colors.",
+    ],
+  },
+  {
     version: "5.20",
     date: "2026-11-02",
     desktop: true,

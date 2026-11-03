@@ -4,6 +4,7 @@ import { api, ApiError } from "./api";
 import { FinalCta, Features, Footer, Hero, Preview, Steps, Trust, useReveal, useSiteStats } from "./Landing";
 import { Logo } from "./Logo";
 import type { User } from "./types";
+import { Icon } from "./Icon";
 
 type Mode = "login" | "register" | "twofa" | "reset";
 
@@ -163,7 +164,7 @@ export default function Auth({ onAuth, intro }: { onAuth: (u: User) => void; int
 
         {mode === "login" && canPasskey && (
           <button type="button" className="pill passkey-btn" disabled={busy} onClick={() => void passkeySignIn()}>
-            <span aria-hidden="true">🔑</span> Sign in with a passkey
+            <Icon name="key" /> Sign in with a passkey
           </button>
         )}
         {mode === "login" && <button type="button" className="link" onClick={() => go("reset")}>Forgot your password?</button>}

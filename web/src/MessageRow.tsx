@@ -11,6 +11,7 @@ import { PollCard } from "./Polls";
 import { Emoji, RichText } from "./Rich";
 import type { Member, Message, ServerSummary, User } from "./types";
 import { fmtSize, inviteCodesIn, nameOfUser, timeOf } from "./util";
+import { Icon } from "./Icon";
 
 interface Props {
   m: Message;
@@ -85,11 +86,11 @@ export default function MessageRow(p: Props) {
   return (
     <div id={`msg-${m.id}`} className={`msg${grouped ? " grouped" : ""}${mentionedMe ? " mentioned" : ""}${p.pickerOpen ? " raised" : ""}${tapped ? " tapped" : ""}`} onClick={(e) => { if (!window.matchMedia("(any-hover: hover)").matches && !(e.target as HTMLElement).closest("button, a, input, textarea, video")) setTapped((t) => !t); }}>
       {m.statusReply && (
-        <div className="reply-ref status-ref"><span className="reply-arrow">↪</span><span>Replied to their status:</span><span className="reply-snippet">“{m.statusReply}”</span></div>
+        <div className="reply-ref status-ref"><span className="reply-arrow"><Icon name="reply" /></span><span>Replied to their status:</span><span className="reply-snippet">“{m.statusReply}”</span></div>
       )}
       {m.replyTo && (
         <button className="reply-ref" onClick={() => p.onJumpTo(m.replyTo!.id)} title="Jump to the original message">
-          <span className="reply-arrow">↪</span>
+          <span className="reply-arrow"><Icon name="reply" /></span>
           <strong>{replyAuthor ? nameOfUser(replyAuthor) : m.replyTo.authorName}</strong>
           <span className="reply-snippet">{plainPreview(m.replyTo.snippet) || (m.replyTo.hasExtra ? "Attachment" : "")}</span>
         </button>
@@ -162,7 +163,7 @@ export default function MessageRow(p: Props) {
         <div className={p.pickerOpen ? "msg-tools open" : "msg-tools"} onClick={(e) => e.stopPropagation()}>
           {!timedOut && (
             <>
-              <button aria-label="Add reaction" aria-expanded={p.pickerOpen} onClick={p.onTogglePicker}>☺+</button>
+              <button aria-label="Add reaction" aria-expanded={p.pickerOpen} onClick={p.onTogglePicker}><Icon name="smile-plus" /></button>
               <button onClick={p.onReply}>Reply</button>
               {isMine && !m.poll && <button onClick={p.onStartEdit}>Edit</button>}
             </>
