@@ -13,6 +13,16 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "5.23",
+    date: "2026-11-04",
+    desktop: true,
+    title: "Huddle desktop 2.0",
+    changes: [
+      "Huddle desktop 2.0 is here. It runs on a much newer engine (Electron 45) with newer security fixes, and brings update popups, an Idle status, quiet hours, invite links, keyboard shortcuts from anywhere and a Troubleshooting menu. The details are in the entries below.",
+      "Desktop app: if Huddle's page ever crashes, it now reloads itself instead of leaving a blank window. If it keeps crashing, Huddle stops and tells you how to get help.",
+    ],
+  },
+  {
     version: "5.22",
     date: "2026-11-04",
     desktop: true,

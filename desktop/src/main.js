@@ -14,6 +14,7 @@ const { createUpdateScheduler, createUpdateNotifier } = require("./updatecheck")
 const { parseLaunchArgs, invitePath, jumpListTasks } = require("./deeplink");
 const { buildContextMenu } = require("./contextmenu");
 const { createHotkeyManager, sanitizeHotkeys } = require("./hotkeys");
+const { createCrashGuard, shouldReload } = require("./crashguard");
 
 /**
  * Huddle desktop: a window onto your Huddle server, plus the desktop extras (system notifications, an unread badge,
@@ -479,6 +480,7 @@ function createWindow() {
   win.on("restore", () => clearTimeout(unloadTimer));
   win.on("closed", () => { win = null; pageReady = false; });
   win.webContents.on("did-start-loading", () => { pageReady = false; }); // until the new page says it is ready again
+  win.webContents.on("render-process-gone", (_e, d) => recoverFromCrash(d?.reason));
 
   // Only Huddle itself loads in this window. Everything else opens in the person's own browser.
   wc.setWindowOpenHandler(({ url }) => {
@@ -559,6 +561,20 @@ function handleLaunch(argv) {
   const page = invitePath(a.deepLink);
   if (page) return openServerPage(page);
   showWindow();
+}
+
+// ---------- recovering from a crashed page ----------
+const crashGuard = createCrashGuard();
+/** The page's process ended unexpectedly: reload it so the window isn't left blank, unless it keeps happening. (It is already logged.) */
+function recoverFromCrash(reason) {
+  if (quitting || !win || win.isDestroyed() || !shouldReload(reason)) return;
+  if (crashGuard.allowReload()) {
+    logger.warn(`Reloading Huddle's page after it stopped (${reason})`);
+    setTimeout(() => { if (win && !win.isDestroyed()) win.webContents.reload(); }, 500);
+    return;
+  }
+  logger.error("Huddle's page keeps stopping; not reloading it again for now");
+  void showDialog({ type: "warning", message: "Huddle's page keeps stopping.", detail: "Close and reopen Huddle. If it keeps happening, open the Huddle menu → Troubleshooting → Copy debug info, and share it when asking for help." });
 }
 
 // ---------- global shortcuts ----------

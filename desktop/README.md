@@ -150,6 +150,11 @@ message or mention). They are off until set, because any combination might alrea
 - While you are choosing a shortcut, the existing ones are switched off so pressing them doesn't trigger them.
 - Not available on Linux under Wayland, which doesn't allow global shortcuts.
 
+## If Huddle's page crashes
+
+The app reloads it by itself. If it crashes three times within five minutes it stops reloading and shows a message instead, so a
+broken page can't loop forever. Every crash is written to the log (see below).
+
 ## Logs and troubleshooting
 
 Open the Huddle menu (or right-click the tray icon) → **Troubleshooting**:
@@ -160,3 +165,11 @@ Open the Huddle menu (or right-click the tray icon) → **Troubleshooting**:
   They are small and roll over by themselves. On Windows the folder is `%APPDATA%\Huddle\logs`.
 
 If the app itself ever crashes, a crash report is saved on your computer (and only there; nothing is sent anywhere).
+
+## Not in 2.0
+
+These were considered and left for later: **pop-out windows** (each is a whole extra page in memory, and the app assumes a single
+window in many places), a **beta update channel** (needs a second update feed in the workflow and only helps if others test
+for you) and **code signing** (needs a paid certificate; without it Windows SmartScreen warns on first install).
+
+**Before releasing,** go through `WINDOWS-CHECKLIST.md`: it lists what has to be tried on a real Windows computer.
