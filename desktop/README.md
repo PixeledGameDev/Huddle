@@ -71,8 +71,10 @@ before Huddle opens. While the app is running it checks again every few hours; a
 banner in Huddle plus a notification, and installs by itself the next time you quit. **Huddle → Check for updates…** (and
 the tray menu) checks on demand. If your server can't be reached the app just opens as normal.
 
-To ship an update: bump `version` in `package.json` (or push a tag such as `desktop-v1.2.0`, which the workflow uses as the
-version) and run the **Desktop app** workflow. It publishes the installers *and* the update files (`latest*.yml`, `.zip`)
+To ship an update: bump `version` in `package.json` and push to `main` (upload the changed files in **one** commit). The
+**Desktop app** workflow notices the new version and builds and publishes it by itself. A push that leaves the version alone
+skips the build, so editing the README or the website never re-releases the app. You can still run the workflow by hand
+(**Actions → Desktop app → Run workflow**), or push a tag such as `desktop-v1.2.0`, which it uses as the version. It publishes the installers *and* the update files (`latest*.yml`, `.zip`)
 to the same R2 `desktop/` folder, and your server hands them to the apps. Notes:
 
 - **Windows** (installer): updates work with unsigned builds.

@@ -3,14 +3,39 @@ name: Desktop app
 # Builds the Windows installer and, when the repository is set up for it (see
 # desktop/README.md), publishes them to your Huddle website's download page. The repository can stay private.
 #
-# Run it from the Actions tab ("Run workflow"), or push a tag like desktop-v1.0.0.
+# It runs by itself when a push to main changes the version in desktop/package.json (a quick check decides; other pushes
+# just skip the build). You can also run it from the Actions tab ("Run workflow"), or push a tag like desktop-v1.0.0.
 on:
   workflow_dispatch:
   push:
+    branches: [main]
     tags: ["desktop-v*"]
 
+# Two releases never publish at the same time; a second one waits for the first.
+concurrency:
+  group: desktop-release
+  cancel-in-progress: false
+
 jobs:
+  decide:
+    runs-on: ubuntu-latest
+    outputs:
+      build: ${{ steps.check.outputs.build }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # the commit before this push is needed to see whether the version changed
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - id: check
+        run: node desktop/scripts/should-release.js
+        env:
+          BEFORE_SHA: ${{ github.event.before }}
+
   build:
+    needs: decide
+    if: ${{ needs.decide.outputs.build == 'true' }}
     strategy:
       fail-fast: false
       matrix:
