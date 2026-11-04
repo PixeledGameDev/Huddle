@@ -1,6 +1,6 @@
 const { io: socketIo } = require("socket.io-client");
 const { Background } = require("./background");
-const { app, BrowserWindow, clipboard, crashReporter, Menu, Tray, Notification, ipcMain, nativeImage, net, powerMonitor, screen, session, shell, webContents } = require("electron");;
+const { app, BrowserWindow, clipboard, crashReporter, globalShortcut, Menu, Tray, Notification, ipcMain, nativeImage, net, powerMonitor, screen, session, shell, webContents } = require("electron");;
 const fs = require("node:fs");
 const path = require("node:path");
 const { fileURLToPath } = require("node:url");
@@ -13,6 +13,7 @@ const { createIdleTracker, sanitizeIdleSettings } = require("./idle");
 const { createUpdateScheduler, createUpdateNotifier } = require("./updatecheck");
 const { parseLaunchArgs, invitePath, jumpListTasks } = require("./deeplink");
 const { buildContextMenu } = require("./contextmenu");
+const { createHotkeyManager, sanitizeHotkeys } = require("./hotkeys");
 
 /**
  * Huddle desktop: a window onto your Huddle server, plus the desktop extras (system notifications, an unread badge,
@@ -54,6 +55,7 @@ const DEFAULTS = {
   notifyPrefs: null, // a copy of the page's notification choices, so popups still follow them while the page is unloaded
   autoIdle: true, // show as Idle to others after some time away from the computer
   autoIdleMinutes: 10,
+  hotkeys: { toggle: "", switcher: "", unread: "" }, // global shortcuts, empty until the person sets them (see hotkeys.js)
 };
 let settings = { ...DEFAULTS };
 const settingsFile = () => path.join(app.getPath("userData"), "settings.json");
@@ -383,10 +385,17 @@ function openTarget(target) {
   showWindow();
   if (ready) win.webContents.send("notification-click", target);
 }
-ipcMain.on("page-ready", (e) => { // the page has set up its listeners: hand over a click that happened while it was gone
-  if (!fromHuddle(e) || !pendingTarget) return;
-  e.sender.send("notification-click", pendingTarget);
-  pendingTarget = null;
+ipcMain.on("page-ready", (e) => { // the page has set up its listeners: hand over a click or a shortcut that happened while it was gone
+  if (!fromHuddle(e)) return;
+  pageReady = true;
+  if (pendingTarget) {
+    e.sender.send("notification-click", pendingTarget);
+    pendingTarget = null;
+  }
+  if (pendingCommand) {
+    e.sender.send("command", pendingCommand);
+    pendingCommand = null;
+  }
 });
 ipcMain.on("notify-prefs", (e, p) => {
   if (!fromHuddle(e) || !p || typeof p !== "object") return;
@@ -468,7 +477,8 @@ function createWindow() {
   win.on("hide", armUnload);
   win.on("show", () => clearTimeout(unloadTimer));
   win.on("restore", () => clearTimeout(unloadTimer));
-  win.on("closed", () => { win = null; });
+  win.on("closed", () => { win = null; pageReady = false; });
+  win.webContents.on("did-start-loading", () => { pageReady = false; }); // until the new page says it is ready again
 
   // Only Huddle itself loads in this window. Everything else opens in the person's own browser.
   wc.setWindowOpenHandler(({ url }) => {
@@ -550,6 +560,78 @@ function handleLaunch(argv) {
   if (page) return openServerPage(page);
   showWindow();
 }
+
+// ---------- global shortcuts ----------
+// Keys that work from any program: show or hide Huddle, open the quick switcher, jump to the next unread message.
+// They start off, and the person sets them under Profile → Desktop app. See hotkeys.js for what is accepted.
+const hotkeysSupported = process.platform !== "linux" || process.env.XDG_SESSION_TYPE !== "wayland"; // Wayland doesn't allow them
+let hotkeyStatus = { toggle: "off", switcher: "off", unread: "off" };
+let hotkeyPauseTimer = null;
+let pageReady = false; // the page has said it is listening (see "page-ready")
+let pendingCommand = null; // a shortcut was used while the page was gone or still loading: it gets the command once ready
+const lastHotkeyAt = {};
+
+/** Tells the page to do something ("switcher" or "unread"), opening the window first if it has to. */
+function sendCommand(name) {
+  if (win && !win.isDestroyed() && pageReady) {
+    showWindow();
+    win.webContents.send("command", name);
+    return;
+  }
+  pendingCommand = name;
+  showWindow(); // makes the window if it's gone; the page asks for the command when it's ready
+}
+function nextUnread() {
+  if (win && !win.isDestroyed()) return sendCommand("unread"); // the page knows where its unread messages are
+  const target = background?.nextUnreadTarget?.();
+  if (target) return openTarget(target); // the page is unloaded: open the conversation the tray connection saw
+  showWindow();
+}
+function runHotkey(action) {
+  const now = Date.now();
+  if (now - (lastHotkeyAt[action] ?? 0) < 300) return; // a held key repeats; one press is one action
+  lastHotkeyAt[action] = now;
+  if (action === "toggle") {
+    const frontmost = win && !win.isDestroyed() && win.isVisible() && !win.isMinimized() && win.isFocused();
+    if (frontmost) win.hide(); // to the tray; its page is freed after a while, as usual
+    else showWindow();
+  } else if (action === "switcher") sendCommand("switcher");
+  else if (action === "unread") nextUnread();
+}
+const hotkeyManager = createHotkeyManager({
+  register: (accelerator, callback) => globalShortcut.register(accelerator, callback),
+  unregister: (accelerator) => globalShortcut.unregister(accelerator),
+  run: runHotkey,
+});
+function applyHotkeys() {
+  if (!hotkeysSupported) return;
+  const r = hotkeyManager.apply(settings.hotkeys);
+  hotkeyStatus = r.status;
+  const taken = Object.entries(r.status).filter(([, s]) => s === "taken").map(([a]) => a);
+  if (taken.length) logger.warn(`Shortcuts another program already uses: ${taken.join(", ")}`);
+}
+const hotkeyState = () => ({ supported: hotkeysSupported, hotkeys: sanitizeHotkeys(settings.hotkeys).hotkeys, status: hotkeyStatus });
+ipcMain.handle("hotkeys:get", (e) => (fromHuddle(e) ? hotkeyState() : null));
+ipcMain.handle("hotkeys:set", (e, v) => {
+  if (!fromHuddle(e)) return null;
+  if (!hotkeysSupported || !v || typeof v !== "object") return hotkeyState();
+  clearTimeout(hotkeyPauseTimer);
+  const r = hotkeyManager.apply(v);
+  settings.hotkeys = r.hotkeys;
+  hotkeyStatus = r.status;
+  saveSettings();
+  return hotkeyState();
+});
+// While the person is pressing keys to choose a shortcut, the current ones must not fire: pause them (and never leave them paused).
+ipcMain.on("hotkeys:pause", (e, paused) => {
+  if (!fromHuddle(e) || !hotkeysSupported) return;
+  clearTimeout(hotkeyPauseTimer);
+  if (paused) {
+    hotkeyManager.stop();
+    hotkeyPauseTimer = setTimeout(applyHotkeys, 30_000);
+    hotkeyPauseTimer.unref?.();
+  } else applyHotkeys();
+});
 
 // ---------- who is allowed to talk to the main process ----------
 function isSetupUrl(url) {
@@ -1105,6 +1187,7 @@ if (!app.requestSingleInstanceLock()) {
     session.defaultSession.setPermissionCheckHandler((_wc, permission) => allowed.has(permission));
     createTray();
     initIdle();
+    applyHotkeys();
     if (app.isPackaged) {
       try { app.setAsDefaultProtocolClient("huddle"); } catch (e) { logger.error("Couldn't register huddle:// links", e); }
       if (process.platform === "win32") {
@@ -1129,5 +1212,6 @@ if (!app.requestSingleInstanceLock()) {
       });
   });
   app.on("before-quit", () => { quitting = true; stopBackground(); });
+  app.on("will-quit", () => globalShortcut.unregisterAll());
   app.on("window-all-closed", () => { if (!isMac && !keepAlive) app.quit(); });
 }

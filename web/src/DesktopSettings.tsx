@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { HotkeySettings } from "./HotkeySettings";
 
 /** Desktop-app-only settings: opening with the computer, and whether the window shows when it does. Hidden in a browser and in older desktop apps. */
 export function DesktopSettings() {
@@ -59,6 +60,7 @@ export function DesktopSettings() {
           </fieldset>
         </>
       )}
+      <HotkeySettings />
     </div>
   );
 }

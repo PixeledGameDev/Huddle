@@ -151,6 +151,8 @@ function Main({ me, initialServerId, onUser, onLogout }: { me: User; initialServ
   const [membersOpen, setMembersOpen] = useState(() => (wide() ? localStorage.getItem("huddle.members") !== "closed" : false));
   const [showFriends, setShowFriends] = useState(false);
   const [quick, setQuick] = useState(false); // the Ctrl+K quick switcher
+  const unreadServerOf = useRef<Record<string, string>>({}); // channel id -> the server (or conversation) it is in, for channels with unread messages
+  const nextUnreadRef = useRef<() => void>(() => {}); // the desktop shortcut "Jump to next unread"
   const install = useInstall();
   const lastServerRef = useRef<string | null>(null);
 
@@ -386,6 +388,7 @@ function Main({ me, initialServerId, onUser, onLogout }: { me: User; initialServ
       if (isDm) setDms((prev) => prev.map((d) => (d.id === m.serverId ? { ...d, lastAt: m.createdAt } : d)).sort((a, b) => b.lastAt.localeCompare(a.lastAt)));
       if (m.authorId === meId || !(isDm || m.mentions.includes(meId) || m.mentionsEveryone)) return;
       if (document.visibilityState === "visible" && m.channelId === channelIdRef.current) return;
+      unreadServerOf.current[m.channelId] = m.serverId; // so "jump to next unread" can open this channel
       setUnread((u) => ({
         channels: { ...u.channels, [m.channelId]: (u.channels[m.channelId] ?? 0) + 1 },
         servers: { ...u.servers, [m.serverId]: (u.servers[m.serverId] ?? 0) + 1 },
@@ -735,6 +738,24 @@ function Main({ me, initialServerId, onUser, onLogout }: { me: User; initialServ
     }
     if (!wide()) setNavOpen(false);
   }
+
+  // Always the latest version of this, for the global shortcut in the desktop app: a direct message first, then a channel with a mention.
+  nextUnreadRef.current = () => {
+    const dm = dms.find((d) => (unread.servers[d.id] ?? 0) > 0);
+    if (dm) return jump({ kind: "dm", serverId: dm.id });
+    const channel = Object.keys(unread.channels).find((id) => (unread.channels[id] ?? 0) > 0 && unreadServerOf.current[id]);
+    if (channel) return jump({ kind: "channel", serverId: unreadServerOf.current[channel], channelId: channel });
+    push("Nothing unread.");
+  };
+  // Global shortcuts in the desktop app ask the page to do things.
+  useEffect(() => {
+    const off = window.huddleDesktop?.onCommand?.((command) => {
+      if (command === "switcher") setQuick(true);
+      else if (command === "unread") nextUnreadRef.current();
+    });
+    window.huddleDesktop?.pageReady?.(); // a shortcut used while the page was unloaded is waiting for this
+    return () => off?.();
+  }, []);
 
   async function logout() {
     await api("/auth/logout", "POST").catch(() => {});

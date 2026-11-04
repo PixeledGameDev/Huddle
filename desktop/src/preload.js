@@ -29,6 +29,18 @@ contextBridge.exposeInMainWorld("huddleDesktop", {
   getStartup: () => ipcRenderer.invoke("startup:get"),
   setStartup: (v) => ipcRenderer.invoke("startup:set", v),
   // Present from desktop 1.9.2: showing as Idle after time away from the computer. onIdleChange(true/false) fires when it starts and ends.
+  // Present from desktop 1.9.4: global shortcuts (they work from any program). getHotkeys/setHotkeys return
+  // { supported, hotkeys: {toggle, switcher, unread}, status: {...each "ok" | "off" | "taken" | "invalid" | "duplicate"} }.
+  // Call pauseHotkeys(true) while the person is pressing keys to pick one, and pauseHotkeys(false) when done.
+  // onCommand fires when a shortcut asks the page to do something: "switcher" or "unread".
+  getHotkeys: () => ipcRenderer.invoke("hotkeys:get"),
+  setHotkeys: (hotkeys) => ipcRenderer.invoke("hotkeys:set", hotkeys),
+  pauseHotkeys: (paused) => ipcRenderer.send("hotkeys:pause", !!paused),
+  onCommand: (cb) => {
+    const handler = (_event, command) => { if (command === "switcher" || command === "unread") cb(command); };
+    ipcRenderer.on("command", handler);
+    return () => ipcRenderer.removeListener("command", handler);
+  },
   // Present from desktop 1.9.3: progress (0 to 1, or -1 for none) on the taskbar button while files upload.
   setProgress: (fraction) => ipcRenderer.send("progress:set", fraction),
   getIdleSettings: () => ipcRenderer.invoke("idle:get"),

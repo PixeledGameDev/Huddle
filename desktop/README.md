@@ -137,6 +137,19 @@ desktop to try out.
 - **Right-click menu:** suggestions and "Add to dictionary" for a misspelled word, "Copy image" and "Save image as…" on pictures,
   and "Open link in browser" / "Copy link address" on web links.
 
+## Global keyboard shortcuts
+
+Under Profile → Desktop app → **Keyboard shortcuts**, three actions can have a shortcut that works from any program, even while
+Huddle is hidden in the tray: **Show or hide Huddle**, **Quick switcher** and **Jump to next unread** (the oldest unread direct
+message or mention). They are off until set, because any combination might already be used by another program.
+
+- A shortcut must include Ctrl, Alt or the Windows key, so it can never take over an ordinary key. Combinations the system keeps for
+  itself (Alt+F4, Win+L and so on) are refused. If another program already has a combination, Huddle says so.
+- If Huddle's page has been freed from memory in the tray, the shortcut opens the window first and then carries out the action.
+  "Jump to next unread" then opens the conversation Huddle's tray connection saw.
+- While you are choosing a shortcut, the existing ones are switched off so pressing them doesn't trigger them.
+- Not available on Linux under Wayland, which doesn't allow global shortcuts.
+
 ## Logs and troubleshooting
 
 Open the Huddle menu (or right-click the tray icon) → **Troubleshooting**:

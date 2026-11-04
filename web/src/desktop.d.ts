@@ -27,6 +27,12 @@ interface HuddleDesktopBridge {
   setStartup?(v: { launch: boolean; background: boolean }): Promise<{ supported: boolean; launch: boolean; background: boolean } | null>;
   /** Present from desktop app 1.9.2 on: showing as Idle to others after time away from the computer (or a locked screen). `idle` is true right now. */
   getIdleSettings?(): Promise<DesktopIdleSettings | null>;
+  /** Present from desktop app 1.9.4 on: global shortcuts that work from any program (see HotkeySettings.tsx). */
+  getHotkeys?(): Promise<import("./hotkeys").DesktopHotkeys | null>;
+  setHotkeys?(hotkeys: Record<import("./hotkeys").HotkeyAction, string>): Promise<import("./hotkeys").DesktopHotkeys | null>;
+  pauseHotkeys?(paused: boolean): void;
+  /** A shortcut asks the page to open the quick switcher or jump to the next unread message. */
+  onCommand?(cb: (command: "switcher" | "unread") => void): () => void;
   /** Present from desktop app 1.9.3 on: progress (0 to 1, or -1 for none) on the taskbar button while files upload. */
   setProgress?(fraction: number): void;
   setIdleSettings?(v: { enabled: boolean; minutes: number }): Promise<DesktopIdleSettings | null>;

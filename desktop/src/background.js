@@ -51,6 +51,7 @@ class Background {
     this.socket = null;
     this.ctx = { meId: null, presence: "online", dmIds: new Set(), serverNames: new Map(), prefs: getPrefs() };
     this.unread = new Map(); // channelId -> how many
+    this.unreadServer = new Map(); // channelId -> the server (or conversation) it belongs to, so a shortcut can open it
     this.idle = false; // the computer is idle: told to the server so others see "Idle" (when the person's status is Online)
   }
 
@@ -103,6 +104,7 @@ class Background {
     const kind = classify(m, this.ctx);
     if (!kind) return;
     this.unread.set(m.channelId, (this.unread.get(m.channelId) ?? 0) + 1);
+    this.unreadServer.set(m.channelId, m.serverId);
     this.onUnread(this.total());
     this.onNote(buildNote(m, kind, this.ctx), kind);
   }
@@ -114,7 +116,15 @@ class Background {
   }
   markRead(channelId) {
     this.unread.delete(channelId);
+    this.unreadServer.delete(channelId);
     this.onUnread(this.total());
+  }
+  /** Where the oldest unread message is, as { serverId, channelId } (what a clicked popup opens), or null if there is none. */
+  nextUnreadTarget() {
+    for (const [channelId, serverId] of this.unreadServer) {
+      if ((this.unread.get(channelId) ?? 0) > 0 && serverId) return { serverId, channelId };
+    }
+    return null;
   }
 
   stop() {
@@ -122,6 +132,7 @@ class Background {
     this.socket?.close();
     this.socket = null;
     this.unread.clear();
+    this.unreadServer.clear();
   }
 }
 

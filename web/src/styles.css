@@ -1140,3 +1140,9 @@ button.icon .ico { width: 1.3em; height: 1.3em; vertical-align: middle; }
 .qs-foot kbd .ico { width: 12px; height: 12px; vertical-align: -.1em; }
 .lp-ticks li span .ico, .saved .ico { width: 1em; height: 1em; stroke-width: 2.6; }
 :root { --ico-check: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5 12.5l4.5 4.5L19 7.5'/%3E%3C/svg%3E"); }
+
+/* ---- global shortcuts (HotkeySettings.tsx) ---- */
+.hotkey-row { display: grid; grid-template-columns: 1fr auto; gap: 6px 12px; align-items: center; padding: 10px 0; border-top: 1px solid var(--line); }
+.hotkey-row > div:first-child { display: flex; flex-direction: column; gap: 2px; }
+.hotkey-ctl { display: flex; gap: 6px; align-items: center; }
+.hotkey-msg { grid-column: 1 / -1; }

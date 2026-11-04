@@ -13,6 +13,15 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "5.22",
+    date: "2026-11-04",
+    desktop: true,
+    title: "Desktop app: keyboard shortcuts from anywhere",
+    changes: [
+      "Desktop app: set keyboard shortcuts that work from any program, even while Huddle is hidden in the tray: show or hide Huddle, open the quick switcher, or jump to your next unread direct message or mention. They're off until you choose them, under Profile → Desktop app → Keyboard shortcuts.",
+    ],
+  },
+  {
     version: "5.21",
     date: "2026-11-03",
     desktop: true,
