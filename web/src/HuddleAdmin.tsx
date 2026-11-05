@@ -3,11 +3,11 @@ import { confirmDialog } from "./Dialogs";
 import { api } from "./api";
 import { Modal } from "./Modals";
 import { fmtCountdown, pokeMaintenance, useMaintenance, useRemaining } from "./Maintenance";
-import { VerifiedBadge } from "./Verified";
+import { ServerBadge } from "./Verified";
 
 interface Overview {
   admins: { id: string; username: string; displayName: string | null; locked: boolean }[];
-  servers: { id: string; name: string; verified: boolean; members: number; channels: { id: string; name: string }[] }[];
+  servers: { id: string; name: string; verified: boolean; official: boolean; members: number; channels: { id: string; name: string }[] }[];
   people: number;
   broadcasting: boolean;
   bans: { id: string; username: string; reason: string | null; permanent: boolean; until: string | null }[];
@@ -33,6 +33,8 @@ function adminAuditText(e: { action: string; detail: any; actor: string | null }
     case "maintenance.end": return `${who} ended maintenance`;
     case "server.verify": return `${who} verified ${d.name}`;
     case "server.unverify": return `${who} removed verification from ${d.name}`;
+    case "server.official": return `${who} made ${d.name} Huddle Official`;
+    case "server.unofficial": return `${who} removed Huddle Official from ${d.name}`;
     default: return `${who}: ${e.action}`;
   }
 }
@@ -151,6 +153,14 @@ export function HuddleAdminModal({ meId, onClose, onNotice, onError }: { meId: s
   async function setVerified(id: string, verified: boolean) {
     try {
       await api(`/huddle/servers/${id}/verified`, "POST", { verified });
+      load();
+      loadAudit(false);
+    } catch (err) { onError(err); }
+  }
+
+  async function setOfficial(id: string, official: boolean) {
+    try {
+      await api(`/huddle/servers/${id}/official`, "POST", { official });
       load();
       loadAudit(false);
     } catch (err) { onError(err); }
@@ -363,13 +373,16 @@ export function HuddleAdminModal({ meId, onClose, onNotice, onError }: { meId: s
           </div>
           <hr />
           <div className="stack">
-            <h3>Verified servers</h3>
-            <small className="hint">Verified servers get a check mark next to their name everywhere. Nothing in a server's own activity log shows who verified it.</small>
+            <h3>Verified and Official servers</h3>
+            <small className="hint">Verified servers get a check mark next to their name everywhere. Huddle Official servers get a star badge instead, for servers Huddle itself runs. Nothing in a server's own activity log shows who set either.</small>
             <ul className="plain-list">
               {data.servers.map((s) => (
                 <li key={s.id}>
-                  <span>{s.name} <small className="hint">{s.members} {s.members === 1 ? "member" : "members"}</small>{s.verified && <VerifiedBadge />}</span>
-                  <button type="button" className="icon" onClick={() => void setVerified(s.id, !s.verified)}>{s.verified ? "Remove verification" : "Verify"}</button>
+                  <span>{s.name} <small className="hint">{s.members} {s.members === 1 ? "member" : "members"}</small><ServerBadge verified={s.verified} official={s.official} /></span>
+                  <span className="row-actions">
+                    <button type="button" className="icon" onClick={() => void setVerified(s.id, !s.verified)}>{s.verified ? "Remove verification" : "Verify"}</button>
+                    <button type="button" className="icon" onClick={() => void setOfficial(s.id, !s.official)}>{s.official ? "Remove Official" : "Make Official"}</button>
+                  </span>
                 </li>
               ))}
             </ul>

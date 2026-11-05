@@ -74,7 +74,7 @@ profilesRouter.get("/users/:userId/profile", h(async (req, res) => {
   if (userId !== me) {
     const blockedEither = !!(await one(`select 1 from user_blocks where (blocker = $1 and blocked = $2) or (blocker = $2 and blocked = $1)`, [me, userId]));
     const mutualServers = await q<any>(
-      `select s.id, s.name, s.icon_version, s.verified from servers s
+      `select s.id, s.name, s.icon_version, s.verified, s.official from servers s
          join memberships a on a.server_id = s.id and a.user_id = $1 join memberships b on b.server_id = s.id and b.user_id = $2
         where not s.is_dm order by s.name limit 50`,
       [me, userId]
@@ -94,7 +94,7 @@ profilesRouter.get("/users/:userId/profile", h(async (req, res) => {
     extra = {
       friendship: await friendshipState(me, userId),
       canMessage,
-      mutualServers: mutualServers.map((s) => ({ id: s.id, name: s.name, iconVersion: s.icon_version, verified: s.verified as boolean })),
+      mutualServers: mutualServers.map((s) => ({ id: s.id, name: s.name, iconVersion: s.icon_version, verified: s.verified as boolean, official: s.official as boolean })),
       mutualFriends: mutualFriends.map((u) => ({ id: u.id, username: u.username, displayName: u.display_name ?? null, avatarVersion: u.avatar_version, accent: u.accent ?? null })),
     };
   }

@@ -1146,3 +1146,14 @@ button.icon .ico { width: 1.3em; height: 1.3em; vertical-align: middle; }
 .hotkey-row > div:first-child { display: flex; flex-direction: column; gap: 2px; }
 .hotkey-ctl { display: flex; gap: 6px; align-items: center; }
 .hotkey-msg { grid-column: 1 / -1; }
+
+/* ---- huddle official & inviting friends ---- */
+.official { color: #e0a526; vertical-align: -3px; margin-left: 4px; flex: none; }
+.side-head strong .official { color: #f2b83a; }
+.row-actions { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+.invite-friends { max-height: 320px; overflow-y: auto; }
+.invite-friend { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.invite-friend .member-name { min-width: 0; }
+.invite-link-row { display: flex; gap: 8px; margin-top: 4px; }
+.invite-link-row input { flex: 1; min-width: 0; }
+.invite-friends button { font-size: 12px; padding: 4px 10px; }

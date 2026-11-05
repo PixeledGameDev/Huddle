@@ -349,6 +349,8 @@ create table if not exists user_banners (
 
 -- v23: verified servers (only Huddle Admins can set this)
 alter table servers add column if not exists verified boolean not null default false;
+-- v24: Huddle Official servers (like verified, only Huddle Admins can set this)
+alter table servers add column if not exists official boolean not null default false;
 
 -- v24: server emojis and stickers
 create table if not exists server_emojis (

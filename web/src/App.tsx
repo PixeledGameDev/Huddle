@@ -18,7 +18,8 @@ import { Name } from "./Name";
 import { ThemeEditorModal } from "./ThemeEditor";
 import { UpdateBanner } from "./UpdateBanner";
 import { ServerAssetsContext } from "./ServerAssets";
-import { VerifiedBadge } from "./Verified";
+import { ServerBadge, serverBadgeLabel } from "./Verified";
+import { InviteFriendsModal } from "./InviteFriends";
 import { StatusDot, StatusMenu } from "./Status";
 import { FriendsModal, useFriends } from "./Friends";
 import { notifyIncoming, setNotificationActions, setNotificationOpener, updateBadge } from "./notify";
@@ -98,7 +99,7 @@ interface Toast { id: number; text: string; error?: boolean }
 type MsgState = Record<string, { items: Message[]; hasMore: boolean }>;
 type TypingState = Record<string, Record<string, { name: string; until: number }>>;
 type Unread = { channels: Record<string, number>; servers: Record<string, number> };
-type Modal = "whatsnew" | "add" | "settings" | "legacy" | "friends" | "poll" | "myprofile" | "changelog" | "huddle" | "suggestions" | "themes" | null;
+type Modal = "whatsnew" | "invite" | "add" | "settings" | "legacy" | "friends" | "poll" | "myprofile" | "changelog" | "huddle" | "suggestions" | "themes" | null;
 
 function Main({ me, initialServerId, onUser, onLogout }: { me: User; initialServerId?: string; onUser: (u: User) => void; onLogout: () => void }) {
   const [servers, setServers] = useState<ServerSummary[]>([]);
@@ -191,7 +192,7 @@ function Main({ me, initialServerId, onUser, onLogout }: { me: User; initialServ
       const wanted = pendingChannelRef.current; // set when a notification asked for a particular channel
       pendingChannelRef.current = null;
       setChannelId((cur) => (wanted && server.channels.some((c) => c.id === wanted) ? wanted : cur && server.channels.some((c) => c.id === cur) ? cur : server.channels[0]?.id ?? null));
-      setServers((prev) => prev.map((s) => (s.id === id && (s.name !== server.name || s.iconVersion !== server.iconVersion || !!s.verified !== !!server.verified) ? { ...s, name: server.name, iconVersion: server.iconVersion, verified: server.verified } : s)));
+      setServers((prev) => prev.map((s) => (s.id === id && (s.name !== server.name || s.iconVersion !== server.iconVersion || !!s.verified !== !!server.verified || !!s.official !== !!server.official) ? { ...s, name: server.name, iconVersion: server.iconVersion, verified: server.verified, official: server.official } : s)));
     } catch (e) {
       fail(e);
     }
@@ -601,18 +602,6 @@ function Main({ me, initialServerId, onUser, onLogout }: { me: User; initialServ
     setActiveId(id);
   }
 
-  async function invite() {
-    if (!detail) return;
-    try {
-      const { code } = await api<{ code: string }>(`/servers/${detail.id}/invites`, "POST");
-      const link = `${window.location.origin}/invite/${code}`;
-      await navigator.clipboard?.writeText(link).catch(() => {});
-      push(`Invite link copied: ${link}`);
-    } catch (e) {
-      fail(e);
-    }
-  }
-
   async function addChannel() {
     const name = await promptDialog("Name your channel", { placeholder: "general", confirmLabel: "Create", maxLength: 40 });
     if (!name || !detail) return;
@@ -801,7 +790,7 @@ function Main({ me, initialServerId, onUser, onLogout }: { me: User; initialServ
             <button
               key={s.id}
               className={s.id === activeId && !inDm ? "srv active" : "srv"}
-              title={s.verified ? `${s.name} (verified)` : s.name}
+              title={serverBadgeLabel(s) ? `${s.name} (${serverBadgeLabel(s)})` : s.name}
               aria-label={s.name}
               aria-current={s.id === activeId && !inDm}
               style={s.iconVersion > 0 ? undefined : { background: `linear-gradient(135deg, hsl(${hue(s.name)} 50% 48%), hsl(${hue(s.name)} 45% 32%))` }}
@@ -845,11 +834,11 @@ function Main({ me, initialServerId, onUser, onLogout }: { me: User; initialServ
           <>
             <div className="server-head">
               <div className="server-title">
-                <h2 title={detail.name}>{detail.name}{detail.verified && <VerifiedBadge />}</h2>
+                <h2 title={detail.name}>{detail.name}<ServerBadge verified={detail.verified} official={detail.official} /></h2>
                 <small>{detail.members.length} {detail.members.length === 1 ? "member" : "members"} · {detail.members.filter((m) => m.online).length} online</small>
               </div>
               <span className="server-actions">
-                <button className="pill sm shine" title="Copy an invite link" onClick={invite}>Invite</button>
+                <button className="pill sm shine" title="Invite people to this server" onClick={() => setModal("invite")}>Invite</button>
                 {hasSettings && <button className="icon ghost" aria-label="Server settings" title="Server settings" onClick={() => setModal("settings")}><Icon name="settings" /></button>}
               </span>
             </div>
@@ -1000,6 +989,15 @@ function Main({ me, initialServerId, onUser, onLogout }: { me: User; initialServ
       {modal === "settings" && detail && <SettingsModal server={detail} onClose={() => setModal(null)} onError={fail} onSaved={() => { setModal(null); push("Settings saved."); }} onDeleted={() => setModal(null)} />}
       {modal === "legacy" && detail && detail.legacyAdminCount > 0 && (
         <LegacyAdminsModal server={detail} onClose={() => setModal(null)} onError={fail} onDone={() => { setModal(null); push("Done. Your admins now have a role."); void loadServer(detail.id); }} />
+      )}
+      {modal === "invite" && detail && !detail.isDm && (
+        <InviteFriendsModal
+          server={detail}
+          friends={friendsData.friends}
+          onClose={() => setModal(null)}
+          onError={fail}
+          onNotice={push}
+        />
       )}
       {modal === "friends" && (
         <FriendsModal

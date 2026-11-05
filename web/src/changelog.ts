@@ -13,6 +13,15 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "5.24",
+    date: "2026-11-05",
+    title: "Invite your friends, and Huddle Official servers",
+    changes: [
+      "Invite now lets you pick friends from your friends list and sends them the invite link as a direct message. You can still copy the link from the same window.",
+      "Servers run by Huddle itself can now carry a Huddle Official badge, shown next to the server name everywhere. If a server is both verified and official, only the Official badge shows.",
+    ],
+  },
+  {
     version: "5.23",
     date: "2026-11-04",
     desktop: true,

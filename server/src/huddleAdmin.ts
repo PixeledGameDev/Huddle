@@ -131,7 +131,7 @@ huddleAdminRouter.get("/huddle/overview", h(async (_req, res) => {
   const [admins, servers, people, bans] = await Promise.all([
     q<any>(`select id, username, display_name, huddle_admin_locked as locked from users where huddle_admin order by lower(username)`),
     q<any>(
-      `select s.id, s.name, s.verified,
+      `select s.id, s.name, s.verified, s.official,
               (select count(*)::int from memberships m where m.server_id = s.id) as members,
               (select coalesce(json_agg(json_build_object('id', c.id, 'name', c.name) order by c.created_at), '[]'::json) from channels c where c.server_id = s.id) as channels
          from servers s where not s.is_dm order by s.created_at`
@@ -144,7 +144,7 @@ huddleAdminRouter.get("/huddle/overview", h(async (_req, res) => {
   ]);
   res.json({
     admins: admins.map((a) => ({ id: a.id, username: a.username, displayName: a.display_name ?? null, locked: a.locked })),
-    servers: servers.map((s) => ({ id: s.id, name: s.name, verified: s.verified as boolean, members: s.members, channels: s.channels })),
+    servers: servers.map((s) => ({ id: s.id, name: s.name, verified: s.verified as boolean, official: s.official as boolean, members: s.members, channels: s.channels })),
     people: people!.n,
     bans: bans.map((b) => ({ id: b.id, username: b.username, reason: b.ban_reason ?? null, permanent: b.permanent, until: b.until ? new Date(b.until).toISOString() : null })),
     broadcasting,
@@ -158,6 +158,17 @@ huddleAdminRouter.post("/huddle/servers/:serverId/verified", h(async (req, res) 
   const s = await one<{ id: string; name: string }>(`update servers set verified = $2 where id = $1 and not is_dm returning id, name`, [req.params.serverId, verified]);
   if (!s) throw new HttpError(404, "Server not found.");
   await log(user.id, verified ? "server.verify" : "server.unverify", { serverId: s.id, name: s.name });
+  emitServer(s.id, "server.update", { serverId: s.id });
+  res.json({ ok: true });
+}));
+
+/** Huddle Official servers get their own badge, separate from verification. Also logged only for Huddle Admins. */
+huddleAdminRouter.post("/huddle/servers/:serverId/official", h(async (req, res) => {
+  const user = req.user!;
+  const { official } = z.object({ official: z.boolean() }).parse(req.body);
+  const s = await one<{ id: string; name: string }>(`update servers set official = $2 where id = $1 and not is_dm returning id, name`, [req.params.serverId, official]);
+  if (!s) throw new HttpError(404, "Server not found.");
+  await log(user.id, official ? "server.official" : "server.unofficial", { serverId: s.id, name: s.name });
   emitServer(s.id, "server.update", { serverId: s.id });
   res.json({ ok: true });
 }));

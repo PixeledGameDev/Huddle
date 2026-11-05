@@ -24,7 +24,7 @@ export type PublicStatus = "online" | "idle" | "dnd" | "offline";
 export interface FriendUser { id: string; username: string; displayName: string | null; avatarVersion: number; accent: string | null; statusText: string; nameFont?: string; status: PublicStatus }
 export type Friendship = "none" | "friends" | "outgoing" | "incoming";
 export type DmPrivacy = "everyone" | "friends" | "nobody";
-export interface ServerSummary { id: string; name: string; iconVersion: number; verified?: boolean }
+export interface ServerSummary { id: string; name: string; iconVersion: number; verified?: boolean; official?: boolean }
 export interface Channel { id: string; name: string }
 /** The base membership role. "admin" only exists on servers that haven't converted their old admins to a role yet. */
 export type Role = "owner" | "admin" | "member";
@@ -84,6 +84,7 @@ export interface ServerDetail {
   name: string;
   iconVersion: number;
   verified?: boolean;
+  official?: boolean;
   isDm: boolean;
   ownerId: string;
   myRole: Role;

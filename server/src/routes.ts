@@ -11,11 +11,12 @@ import { securityRouter } from "./security";
 import { passkeyRouter } from "./passkeys";
 import { suggestionsRouter } from "./suggestions";
 import { messagesRouter } from "./messages";
-import { ADMIN_TOP, OWNER_TOP, assertNotDm, requireMember, requirePerm, timeoutUntil, type Role } from "./perms";
+import { ADMIN_TOP, OWNER_TOP, assertCanWrite, assertNotDm, requireMember, requirePerm, timeoutUntil, type Role } from "./perms";
 import { deletionRouter } from "./deletion";
-import { dmsRouter } from "./dms";
+import { dmsRouter, openDm, revealDm } from "./dms";
 import { emojisRouter } from "./emojis";
-import { friendsRouter } from "./friends";
+import { areFriends, friendsRouter } from "./friends";
+import { getMessageDto } from "./hydrate";
 import { pollsRouter } from "./polls";
 import { rolesRouter } from "./roles";
 import { profilesRouter } from "./profiles";
@@ -86,6 +87,7 @@ async function serverDetail(serverId: string, userId: string) {
     name: s.name,
     iconVersion: s.icon_version as number,
     verified: s.verified as boolean,
+    official: s.official as boolean,
     isDm: s.is_dm as boolean,
     ownerId: s.owner_id,
     myRole: me.role,
@@ -106,7 +108,7 @@ async function serverDetail(serverId: string, userId: string) {
 api.get("/servers", h(async (req, res) => {
   res.json({
     servers: await q(
-      `select s.id, s.name, s.icon_version as "iconVersion", s.verified from servers s
+      `select s.id, s.name, s.icon_version as "iconVersion", s.verified, s.official from servers s
         where not s.is_dm and (exists (select 1 from memberships m where m.server_id = s.id and m.user_id = $1)
                             or exists (select 1 from users u where u.id = $1 and u.huddle_admin))
         order by s.created_at`,
@@ -189,6 +191,42 @@ api.post("/servers/:serverId/invites", h(async (req, res) => {
   res.json({ code });
 }));
 
+/**
+ * "Invite" on a server: sends the invite link to friends as a direct message, one by one so a single failure
+ * (privacy setting, block, already a member) doesn't stop the rest. The link comes from the browser because only it
+ * knows the address people actually use, and the invite embed only shows for links on that same address.
+ */
+api.post("/servers/:serverId/invites/send", h(async (req, res) => {
+  const { serverId } = req.params;
+  const user = req.user!;
+  await requireMember(serverId, user.id);
+  await assertNotDm(serverId);
+  const { link, userIds } = z.object({ link: z.string().trim().max(300), userIds: z.array(z.string().uuid()).min(1).max(25) }).parse(req.body);
+  const code = /^https?:\/\/[^\s/]+\/invite\/([A-Za-z0-9_-]{6,32})$/.exec(link)?.[1];
+  if (!code || !(await one(`select 1 from invites where code = $1 and server_id = $2`, [code, serverId]))) throw new HttpError(400, "That invite link isn't valid for this server.");
+
+  const results: Record<string, { sent: boolean; reason?: string }> = {};
+  for (const id of [...new Set(userIds)]) {
+    rateLimit(`invitedm:${user.id}`, 40, 3600_000);
+    try {
+      if (!(await areFriends(user.id, id))) throw new HttpError(403, "They're not on your friends list.");
+      if (await one(`select 1 from memberships where server_id = $1 and user_id = $2`, [serverId, id])) throw new HttpError(409, "They're already in this server.");
+      if (await one(`select 1 from server_bans where server_id = $1 and user_id = $2 and until > now()`, [serverId, id])) throw new HttpError(403, "They can't be invited to this server.");
+      const { serverId: dmId } = await openDm(user.id, id);
+      await assertCanWrite(dmId, user.id);
+      await revealDm(dmId);
+      const ch = await one<{ id: string }>(`select id from channels where server_id = $1 limit 1`, [dmId]);
+      const row = await one<{ id: string }>(`insert into messages(channel_id, author_id, content) values ($1, $2, $3) returning id::text as id`, [ch!.id, user.id, link]);
+      emitServer(dmId, "message.create", await getMessageDto(row!.id, null));
+      results[id] = { sent: true };
+    } catch (e) {
+      if (!(e instanceof HttpError)) throw e;
+      results[id] = { sent: false, reason: e.message };
+    }
+  }
+  res.json({ results });
+}));
+
 api.post("/join", h(async (req, res) => {
   const user = req.user!;
   rateLimit(`join:${user.id}`, 20, 60_000);
@@ -201,7 +239,7 @@ api.post("/join", h(async (req, res) => {
   joinServerRooms(user.id, inv.server_id);
   emitServer(inv.server_id, "member.join", { serverId: inv.server_id, userId: user.id });
   if (fresh.length) await q(`insert into audit_log(server_id, actor_id, action) values ($1, $2, 'member.join')`, [inv.server_id, user.id]);
-  res.json({ server: await one(`select id, name, icon_version as "iconVersion", verified from servers where id = $1`, [inv.server_id]) });
+  res.json({ server: await one(`select id, name, icon_version as "iconVersion", verified, official from servers where id = $1`, [inv.server_id]) });
 }));
 
 api.post("/servers/:serverId/leave", h(async (req, res) => {
