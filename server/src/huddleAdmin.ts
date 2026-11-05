@@ -1,15 +1,16 @@
 import { clearAuthCache } from "./auth";
 import { Router, type NextFunction, type Request, type Response } from "express";
 import { z } from "zod";
-import { one, q, tx } from "./db";
-import { dmList, revealDm } from "./dms";
+import { one, q } from "./db";
 import { getMessageDto } from "./hydrate";
+import { botId, deliverDm, insertBotMessage } from "./huddleBot";
+import { MAX_WELCOME_MESSAGES, deliverWelcome, welcomeRecipients } from "./welcome";
 import { HttpError, h, rateLimit } from "./http";
 import { isHuddleAdmin } from "./perms";
 import { endMaintenance, maintenanceState, startMaintenance } from "./maintenance";
 import { deleteServer, eraseAccount } from "./deletion";
 import { clearTwoFactor, issueCode } from "./security";
-import { dropUser, emitServer, emitUser, joinAllServers, joinServerRooms, leaveUnjoinedServers } from "./realtime";
+import { dropUser, emitServer, emitUser, joinAllServers, leaveUnjoinedServers } from "./realtime";
 
 /**
  * Huddle Admin: a site-wide admin. Anyone who has it is an admin of every server (see membership() in perms.ts),
@@ -42,63 +43,8 @@ export async function bootstrapHuddle() {
   }
 }
 
-async function botId(): Promise<string> {
-  const bot = await one<{ id: string }>(`select id from users where is_bot`);
-  if (!bot) throw new HttpError(503, "The Huddle bot isn't available.");
-  return bot.id;
-}
-
 const log = (actorId: string, action: string, detail: object) =>
   q(`insert into huddle_admin_log(actor_id, action, detail) values ($1, $2, $3)`, [actorId, action, JSON.stringify(detail)]).catch(console.error);
-
-/** Inserts a message written by the bot and returns its id. */
-async function insertBotMessage(channelId: string, bot: string, content: string, mentions: string[], everyone: boolean, c?: any) {
-  const row = await one<{ id: string }>(
-    `insert into messages(channel_id, author_id, content, mentions, mentions_everyone) values ($1, $2, $3, $4::uuid[], $5) returning id::text as id`,
-    [channelId, bot, content, mentions, everyone],
-    c
-  );
-  return row!.id;
-}
-
-/** Sends one DM from the bot, creating the conversation if there isn't one. Returns false if the person blocked the bot. */
-async function deliverDm(bot: string, userId: string, content: string): Promise<boolean> {
-  if (await one(`select 1 from user_blocks where blocker = $1 and blocked = $2`, [userId, bot])) return false;
-  const key = [bot, userId].sort().join(":");
-  let created = false;
-  const found = await one<{ id: string; channel_id: string }>(
-    `select s.id, (select c.id from channels c where c.server_id = s.id order by c.created_at limit 1) as channel_id from servers s where s.dm_key = $1`,
-    [key]
-  );
-  let serverId = found?.id;
-  let channelId = found?.channel_id;
-  if (!serverId || !channelId) {
-    ({ serverId, channelId, created } = await tx(async (c) => {
-      const s = await one<{ id: string }>(
-        `insert into servers(name, owner_id, is_dm, dm_key) values ('', $1, true, $2) on conflict (dm_key) where dm_key is not null do nothing returning id`,
-        [bot, key],
-        c
-      );
-      if (!s) {
-        const existing = (await one<{ id: string; channel_id: string }>(
-          `select s.id, (select c.id from channels c where c.server_id = s.id order by c.created_at limit 1) as channel_id from servers s where s.dm_key = $1`,
-          [key],
-          c
-        ))!;
-        return { serverId: existing.id, channelId: existing.channel_id, created: false };
-      }
-      await q(`insert into memberships(server_id, user_id, role) values ($1, $2, 'member'), ($1, $3, 'member')`, [s.id, bot, userId], c);
-      const ch = await one<{ id: string }>(`insert into channels(server_id, name) values ($1, 'chat') returning id`, [s.id], c);
-      return { serverId: s.id, channelId: ch!.id, created: true };
-    }));
-  }
-  const messageId = await insertBotMessage(channelId!, bot, content, [userId], false);
-  joinServerRooms(userId, serverId!);
-  if (created) emitUser(userId, "dm.new", (await dmList(userId, serverId))[0]);
-  else await revealDm(serverId!);
-  emitServer(serverId!, "message.create", await getMessageDto(messageId, null));
-  return true;
-}
 
 let broadcasting = false;
 
@@ -225,6 +171,58 @@ huddleAdminRouter.post("/huddle/send", h(async (req, res) => {
     .catch(console.error)
     .finally(() => { broadcasting = false; });
   res.json({ ok: true, recipients: recipients.length });
+}));
+
+// ---------- welcome messages ----------
+huddleAdminRouter.get("/huddle/welcome", h(async (_req, res) => {
+  const rows = await q<any>(
+    `select w.id::text as id, w.content, w.created_at, (select count(*)::int from welcome_deliveries d where d.message_id = w.id) as sent
+       from welcome_messages w order by w.id`
+  );
+  res.json({ messages: rows.map((r) => ({ id: r.id as string, content: r.content as string, createdAt: new Date(r.created_at).toISOString(), sent: r.sent as number })), max: MAX_WELCOME_MESSAGES });
+}));
+
+/** Adds a welcome message: new accounts get it from now on, and everyone who already has an account is sent it now. */
+huddleAdminRouter.post("/huddle/welcome", h(async (req, res) => {
+  const user = req.user!;
+  rateLimit(`huddlewelcome:${user.id}`, 10, 3600_000);
+  const { content } = z.object({ content: contentSchema }).parse(req.body);
+  if (broadcasting) throw new HttpError(409, "A message is already being sent to everyone. Wait for it to finish.");
+  const count = await one<{ n: number }>(`select count(*)::int as n from welcome_messages`);
+  if (count!.n >= MAX_WELCOME_MESSAGES) throw new HttpError(400, `There can be at most ${MAX_WELCOME_MESSAGES} welcome messages. Remove one first.`);
+  const bot = await botId();
+  const message = (await one<{ id: string }>(`insert into welcome_messages(content, created_by) values ($1, $2) returning id::text as id`, [content, user.id]))!;
+  const recipients = await welcomeRecipients();
+  broadcasting = true;
+  await log(user.id, "welcome.add", { id: message.id, recipients: recipients.length });
+  // Like a broadcast, this carries on after the request has been answered.
+  void (async () => {
+    let sent = 0, skipped = 0, failed = 0;
+    for (const userId of recipients) {
+      try {
+        const r = await deliverWelcome(bot, { id: message.id, content }, userId);
+        if (r === "sent") sent++;
+        else skipped++; // blocked the bot, or already had it from signing up a moment ago
+      } catch (e) {
+        failed++;
+        console.error("Welcome message failed for one recipient", e);
+      }
+    }
+    await log(user.id, "welcome.add.done", { sent, skipped, failed });
+  })()
+    .catch(console.error)
+    .finally(() => { broadcasting = false; });
+  res.json({ ok: true, id: message.id, recipients: recipients.length });
+}));
+
+/** Removes a welcome message from the list new accounts get. Messages people already received stay where they are. */
+huddleAdminRouter.delete("/huddle/welcome/:id", h(async (req, res) => {
+  const user = req.user!;
+  const id = z.string().regex(/^\d+$/, "Message not found.").parse(req.params.id);
+  const gone = await one<{ id: string }>(`delete from welcome_messages where id = $1::bigint returning id::text as id`, [id]);
+  if (!gone) throw new HttpError(404, "That welcome message is already gone.");
+  await log(user.id, "welcome.remove", { id });
+  res.json({ ok: true });
 }));
 
 /** Gives Huddle Admin to anyone, by username. */

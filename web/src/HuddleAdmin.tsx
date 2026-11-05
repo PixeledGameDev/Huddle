@@ -33,6 +33,9 @@ function adminAuditText(e: { action: string; detail: any; actor: string | null }
     case "maintenance.end": return `${who} ended maintenance`;
     case "server.verify": return `${who} verified ${d.name}`;
     case "server.unverify": return `${who} removed verification from ${d.name}`;
+    case "welcome.add": return `${who} added a welcome message (sending to ${d.recipients} people)`;
+    case "welcome.add.done": return `Welcome message finished: ${d.sent} sent, ${d.skipped} skipped, ${d.failed} failed`;
+    case "welcome.remove": return `${who} removed a welcome message`;
     case "server.official": return `${who} made ${d.name} Huddle Official`;
     case "server.unofficial": return `${who} removed Huddle Official from ${d.name}`;
     default: return `${who}: ${e.action}`;
@@ -40,6 +43,66 @@ function adminAuditText(e: { action: string; detail: any; actor: string | null }
 }
 
 const MAINT_LENGTHS: [string, string][] = [["5", "5 minutes"], ["15", "15 minutes"], ["30", "30 minutes"], ["60", "1 hour"], ["120", "2 hours"], ["360", "6 hours"], ["720", "12 hours"], ["1440", "1 day"], ["custom", "Custom…"]];
+
+/** Messages the Huddle bot sends to every new account (and, when one is added, to everyone who already has an account). */
+function WelcomeSection({ people, broadcasting, onNotice, onError, onChanged }: { people: number; broadcasting: boolean; onNotice: (t: string) => void; onError: (e: unknown) => void; onChanged: () => void }) {
+  const [items, setItems] = useState<{ id: string; content: string; createdAt: string; sent: number }[]>([]);
+  const [max, setMax] = useState(10);
+  const [content, setContent] = useState("");
+  const [busy, setBusy] = useState(false);
+  const load = useCallback(() => {
+    api<{ messages: typeof items; max: number }>("/huddle/welcome").then((r) => { setItems(r.messages); setMax(r.max); }, onError);
+  }, [onError]);
+  useEffect(load, [load]);
+
+  async function add(e: React.FormEvent) {
+    e.preventDefault();
+    if (busy || !content.trim()) return;
+    if (!await confirmDialog(`Add this welcome message? Everyone who has an account (${people} ${people === 1 ? "person" : "people"}) is sent it now as Huddle, and so is everyone who signs up from now on. This can't be unsent.`, { confirmLabel: "Add and send", danger: false })) return;
+    setBusy(true);
+    try {
+      const r = await api<{ recipients: number }>("/huddle/welcome", "POST", { content });
+      onNotice(`Welcome message added. Sending to ${r.recipients} people as Huddle…`);
+      setContent("");
+      load();
+      onChanged();
+    } catch (err) { onError(err); }
+    setBusy(false);
+  }
+  async function remove(id: string) {
+    if (!await confirmDialog("Remove this welcome message? New accounts won't get it any more. People who already received it keep it.", { confirmLabel: "Remove" })) return;
+    try {
+      await api(`/huddle/welcome/${id}`, "DELETE");
+      load();
+      onChanged();
+    } catch (err) { onError(err); }
+  }
+
+  return (
+    <form className="stack" onSubmit={add}>
+      <h3>Welcome messages</h3>
+      <small className="hint">Huddle sends these as a direct message to everyone who makes an account, oldest first. Adding one also sends it to everyone who already has an account. People who blocked Huddle don't get them.</small>
+      {items.length > 0 && (
+        <ol className="plain-list welcome-list">
+          {items.map((m) => (
+            <li key={m.id}>
+              <span className="welcome-text">{m.content} <small className="hint">Sent to {m.sent}</small></span>
+              <button type="button" className="icon" onClick={() => void remove(m.id)}>Remove</button>
+            </li>
+          ))}
+        </ol>
+      )}
+      <label>
+        New welcome message
+        <textarea value={content} onChange={(e) => setContent(e.target.value)} maxLength={2000} rows={4} placeholder="Welcome to Huddle! …" />
+      </label>
+      {broadcasting && <small className="hint">A message is still being delivered to everyone. Wait for it to finish before adding another.</small>}
+      <button className="primary" disabled={busy || broadcasting || !content.trim() || items.length >= max}>
+        {busy ? "Adding…" : items.length >= max ? `Limit of ${max} reached` : "Add welcome message"}
+      </button>
+    </form>
+  );
+}
 
 /** Turns Huddle off for everyone but Huddle Admins, for a set time. */
 function MaintenanceSection({ onNotice, onError, onChanged }: { onNotice: (t: string) => void; onError: (e: unknown) => void; onChanged: () => void }) {
@@ -316,6 +379,8 @@ export function HuddleAdminModal({ meId, onClose, onNotice, onError }: { meId: s
               {sending ? "Sending…" : "Send as Huddle"}
             </button>
           </form>
+          <hr />
+          <WelcomeSection people={data.people} broadcasting={data.broadcasting} onNotice={onNotice} onError={onError} onChanged={() => { load(); loadAudit(false); }} />
           <hr />
           <form className="stack danger-zone" onSubmit={moderate}>
             <h3>Ban or delete a person</h3>

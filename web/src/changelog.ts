@@ -13,6 +13,15 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "5.25",
+    date: "2026-11-05",
+    title: "Verified and Official server perks, welcome messages",
+    changes: [
+      "Verified servers now get perks: up to 150 custom emojis (was 50), 60 stickers (was 20), 100 channels (was 50), 50 roles (was 25), 4 times the file storage, and 40 different reactions on a message (was 20). Huddle Official servers get all of them too. Owners can see their server's perks in its settings.",
+      "Huddle can now send welcome messages to everyone who makes an account. Huddle Admins add them in the Huddle Admin panel, and each new one is also sent to everyone who already has an account.",
+    ],
+  },
+  {
     version: "5.24",
     date: "2026-11-05",
     title: "Invite your friends, and Huddle Official servers",

@@ -7,6 +7,7 @@ import { one, q } from "./db";
 import { HttpError, h, rateLimit } from "./http";
 import { getProfile } from "./profiles";
 import { checkSecondFactor, has2fa } from "./security";
+import { sendWelcomeMessages } from "./welcome";
 
 export interface AuthUser {
   id: string;
@@ -97,6 +98,7 @@ authRouter.post(
         [username, await hash(password)]
       );
       await startSession(res, user!.id);
+      await sendWelcomeMessages(user!.id); // never throws; done before replying so the messages are already there when the app loads
       res.json({ user: await getProfile(user!.id) });
     } catch (e: any) {
       if (e.code === "23505") throw new HttpError(409, "That username is taken.");

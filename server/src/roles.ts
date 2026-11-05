@@ -1,3 +1,4 @@
+import { serverPerks } from "./perks";
 import { Router } from "express";
 import type { PoolClient } from "pg";
 import { z } from "zod";
@@ -8,7 +9,6 @@ import { emitServer } from "./realtime";
 
 export const rolesRouter = Router();
 
-const MAX_ROLES = 25;
 
 const roleBody = z.object({
   name: z.string().trim().min(1, "Give the role a name.").max(32),
@@ -50,7 +50,8 @@ function assertSelfAssignableIsSafe(selfAssignable: boolean, permissions: readon
 /** Inserts a role at the bottom of the list (everything else moves up one). */
 async function insertRole(c: PoolClient, serverId: string, body: z.infer<typeof roleBody>) {
   const n = await one<{ n: number }>(`select count(*)::int as n from server_roles where server_id = $1`, [serverId], c);
-  if (n!.n >= MAX_ROLES) throw new HttpError(400, `A server can have at most ${MAX_ROLES} roles.`);
+  const maxRoles = (await serverPerks(serverId, c)).roles;
+  if (n!.n >= maxRoles) throw new HttpError(400, `A server can have at most ${maxRoles} roles.`);
   await q(`update server_roles set position = position + 1 where server_id = $1`, [serverId], c);
   return (await one<RoleRow>(
     `insert into server_roles(server_id, name, color, permissions, position, hoist, self_assignable, section_name) values ($1, $2, $3, $4::text[], 1, $5, $6, $7) returning id, name, color, permissions, position`,

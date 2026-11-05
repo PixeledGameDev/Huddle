@@ -1157,3 +1157,6 @@ button.icon .ico { width: 1.3em; height: 1.3em; vertical-align: middle; }
 .invite-link-row { display: flex; gap: 8px; margin-top: 4px; }
 .invite-link-row input { flex: 1; min-width: 0; }
 .invite-friends button { font-size: 12px; padding: 4px 10px; }
+.welcome-list { counter-reset: welcome; }
+.welcome-list li { align-items: flex-start; }
+.welcome-text { white-space: pre-wrap; overflow-wrap: anywhere; min-width: 0; }

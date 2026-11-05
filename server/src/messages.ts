@@ -1,3 +1,4 @@
+import { serverPerks } from "./perks";
 import crypto from "crypto";
 import express, { Router } from "express";
 import { z } from "zod";
@@ -20,8 +21,6 @@ const MAX_FILE_BYTES = 8 * 1024 * 1024;
 const MAX_VIDEO_BYTES = 50 * 1024 * 1024;
 const UPLOAD_LIMIT = r2Enabled ? MAX_VIDEO_BYTES : MAX_FILE_BYTES;
 const MAX_ATTACHMENTS = 4;
-const MAX_DISTINCT_EMOJI = 20;
-const SERVER_QUOTA_BYTES = Number(process.env.SERVER_STORAGE_MB ?? 250) * 1024 * 1024;
 const EMOJI_RE = /^[\p{Extended_Pictographic}\p{Emoji_Modifier}\p{Regional_Indicator}\u200d\ufe0f]{1,16}$/u;
 
 /** @username mentions resolve only to current members. @everyone needs the Mention everyone permission. */
@@ -225,7 +224,7 @@ messagesRouter.post(
     if (!Buffer.isBuffer(data) || data.length === 0) throw new HttpError(400, "That file is empty.");
     const name = cleanName(typeof req.query.name === "string" ? req.query.name : "file");
     const used = await one<{ n: string }>(`select coalesce(sum(a.size), 0)::text as n from attachments a join channels c on c.id = a.channel_id where c.server_id = $1`, [serverId]);
-    if (Number(used!.n) + data.length > SERVER_QUOTA_BYTES) throw new HttpError(413, "This server has used up its file storage.");
+    if (Number(used!.n) + data.length > (await serverPerks(serverId)).storageMb * 1024 * 1024) throw new HttpError(413, "This server has used up its file storage.");
     const mime = sniffImage(data) ?? sniffVideo(data) ?? "application/octet-stream";
     if (data.length > MAX_FILE_BYTES && !mime.startsWith("video/")) throw new HttpError(413, "Only videos can be larger than 8 MB.");
     let attachment;
@@ -300,7 +299,8 @@ messagesRouter.put("/messages/:messageId/reactions/:emoji", h(async (req, res) =
     `select count(distinct emoji)::int as n, coalesce(bool_or(emoji = $2), false) as has from reactions where message_id = $1::bigint`,
     [messageId, emoji]
   );
-  if (!stats!.has && stats!.n >= MAX_DISTINCT_EMOJI) throw new HttpError(400, `A message can have at most ${MAX_DISTINCT_EMOJI} different reactions.`);
+  const maxReactions = (await serverPerks(m.server_id)).reactions;
+  if (!stats!.has && stats!.n >= maxReactions) throw new HttpError(400, `A message can have at most ${maxReactions} different reactions.`);
   const added = await q(`insert into reactions(message_id, user_id, emoji) values ($1::bigint, $2, $3) on conflict do nothing returning 1`, [messageId, user.id, emoji]);
   if (added.length) emitServer(m.server_id, "reaction.update", { serverId: m.server_id, channelId: m.channel_id, messageId, emoji, userId: user.id, added: true });
   res.json({ ok: true });

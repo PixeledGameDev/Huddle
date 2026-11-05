@@ -174,6 +174,11 @@ export function SettingsModal({ server, onClose, onSaved, onDeleted, onError }: 
               {server.iconVersion > 0 && <button type="button" className="link left" onClick={() => api(`/servers/${server.id}/icon`, "DELETE").catch(onError)}>Remove icon</button>}
             </div>
           </div>
+          {(server.verified || server.official) && (
+            <small className="hint">
+              {server.official ? "Huddle Official" : "Verified"} perks: up to {server.perks.emojis} emojis, {server.perks.stickers} stickers, {server.perks.channels} channels and {server.perks.roles} roles, {server.perks.storageMb} MB of file storage, and {server.perks.reactions} different reactions on a message.
+            </small>
+          )}
           <form
             className="stack"
             onSubmit={async (e) => {

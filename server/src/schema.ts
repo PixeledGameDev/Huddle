@@ -351,6 +351,21 @@ create table if not exists user_banners (
 alter table servers add column if not exists verified boolean not null default false;
 -- v24: Huddle Official servers (like verified, only Huddle Admins can set this)
 alter table servers add column if not exists official boolean not null default false;
+-- v25: welcome messages. The Huddle bot sends each one to every new account, and to everyone who already had one when it was added.
+create table if not exists welcome_messages (
+  id bigserial primary key,
+  content text not null,
+  created_by uuid references users(id) on delete set null,
+  created_at timestamptz not null default now()
+);
+-- who has already been sent which one, so nobody gets the same message twice
+create table if not exists welcome_deliveries (
+  message_id bigint not null references welcome_messages(id) on delete cascade,
+  user_id uuid not null references users(id) on delete cascade,
+  sent_at timestamptz not null default now(),
+  primary key (message_id, user_id)
+);
+create index if not exists welcome_deliveries_user on welcome_deliveries(user_id);
 
 -- v24: server emojis and stickers
 create table if not exists server_emojis (

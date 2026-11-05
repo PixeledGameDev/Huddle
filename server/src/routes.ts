@@ -22,6 +22,7 @@ import { rolesRouter } from "./roles";
 import { profilesRouter } from "./profiles";
 import { emitServer, isOnline, joinHuddleAdmins, joinServerRooms, leaveServerRooms, statusOf } from "./realtime";
 import { listOpenVotes, voteRouter } from "./votes";
+import { perksOf, serverPerks } from "./perks";
 
 export const api = Router();
 api.use(voteRouter, messagesRouter, pollsRouter, profilesRouter, adminRouter, gifsRouter, embedsRouter, dmsRouter, huddleAdminRouter, deletionRouter, securityRouter, passkeyRouter, suggestionsRouter, rolesRouter, friendsRouter, emojisRouter);
@@ -88,6 +89,7 @@ async function serverDetail(serverId: string, userId: string) {
     iconVersion: s.icon_version as number,
     verified: s.verified as boolean,
     official: s.official as boolean,
+    perks: perksOf(s),
     isDm: s.is_dm as boolean,
     ownerId: s.owner_id,
     myRole: me.role,
@@ -143,7 +145,8 @@ api.post("/servers/:serverId/channels", h(async (req, res) => {
   const name = raw.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
   if (!name) throw new HttpError(400, "Channel names need letters or numbers.");
   const count = await one<{ n: number }>(`select count(*)::int as n from channels where server_id = $1`, [serverId]);
-  if (count!.n >= 50) throw new HttpError(400, "This server has reached the 50 channel limit.");
+  const maxChannels = (await serverPerks(serverId)).channels;
+  if (count!.n >= maxChannels) throw new HttpError(400, `This server has reached the ${maxChannels} channel limit.`);
   const channel = await one(`insert into channels(server_id, name) values ($1, $2) returning id, name`, [serverId, name]);
   await q(`insert into audit_log(server_id, actor_id, action, detail) values ($1, $2, 'channel.create', $3)`, [serverId, req.user!.id, JSON.stringify({ name })]);
   emitServer(serverId, "channel.create", { serverId, channel });

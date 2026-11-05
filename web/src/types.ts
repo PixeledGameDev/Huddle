@@ -85,6 +85,8 @@ export interface ServerDetail {
   iconVersion: number;
   verified?: boolean;
   official?: boolean;
+  /** What this server may have, which depends on its badge (Verified and Huddle Official get more). */
+  perks: { emojis: number; stickers: number; channels: number; roles: number; storageMb: number; reactions: number };
   isDm: boolean;
   ownerId: string;
   myRole: Role;

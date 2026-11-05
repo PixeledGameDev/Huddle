@@ -7,7 +7,7 @@ type Kind = "emojis" | "stickers";
 
 function Section({ server, kind, onError }: { server: ServerDetail; kind: Kind; onError: (e: unknown) => void }) {
   const items = kind === "emojis" ? server.emojis : server.stickers;
-  const max = kind === "emojis" ? 50 : 20;
+  const max = kind === "emojis" ? server.perks.emojis : server.perks.stickers;
   const maxKb = kind === "emojis" ? 256 : 512;
   const [name, setName] = useState("");
   const [file, setFile] = useState<File | null>(null);

@@ -1,3 +1,4 @@
+import { serverPerks } from "./perks";
 import express, { Router } from "express";
 import { z } from "zod";
 import { one, q } from "./db";
@@ -8,8 +9,6 @@ import { emitServer } from "./realtime";
 
 export const emojisRouter = Router();
 
-const MAX_EMOJIS = 50;
-const MAX_STICKERS = 20;
 const emojiBody = express.raw({ type: "application/octet-stream", limit: 256 * 1024 });
 const stickerBody = express.raw({ type: "application/octet-stream", limit: 512 * 1024 });
 const nameSchema = z.string().trim().regex(/^[A-Za-z0-9_]{2,32}$/, "Names use 2 to 32 letters, numbers or underscores.");
@@ -31,7 +30,6 @@ const audit = (serverId: string, actor: string, action: string, detail: object) 
 function routesFor(kind: "emoji" | "sticker") {
   const table = kind === "emoji" ? "server_emojis" : "server_stickers";
   const plural = kind === "emoji" ? "emojis" : "stickers";
-  const max = kind === "emoji" ? MAX_EMOJIS : MAX_STICKERS;
 
   emojisRouter.get(`/${plural}/:id`, h(async (req, res) => {
     if (!/^[0-9a-f-]{36}$/.test(req.params.id)) throw new HttpError(404, "No image.");
@@ -45,6 +43,8 @@ function routesFor(kind: "emoji" | "sticker") {
     rateLimit(`${kind}:${user.id}`, 20, 60_000);
     const name = nameSchema.parse(req.query.name);
     const { mime, data } = readImage(req.body);
+    const perks = await serverPerks(serverId);
+    const max = kind === "emoji" ? perks.emojis : perks.stickers;
     const n = await one<{ n: number }>(`select count(*)::int as n from ${table} where server_id = $1`, [serverId]);
     if (n!.n >= max) throw new HttpError(400, `A server can have at most ${max} ${plural}.`);
     if (await one(`select 1 from ${table} where server_id = $1 and lower(name) = lower($2)`, [serverId, name])) throw new HttpError(409, "There is already one with that name.");
