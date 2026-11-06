@@ -1,3 +1,4 @@
+import { ServerTag } from "./ServerTag";
 import { Avatar } from "./Avatar";
 import { Name } from "./Name";
 import { StatusDot } from "./Status";
@@ -67,7 +68,7 @@ function Row({ m, server, state, onOpenProfile }: { m: Member; server: ServerDet
       <button className="member-id" onClick={() => onOpenProfile(m.id)} title={`View ${nameOfUser(m)}'s profile`}>
         <span className="avatar-wrap"><Avatar id={m.id} name={nameOfUser(m)} version={m.avatarVersion} accent={m.accent} size={32} /><StatusDot status={m.status ?? (m.online ? "online" : "offline")} /></span>
         <span className="member-name">
-          <span className="member-line"><span style={color ? { color } : undefined}><Name user={m} /></span>{timedOut && <em className="tag warn">timed out</em>}</span>
+          <span className="member-line"><span style={color ? { color } : undefined}><Name user={m} /></span><ServerTag tag={m.tag} />{timedOut && <em className="tag warn">timed out</em>}</span>
           {m.statusText && <small className="member-status">{m.statusText}</small>}
         </span>
       </button>

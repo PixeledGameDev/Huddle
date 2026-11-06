@@ -1,3 +1,4 @@
+import { ServerTag } from "./ServerTag";
 import { useMemo, useState } from "react";
 import { Avatar } from "./Avatar";
 import { Name } from "./Name";
@@ -107,6 +108,7 @@ export default function MessageRow(p: Props) {
           {!grouped && (
             <div className="msg-meta">
               <button className="name" onClick={() => p.onOpenProfile(m.authorId)}>{author ? <Name user={author} /> : authorName}</button>
+              <ServerTag tag={author?.tag} />
               <time>{timeOf(m.createdAt)}</time>
             </div>
           )}

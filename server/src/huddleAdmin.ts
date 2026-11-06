@@ -5,6 +5,7 @@ import { one, q } from "./db";
 import { getMessageDto } from "./hydrate";
 import { botId, deliverDm, insertBotMessage } from "./huddleBot";
 import { MAX_WELCOME_MESSAGES, deliverWelcome, welcomeRecipients } from "./welcome";
+import { MAX_AUTO_JOIN, addEveryoneTo, announceAdded } from "./autojoin";
 import { HttpError, h, rateLimit } from "./http";
 import { isHuddleAdmin } from "./perms";
 import { endMaintenance, maintenanceState, startMaintenance } from "./maintenance";
@@ -171,6 +172,43 @@ huddleAdminRouter.post("/huddle/send", h(async (req, res) => {
     .catch(console.error)
     .finally(() => { broadcasting = false; });
   res.json({ ok: true, recipients: recipients.length });
+}));
+
+// ---------- auto-join servers ----------
+huddleAdminRouter.get("/huddle/autojoin", h(async (_req, res) => {
+  const rows = await q<any>(
+    `select s.id, s.name, a.added_at, (select count(*)::int from memberships m where m.server_id = s.id) as members
+       from auto_join_servers a join servers s on s.id = a.server_id order by a.added_at`
+  );
+  res.json({ servers: rows.map((r) => ({ id: r.id as string, name: r.name as string, members: r.members as number, addedAt: new Date(r.added_at).toISOString() })), max: MAX_AUTO_JOIN });
+}));
+
+/** Picks a server everyone joins: all existing accounts are added to it now, and every new account joins it when they register. */
+huddleAdminRouter.post("/huddle/autojoin", h(async (req, res) => {
+  const user = req.user!;
+  rateLimit(`huddleautojoin:${user.id}`, 10, 3600_000);
+  const { serverId } = z.object({ serverId: z.string().uuid() }).parse(req.body);
+  const server = await one<{ id: string; name: string }>(`select id, name from servers where id = $1 and not is_dm`, [serverId]);
+  if (!server) throw new HttpError(404, "Server not found.");
+  const count = await one<{ n: number }>(`select count(*)::int as n from auto_join_servers`);
+  if (count!.n >= MAX_AUTO_JOIN) throw new HttpError(400, `At most ${MAX_AUTO_JOIN} servers can be auto-join servers. Remove one first.`);
+  const fresh = await q(`insert into auto_join_servers(server_id, added_by) values ($1, $2) on conflict do nothing returning 1`, [server.id, user.id]);
+  if (!fresh.length) throw new HttpError(409, "That server is already an auto-join server.");
+  const added = await addEveryoneTo(server.id);
+  await log(user.id, "autojoin.add", { serverId: server.id, name: server.name, added: added.length });
+  void announceAdded(server.id, added).catch(console.error);
+  res.json({ ok: true, added: added.length });
+}));
+
+/** Stops adding new accounts to a server. Nobody is removed from it. */
+huddleAdminRouter.delete("/huddle/autojoin/:serverId", h(async (req, res) => {
+  const user = req.user!;
+  const serverId = z.string().uuid().parse(req.params.serverId);
+  const gone = await one<{ name: string }>(`select name from servers where id = $1`, [serverId]);
+  const removed = await q(`delete from auto_join_servers where server_id = $1 returning 1`, [serverId]);
+  if (!removed.length) throw new HttpError(404, "That server isn't an auto-join server.");
+  await log(user.id, "autojoin.remove", { serverId, name: gone?.name ?? "" });
+  res.json({ ok: true });
 }));
 
 // ---------- welcome messages ----------

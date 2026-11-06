@@ -33,6 +33,8 @@ function adminAuditText(e: { action: string; detail: any; actor: string | null }
     case "maintenance.end": return `${who} ended maintenance`;
     case "server.verify": return `${who} verified ${d.name}`;
     case "server.unverify": return `${who} removed verification from ${d.name}`;
+    case "autojoin.add": return `${who} made ${d.name} an auto-join server (${d.added} people added)`;
+    case "autojoin.remove": return `${who} stopped auto-joining people to ${d.name}`;
     case "welcome.add": return `${who} added a welcome message (sending to ${d.recipients} people)`;
     case "welcome.add.done": return `Welcome message finished: ${d.sent} sent, ${d.skipped} skipped, ${d.failed} failed`;
     case "welcome.remove": return `${who} removed a welcome message`;
@@ -43,6 +45,67 @@ function adminAuditText(e: { action: string; detail: any; actor: string | null }
 }
 
 const MAINT_LENGTHS: [string, string][] = [["5", "5 minutes"], ["15", "15 minutes"], ["30", "30 minutes"], ["60", "1 hour"], ["120", "2 hours"], ["360", "6 hours"], ["720", "12 hours"], ["1440", "1 day"], ["custom", "Custom…"]];
+
+/** Servers everyone is added to: all existing accounts right away, and every new account when they register. */
+function AutoJoinSection({ people, servers, onNotice, onError, onChanged }: { people: number; servers: { id: string; name: string; members: number }[]; onNotice: (t: string) => void; onError: (e: unknown) => void; onChanged: () => void }) {
+  const [items, setItems] = useState<{ id: string; name: string; members: number }[]>([]);
+  const [max, setMax] = useState(5);
+  const [serverId, setServerId] = useState("");
+  const [busy, setBusy] = useState(false);
+  const load = useCallback(() => {
+    api<{ servers: typeof items; max: number }>("/huddle/autojoin").then((r) => { setItems(r.servers); setMax(r.max); }, onError);
+  }, [onError]);
+  useEffect(load, [load]);
+  const choices = servers.filter((s) => !items.some((i) => i.id === s.id));
+  useEffect(() => { if (!choices.some((c) => c.id === serverId)) setServerId(choices[0]?.id ?? ""); }, [items, servers]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  async function add(e: React.FormEvent) {
+    e.preventDefault();
+    const server = choices.find((c) => c.id === serverId);
+    if (!server || busy) return;
+    if (!await confirmDialog(`Add everyone (${people} ${people === 1 ? "person" : "people"}) to ${server.name} now, and everyone who makes an account from now on? People can leave afterwards.`, { confirmLabel: "Add everyone", danger: false })) return;
+    setBusy(true);
+    try {
+      const r = await api<{ added: number }>("/huddle/autojoin", "POST", { serverId });
+      onNotice(`${r.added} ${r.added === 1 ? "person was" : "people were"} added to ${server.name}.`);
+      load();
+      onChanged();
+    } catch (err) { onError(err); }
+    setBusy(false);
+  }
+  async function remove(id: string, name: string) {
+    if (!await confirmDialog(`Stop adding new accounts to ${name}? Nobody is removed from it.`, { confirmLabel: "Stop" })) return;
+    try {
+      await api(`/huddle/autojoin/${id}`, "DELETE");
+      load();
+      onChanged();
+    } catch (err) { onError(err); }
+  }
+
+  return (
+    <form className="stack" onSubmit={add}>
+      <h3>Servers everyone joins</h3>
+      <small className="hint">Pick a server to add everyone to. All existing accounts are added right away, and so is every new account when they make one. People who are banned from that server are skipped, and anyone can leave afterwards.</small>
+      {items.length > 0 && (
+        <ul className="plain-list welcome-list">
+          {items.map((s) => (
+            <li key={s.id}>
+              <span className="welcome-text">{s.name} <small className="hint">{s.members} {s.members === 1 ? "member" : "members"}</small></span>
+              <button type="button" className="icon" onClick={() => void remove(s.id, s.name)}>Stop</button>
+            </li>
+          ))}
+        </ul>
+      )}
+      <label>
+        Server
+        <select value={serverId} onChange={(e) => setServerId(e.target.value)} disabled={choices.length === 0 || items.length >= max}>
+          {choices.map((s) => <option key={s.id} value={s.id}>{s.name} ({s.members})</option>)}
+        </select>
+      </label>
+      <button className="primary" disabled={busy || !serverId || items.length >= max}>{busy ? "Adding…" : items.length >= max ? `Limit of ${max} reached` : "Add everyone to this server"}</button>
+    </form>
+  );
+}
 
 /** Messages the Huddle bot sends to every new account (and, when one is added, to everyone who already has an account). */
 function WelcomeSection({ people, broadcasting, onNotice, onError, onChanged }: { people: number; broadcasting: boolean; onNotice: (t: string) => void; onError: (e: unknown) => void; onChanged: () => void }) {
@@ -379,6 +442,8 @@ export function HuddleAdminModal({ meId, onClose, onNotice, onError }: { meId: s
               {sending ? "Sending…" : "Send as Huddle"}
             </button>
           </form>
+          <hr />
+          <AutoJoinSection people={data.people} servers={data.servers} onNotice={onNotice} onError={onError} onChanged={() => { load(); loadAudit(false); }} />
           <hr />
           <WelcomeSection people={data.people} broadcasting={data.broadcasting} onNotice={onNotice} onError={onError} onChanged={() => { load(); loadAudit(false); }} />
           <hr />

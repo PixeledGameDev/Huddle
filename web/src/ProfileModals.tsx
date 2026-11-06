@@ -1,3 +1,4 @@
+import { ServerTag } from "./ServerTag";
 import { DesktopSettings } from "./DesktopSettings";
 import { NotificationSettings } from "./NotificationSettings";
 import { confirmDialog } from "./Dialogs";
@@ -12,7 +13,7 @@ import { StatusDot } from "./Status";
 import { Modal } from "./Modals";
 import { loadPrefs, savePrefs, type Prefs } from "./prefs";
 import { can, canModerateMember } from "./permissions";
-import type { DmPrivacy, Friendship, Member, Permission, ServerDetail, ServerRole, User } from "./types";
+import type { DmPrivacy, Friendship, Member, Permission, ServerDetail, ServerRole, ServerSummary, User } from "./types";
 import { actionVerb, bannerImage, hue, nameOfUser, squareImage } from "./util";
 import { Icon, type IconName } from "./Icon";
 
@@ -134,6 +135,7 @@ export function ProfileCard({ userId, serverId, server, meId, onClose, onEdit, o
             <div className="pcard-id">
               <h2>
                 <Name user={p} />
+                <ServerTag tag={p.tag} />
                 {data?.server && data.server.role !== "member" && <em className="role-chip">{data.server.role}</em>}
                 {data?.server?.roles.map((r) => <em key={r.id} className="role-chip" style={{ ["--c" as string]: r.color ?? "var(--dim)" }}>{r.name}</em>)}
               </h2>
@@ -252,7 +254,7 @@ export function ProfileCard({ userId, serverId, server, meId, onClose, onEdit, o
 
 export type SettingsTab = "profile" | "theme" | "startup" | "notifications" | "account";
 
-export function MyProfileModal({ me, onClose, onUser, onDeleted, onError, onOpenThemes, initialTab = "profile" }: { initialTab?: SettingsTab; me: User; onClose: () => void; onUser: (u: User) => void; onDeleted: () => void; onError: (e: unknown) => void; onOpenThemes: () => void }) {
+export function MyProfileModal({ me, servers = [], onClose, onUser, onDeleted, onError, onOpenThemes, initialTab = "profile" }: { initialTab?: SettingsTab; servers?: ServerSummary[]; me: User; onClose: () => void; onUser: (u: User) => void; onDeleted: () => void; onError: (e: unknown) => void; onOpenThemes: () => void }) {
   const [displayName, setDisplayName] = useState(me.displayName ?? "");
   const [statusText, setStatusText] = useState(me.statusText);
   const [bio, setBio] = useState(me.bio);
@@ -283,6 +285,13 @@ export function MyProfileModal({ me, onClose, onUser, onDeleted, onError, onOpen
     } finally {
       setBusy(false);
     }
+  }
+
+  const tagServers = servers.filter((s) => s.tag && (s.verified || s.official));
+  async function pickTag(serverId: string | null) {
+    try {
+      onUser((await api<{ user: User }>("/me/tag", "PUT", { serverId })).user);
+    } catch (err) { onError(err); }
   }
 
   async function pickAvatar(file: File) {
@@ -371,6 +380,15 @@ export function MyProfileModal({ me, onClose, onUser, onDeleted, onError, onOpen
                   <select value={nameFont} onChange={(e) => setNameFont(e.target.value as NameFont)}>{NAME_FONTS.map((f) => <option key={f.id} value={f.id}>{f.label}</option>)}</select>
                   <span className="font-preview"><Name user={{ username: me.username, displayName: displayName.trim() || null, nameFont }} /></span>
                 </label>
+                {tagServers.length > 0 && (
+                  <label>Server tag
+                    <select value={me.tag?.serverId ?? ""} onChange={(e) => void pickTag(e.target.value || null)}>
+                      <option value="">None</option>
+                      {tagServers.map((s) => <option key={s.id} value={s.id}>{s.tag} ({s.name})</option>)}
+                    </select>
+                    <small className="muted">Wear the tag of a verified or Huddle Official server you're in next to your name.</small>
+                  </label>
+                )}
                 <label>Status<input value={statusText} maxLength={80} placeholder="What are you up to?" onChange={(e) => setStatusText(e.target.value)} /></label>
                 <label>About me<textarea value={bio} maxLength={190} rows={3} onChange={(e) => setBio(e.target.value)} /><small className="muted">{bio.length}/190</small></label>
                 <div className="color-row">

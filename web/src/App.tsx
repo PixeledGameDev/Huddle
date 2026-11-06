@@ -192,7 +192,7 @@ function Main({ me, initialServerId, onUser, onLogout }: { me: User; initialServ
       const wanted = pendingChannelRef.current; // set when a notification asked for a particular channel
       pendingChannelRef.current = null;
       setChannelId((cur) => (wanted && server.channels.some((c) => c.id === wanted) ? wanted : cur && server.channels.some((c) => c.id === cur) ? cur : server.channels[0]?.id ?? null));
-      setServers((prev) => prev.map((s) => (s.id === id && (s.name !== server.name || s.iconVersion !== server.iconVersion || !!s.verified !== !!server.verified || !!s.official !== !!server.official) ? { ...s, name: server.name, iconVersion: server.iconVersion, verified: server.verified, official: server.official } : s)));
+      setServers((prev) => prev.map((s) => (s.id === id && (s.name !== server.name || s.iconVersion !== server.iconVersion || !!s.verified !== !!server.verified || !!s.official !== !!server.official || (s.tag ?? null) !== ((server.verified || server.official ? server.tag : null) ?? null)) ? { ...s, name: server.name, iconVersion: server.iconVersion, verified: server.verified, official: server.official, tag: server.verified || server.official ? server.tag : null } : s)));
     } catch (e) {
       fail(e);
     }
@@ -1032,7 +1032,7 @@ function Main({ me, initialServerId, onUser, onLogout }: { me: User; initialServ
         />
       )}
       {modal === "huddle" && me.huddleAdmin && <HuddleAdminModal meId={me.id} onClose={() => setModal(null)} onNotice={push} onError={fail} />}
-      {modal === "myprofile" && <MyProfileModal me={me} onClose={() => setModal(null)} onUser={onUser} onDeleted={() => { socketRef.current?.disconnect(); onLogout(); }} onError={fail} onOpenThemes={() => setModal("themes")} />}
+      {modal === "myprofile" && <MyProfileModal me={me} servers={servers} onClose={() => setModal(null)} onUser={onUser} onDeleted={() => { socketRef.current?.disconnect(); onLogout(); }} onError={fail} onOpenThemes={() => setModal("themes")} />}
       {modal === "themes" && window.huddleDesktop && <ThemeEditorModal onClose={() => setModal(null)} onError={fail} onNotice={push} />}
       {profileId && detail && (
         <ProfileCard userId={profileId} serverId={detail.id} server={detail} meId={me.id} onClose={() => setProfileId(null)} onEdit={() => { setProfileId(null); setModal("myprofile"); }} onMessage={startDm} onChanged={refreshDms} onStartVote={(m) => void startVote(m)} onServerChanged={() => void loadServer(detail.id)} />

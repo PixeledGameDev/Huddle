@@ -366,6 +366,15 @@ create table if not exists welcome_deliveries (
   primary key (message_id, user_id)
 );
 create index if not exists welcome_deliveries_user on welcome_deliveries(user_id);
+-- v26: server tags (a short label verified and official servers can have, which members may wear next to their name)
+alter table servers add column if not exists tag text;
+alter table users add column if not exists tag_server_id uuid references servers(id) on delete set null;
+-- v26: servers everyone is added to when they make an account (and, when one is added here, everyone who already has one)
+create table if not exists auto_join_servers (
+  server_id uuid primary key references servers(id) on delete cascade,
+  added_by uuid references users(id) on delete set null,
+  added_at timestamptz not null default now()
+);
 
 -- v24: server emojis and stickers
 create table if not exists server_emojis (

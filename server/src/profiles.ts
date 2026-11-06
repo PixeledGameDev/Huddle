@@ -7,6 +7,7 @@ import { assertAllowsNewDm } from "./dms";
 import { areFriends, friendshipState } from "./friends";
 import { requireMember, requirePerm } from "./perms";
 import { emitServer, setPresence, statusOf } from "./realtime";
+import { asUserTag, userTagSql } from "./tags";
 
 export const profilesRouter = Router();
 
@@ -14,7 +15,7 @@ export const profilesRouter = Router();
 export const NAME_FONTS = ["default", "serif", "mono", "handwriting", "script", "display", "retro", "techno", "elegant", "impact"] as const;
 
 export async function getProfile(userId: string) {
-  const r = await one<any>(`select id, username, display_name, bio, accent, status_text, avatar_version, created_at, huddle_admin, presence, dm_privacy, banner_version, name_font, pronouns from users where id = $1`, [userId]);
+  const r = await one<any>(`select id, username, display_name, bio, accent, status_text, avatar_version, created_at, huddle_admin, presence, dm_privacy, banner_version, name_font, pronouns, ${userTagSql("u")} as user_tag from users u where u.id = $1`, [userId]);
   if (!r) return null;
   return {
     id: r.id as string,
@@ -27,6 +28,7 @@ export async function getProfile(userId: string) {
     avatarVersion: r.avatar_version as number,
     bannerVersion: r.banner_version as number,
     nameFont: r.name_font as string,
+    tag: asUserTag(r.user_tag),
     createdAt: new Date(r.created_at).toISOString(),
     status: statusOf(userId) as string, // how others currently see them
     dmPrivacy: r.dm_privacy as string | null, // who may start a DM with them (hidden from everyone else by the profile route)
@@ -124,6 +126,24 @@ profilesRouter.patch("/me/profile", h(async (req, res) => {
   const sets = entries.map(([k], i) => `${columns[k]} = $${i + 2}`).join(", ");
   await q(`update users set ${sets} where id = $1`, [user.id, ...entries.map(([, v]) => v)]);
   if (patch.presence) await setPresence(user.id, patch.presence);
+  await announceProfile(user.id);
+  res.json({ user: await getProfile(user.id) });
+}));
+
+/** Picks which server's tag to wear next to your name, or none. Only servers you're in that have a tag (and are verified or official) count. */
+profilesRouter.put("/me/tag", h(async (req, res) => {
+  const user = req.user!;
+  rateLimit(`mytag:${user.id}`, 20, 60_000);
+  const { serverId } = z.object({ serverId: z.string().uuid().nullable() }).parse(req.body);
+  if (serverId) {
+    const ok = await one(
+      `select 1 from servers s join memberships m on m.server_id = s.id and m.user_id = $2
+        where s.id = $1 and not s.is_dm and s.tag is not null and (s.verified or s.official)`,
+      [serverId, user.id]
+    );
+    if (!ok) throw new HttpError(400, "You can only wear the tag of a verified or Huddle Official server you're in.");
+  }
+  await q(`update users set tag_server_id = $2 where id = $1`, [user.id, serverId]);
   await announceProfile(user.id);
   res.json({ user: await getProfile(user.id) });
 }));

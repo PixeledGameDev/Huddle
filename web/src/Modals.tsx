@@ -101,6 +101,7 @@ const AUDIT_TEXT: Record<string, (e: any) => string> = {
   "channel.create": (e) => `${e.actor} created #${e.detail?.name}`,
   "channel.rename": (e) => `${e.actor} renamed #${e.detail?.from} to #${e.detail?.to}`,
   "channel.delete": (e) => `${e.actor} deleted #${e.detail?.name}`,
+  "server.tag": (e) => (e.detail?.tag ? `${e.actor} set the server tag to ${e.detail.tag}` : `${e.actor} removed the server tag`),
   "server.icon": (e) => (e.detail?.removed ? `${e.actor} removed the server icon` : `${e.actor} changed the server icon`),
   "emoji.add": (e) => `${e.actor} added the emoji :${e.detail?.name}:`,
   "emoji.rename": (e) => `${e.actor} renamed the emoji :${e.detail?.from}: to :${e.detail?.to}:`,
@@ -114,6 +115,35 @@ const AUDIT_TEXT: Record<string, (e: any) => string> = {
 };
 
 type Tab = "general" | "roles" | "emojis" | "bans" | "deleted" | "activity" | "danger";
+
+/** A verified or Huddle Official server's tag: 2 to 4 letters or numbers that members can wear next to their name. */
+function ServerTagField({ server, onError }: { server: ServerDetail; onError: (e: unknown) => void }) {
+  const [tag, setTag] = useState(server.tag ?? "");
+  const [busy, setBusy] = useState(false);
+  const [saved, setSaved] = useState(false);
+  async function save(value: string | null) {
+    setBusy(true);
+    try {
+      const r = await api<{ tag: string | null }>(`/servers/${server.id}/tag`, "PUT", { tag: value });
+      setTag(r.tag ?? "");
+      setSaved(true);
+      window.setTimeout(() => setSaved(false), 2000);
+    } catch (err) { onError(err); }
+    setBusy(false);
+  }
+  return (
+    <div className="stack tight">
+      <label>Server tag
+        <span className="invite-link-row">
+          <input value={tag} maxLength={4} placeholder="e.g. HDL" onChange={(e) => setTag(e.target.value.replace(/[^A-Za-z0-9]/g, "").toUpperCase())} />
+          <button type="button" disabled={busy || tag.length < 2 || tag === (server.tag ?? "")} onClick={() => void save(tag)}>{saved ? "Saved ✓" : "Save"}</button>
+          {server.tag && <button type="button" disabled={busy} onClick={() => void save(null)}>Remove</button>}
+        </span>
+        <small className="muted">2 to 4 letters or numbers. Members can choose to wear it next to their name, in every server.</small>
+      </label>
+    </div>
+  );
+}
 
 export function SettingsModal({ server, onClose, onSaved, onDeleted, onError }: { server: ServerDetail; onClose: () => void; onSaved: () => void; onDeleted: () => void; onError: (e: unknown) => void }) {
   const tabs: [Tab, string][] = [];
@@ -179,6 +209,7 @@ export function SettingsModal({ server, onClose, onSaved, onDeleted, onError }: 
               {server.official ? "Huddle Official" : "Verified"} perks: up to {server.perks.emojis} emojis, {server.perks.stickers} stickers, {server.perks.channels} channels and {server.perks.roles} roles, {server.perks.storageMb} MB of file storage, and {server.perks.reactions} different reactions on a message.
             </small>
           )}
+          {(server.verified || server.official) && <ServerTagField server={server} onError={onError} />}
           <form
             className="stack"
             onSubmit={async (e) => {

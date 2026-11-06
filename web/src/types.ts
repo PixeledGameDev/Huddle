@@ -1,7 +1,10 @@
+/** A server tag worn next to a name. */
+export interface UserTag { text: string; official: boolean; serverId: string }
 export interface User {
   id: string;
   username: string;
   displayName: string | null;
+  tag?: UserTag | null;
   bio: string;
   pronouns?: string;
   accent: string | null;
@@ -24,7 +27,7 @@ export type PublicStatus = "online" | "idle" | "dnd" | "offline";
 export interface FriendUser { id: string; username: string; displayName: string | null; avatarVersion: number; accent: string | null; statusText: string; nameFont?: string; status: PublicStatus }
 export type Friendship = "none" | "friends" | "outgoing" | "incoming";
 export type DmPrivacy = "everyone" | "friends" | "nobody";
-export interface ServerSummary { id: string; name: string; iconVersion: number; verified?: boolean; official?: boolean }
+export interface ServerSummary { id: string; name: string; iconVersion: number; verified?: boolean; official?: boolean; tag?: string | null }
 export interface Channel { id: string; name: string }
 /** The base membership role. "admin" only exists on servers that haven't converted their old admins to a role yet. */
 export type Role = "owner" | "admin" | "member";
@@ -36,6 +39,7 @@ export interface Member {
   id: string;
   username: string;
   displayName: string | null;
+  tag?: UserTag | null;
   avatarVersion: number;
   accent: string | null;
   statusText: string;
@@ -85,6 +89,8 @@ export interface ServerDetail {
   iconVersion: number;
   verified?: boolean;
   official?: boolean;
+  /** The server's own tag (only worn by people while it is verified or official). */
+  tag?: string | null;
   /** What this server may have, which depends on its badge (Verified and Huddle Official get more). */
   perks: { emojis: number; stickers: number; channels: number; roles: number; storageMb: number; reactions: number };
   isDm: boolean;

@@ -8,6 +8,7 @@ import { HttpError, h, rateLimit } from "./http";
 import { getProfile } from "./profiles";
 import { checkSecondFactor, has2fa } from "./security";
 import { sendWelcomeMessages } from "./welcome";
+import { autoJoinNewUser } from "./autojoin";
 
 export interface AuthUser {
   id: string;
@@ -98,6 +99,7 @@ authRouter.post(
         [username, await hash(password)]
       );
       await startSession(res, user!.id);
+      await autoJoinNewUser(user!.id); // never throws
       await sendWelcomeMessages(user!.id); // never throws; done before replying so the messages are already there when the app loads
       res.json({ user: await getProfile(user!.id) });
     } catch (e: any) {

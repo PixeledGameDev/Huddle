@@ -1160,3 +1160,7 @@ button.icon .ico { width: 1.3em; height: 1.3em; vertical-align: middle; }
 .welcome-list { counter-reset: welcome; }
 .welcome-list li { align-items: flex-start; }
 .welcome-text { white-space: pre-wrap; overflow-wrap: anywhere; min-width: 0; }
+
+/* ---- server tags ---- */
+.stag { display: inline-flex; align-items: center; gap: 3px; margin-left: 6px; padding: 0 5px; border-radius: 4px; font-size: 10.5px; font-weight: 700; line-height: 16px; letter-spacing: .04em; vertical-align: middle; background: color-mix(in srgb, var(--accent, #6f8cff) 22%, transparent); color: var(--accent, #6f8cff); }
+.stag.official-tag { background: color-mix(in srgb, #e0a526 24%, transparent); color: #e0a526; }

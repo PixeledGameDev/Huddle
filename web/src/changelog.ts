@@ -13,6 +13,15 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "5.26",
+    date: "2026-11-06",
+    title: "Server tags, and servers everyone joins",
+    changes: [
+      "Verified and Huddle Official servers can now have a server tag (2 to 4 letters or numbers), set by anyone who can manage the server. If you're in one, you can wear its tag next to your name from Edit profile.",
+      "Huddle Admins can now pick servers that everyone is added to: everyone who already has an account is added right away, and so is everyone who makes an account from now on. You can leave one whenever you like.",
+    ],
+  },
+  {
     version: "5.25",
     date: "2026-11-05",
     title: "Verified and Official server perks, welcome messages",

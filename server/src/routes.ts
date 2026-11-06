@@ -23,6 +23,7 @@ import { profilesRouter } from "./profiles";
 import { emitServer, isOnline, joinHuddleAdmins, joinServerRooms, leaveServerRooms, statusOf } from "./realtime";
 import { listOpenVotes, voteRouter } from "./votes";
 import { perksOf, serverPerks } from "./perks";
+import { TAG_RE, asUserTag, userTagSql } from "./tags";
 
 export const api = Router();
 api.use(voteRouter, messagesRouter, pollsRouter, profilesRouter, adminRouter, gifsRouter, embedsRouter, dmsRouter, huddleAdminRouter, deletionRouter, securityRouter, passkeyRouter, suggestionsRouter, rolesRouter, friendsRouter, emojisRouter);
@@ -69,7 +70,7 @@ async function serverDetail(serverId: string, userId: string) {
   const legacyAdminCount = me.role === "owner" ? (await one<{ n: number }>(`select count(*)::int as n from memberships where server_id = $1 and role = 'admin'`, [serverId]))!.n : 0;
   const members = (
     await q<any>(
-      `select u.id, u.username, u.display_name, u.avatar_version, u.accent, u.status_text, u.name_font, m.role, t.until as timeout_until
+      `select u.id, u.username, u.display_name, u.avatar_version, u.accent, u.status_text, u.name_font, m.role, t.until as timeout_until, ${userTagSql("u")} as user_tag
          from memberships m join users u on u.id = m.user_id
          left join server_timeouts t on t.server_id = m.server_id and t.user_id = m.user_id and t.until > now()
         where m.server_id = $1`,
@@ -79,7 +80,7 @@ async function serverDetail(serverId: string, userId: string) {
     .map((r) => {
       const roleIds = roleIdsOf(r.id);
       const top = r.role === "owner" ? OWNER_TOP : r.role === "admin" ? ADMIN_TOP : roleIds.length ? positionOf.get(roleIds[0]) ?? 0 : 0;
-      return { id: r.id, username: r.username, displayName: r.display_name ?? null, avatarVersion: r.avatar_version as number, accent: r.accent ?? null, statusText: r.status_text as string, nameFont: r.name_font as string, role: r.role as Role, roleIds, top, online: isOnline(r.id), status: statusOf(r.id), timeoutUntil: r.timeout_until ? new Date(r.timeout_until).toISOString() : null };
+      return { id: r.id, username: r.username, displayName: r.display_name ?? null, avatarVersion: r.avatar_version as number, accent: r.accent ?? null, statusText: r.status_text as string, nameFont: r.name_font as string, tag: asUserTag(r.user_tag), role: r.role as Role, roleIds, top, online: isOnline(r.id), status: statusOf(r.id), timeoutUntil: r.timeout_until ? new Date(r.timeout_until).toISOString() : null };
     })
     .sort((a, b) => Number(b.online) - Number(a.online) || a.username.localeCompare(b.username));
   const settings = Object.fromEntries(Object.entries(settingsColumns).map(([k, col]) => [k, s[col]]));
@@ -89,6 +90,7 @@ async function serverDetail(serverId: string, userId: string) {
     iconVersion: s.icon_version as number,
     verified: s.verified as boolean,
     official: s.official as boolean,
+    tag: (s.tag ?? null) as string | null,
     perks: perksOf(s),
     isDm: s.is_dm as boolean,
     ownerId: s.owner_id,
@@ -110,7 +112,7 @@ async function serverDetail(serverId: string, userId: string) {
 api.get("/servers", h(async (req, res) => {
   res.json({
     servers: await q(
-      `select s.id, s.name, s.icon_version as "iconVersion", s.verified, s.official from servers s
+      `select s.id, s.name, s.icon_version as "iconVersion", s.verified, s.official, case when s.verified or s.official then s.tag end as tag from servers s
         where not s.is_dm and (exists (select 1 from memberships m where m.server_id = s.id and m.user_id = $1)
                             or exists (select 1 from users u where u.id = $1 and u.huddle_admin))
         order by s.created_at`,
@@ -245,6 +247,23 @@ api.post("/join", h(async (req, res) => {
   res.json({ server: await one(`select id, name, icon_version as "iconVersion", verified, official from servers where id = $1`, [inv.server_id]) });
 }));
 
+/** Sets or clears a server's tag. Only verified and Huddle Official servers can have one (it can always be cleared). */
+api.put("/servers/:serverId/tag", h(async (req, res) => {
+  const { serverId } = req.params;
+  const user = req.user!;
+  await requirePerm(serverId, user.id, "manage_server");
+  await assertNotDm(serverId);
+  const { tag } = z.object({ tag: z.string().trim().nullable() }).parse(req.body);
+  if (tag && !TAG_RE.test(tag)) throw new HttpError(400, "A tag is 2 to 4 letters or numbers.");
+  const value = tag ? tag.toUpperCase() : null;
+  const s = (await one<{ verified: boolean; official: boolean }>(`select verified, official from servers where id = $1`, [serverId]))!;
+  if (value && !s.verified && !s.official) throw new HttpError(403, "Only verified and Huddle Official servers can have a tag.");
+  await q(`update servers set tag = $2 where id = $1`, [serverId, value]);
+  await q(`insert into audit_log(server_id, actor_id, action, detail) values ($1, $2, 'server.tag', $3)`, [serverId, user.id, JSON.stringify({ tag: value })]);
+  emitServer(serverId, "server.update", { serverId });
+  res.json({ ok: true, tag: value });
+}));
+
 api.post("/servers/:serverId/leave", h(async (req, res) => {
   const { serverId } = req.params;
   const user = req.user!;
@@ -254,6 +273,7 @@ api.post("/servers/:serverId/leave", h(async (req, res) => {
   if (!(await one(`select 1 from memberships where server_id = $1 and user_id = $2`, [serverId, user.id])))
     throw new HttpError(400, "You haven't joined this server.");
   await q(`delete from memberships where server_id = $1 and user_id = $2`, [serverId, user.id]);
+  await q(`update users set tag_server_id = null where id = $1 and tag_server_id = $2`, [user.id, serverId]); // stop wearing its tag
   await q(`insert into audit_log(server_id, actor_id, action) values ($1, $2, 'member.leave')`, [serverId, user.id]);
   leaveServerRooms(user.id, serverId);
   emitServer(serverId, "member.leave", { serverId, userId: user.id });
