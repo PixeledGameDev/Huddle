@@ -28,7 +28,9 @@ export interface FriendUser { id: string; username: string; displayName: string 
 export type Friendship = "none" | "friends" | "outgoing" | "incoming";
 export type DmPrivacy = "everyone" | "friends" | "nobody";
 export interface ServerSummary { id: string; name: string; iconVersion: number; verified?: boolean; official?: boolean; tag?: string | null }
-export interface Channel { id: string; name: string }
+/** What a member can do in one channel. Every channel starts open; roles can be given or denied these. */
+export type ChannelPerm = "view_channel" | "send_messages" | "add_reactions" | "attach_files";
+export interface Channel { id: string; name: string; /** what you can do here (missing = everything, as in direct messages) */ perms?: ChannelPerm[]; /** some roles have custom permissions here */ restricted?: boolean }
 /** The base membership role. "admin" only exists on servers that haven't converted their old admins to a role yet. */
 export type Role = "owner" | "admin" | "member";
 export type Permission = "manage_server" | "manage_channels" | "manage_roles" | "manage_messages" | "kick_members" | "ban_members" | "timeout_members" | "mention_everyone" | "view_audit_log" | "manage_emojis";

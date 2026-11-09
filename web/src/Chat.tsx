@@ -93,6 +93,9 @@ export default function Chat(p: Props) {
   }
 
   if (!channel) return <section className="chat empty"><p className="muted">Pick a channel to start talking.</p></section>;
+  const canSend = !channel.perms || channel.perms.includes("send_messages");
+  const canAttach = !channel.perms || channel.perms.includes("attach_files");
+  const canReact = !channel.perms || channel.perms.includes("add_reactions");
 
   return (
     <section
@@ -150,6 +153,7 @@ export default function Chat(p: Props) {
               me={me}
               canManage={p.canManageMessages}
               timedOut={timedOut}
+              canReact={canReact}
               byName={byName}
               byId={byId}
               nameOf={nameOf}
@@ -184,6 +188,8 @@ export default function Chat(p: Props) {
         timeoutUntil={p.timeoutUntil}
         replyTo={p.replyTo}
         gifsEnabled={p.gifsEnabled}
+        canSend={canSend}
+        canAttach={canAttach}
         onCancelReply={() => p.onReply(null)}
         onSend={(content, ids, extra) => { stick.current = true; return p.onSend(content, ids, extra); }}
         onUpload={p.onUpload}

@@ -4,6 +4,7 @@ import { userFromCookie } from "./auth";
 import { one, q } from "./db";
 import { inMaintenance } from "./maintenance";
 import { isHuddleAdmin } from "./perms";
+import { hiddenFrom } from "./channelperms";
 import { effectiveStatus } from "./idlestatus";
 
 let io: IOServer;
@@ -42,6 +43,12 @@ export async function setPresence(userId: string, presence: Presence) {
 
 export const emitServer = (serverId: string, event: string, payload: unknown) =>
   io.to(`server:${serverId}`).emit(event, payload);
+/** Like emitServer, but for something that happened in one channel: people who can't see that channel don't hear about it. */
+export async function emitChannel(serverId: string, channelId: string, event: string, payload: unknown) {
+  const hidden = await hiddenFrom(serverId, channelId);
+  if (!hidden.length) return emitServer(serverId, event, payload);
+  io.to(`server:${serverId}`).except(hidden.map((id) => `user:${id}`)).emit(event, payload);
+}
 export const emitUser = (userId: string, event: string, payload: unknown) =>
   io.to(`user:${userId}`).emit(event, payload);
 export const joinServerRooms = (userId: string, serverId: string) =>
@@ -126,7 +133,9 @@ export function initRealtime(httpServer: http.Server) {
         if (typeof p?.channelId !== "string") return;
         const ch = await one<{ server_id: string }>(`select server_id from channels where id = $1`, [p.channelId]);
         if (!ch || !socket.rooms.has(`server:${ch.server_id}`)) return;
-        socket.to(`server:${ch.server_id}`).emit("typing", { channelId: p.channelId, userId: user.id, username: user.username });
+        const hidden = await hiddenFrom(ch.server_id, p.channelId);
+        if (hidden.includes(user.id)) return; // they can't see this channel, so they aren't typing in it
+        socket.to(`server:${ch.server_id}`).except(hidden.map((id) => `user:${id}`)).emit("typing", { channelId: p.channelId, userId: user.id, username: user.username });
       } catch {
         /* ignore malformed ids */
       }

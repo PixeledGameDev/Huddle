@@ -851,6 +851,7 @@ function Main({ me, initialServerId, onUser, onLogout }: { me: User; initialServ
                 <div key={c.id} className="chan-row">
                   <button className={c.id === channelId ? "chan active" : (unread.channels[c.id] ?? 0) > 0 ? "chan unread" : "chan"} onClick={() => { setChannelId(c.id); closeNavIfSmall(); }}>
                     <span className="hash">#</span><span className="chan-name">{c.name}</span>
+                    {c.restricted && <span className="chan-lock" title="Some roles have custom permissions here"><Icon name="lock" /></span>}
                     {(unread.channels[c.id] ?? 0) > 0 && <span className="badge inline" aria-label={`${unread.channels[c.id]} mentions`}>{unread.channels[c.id]}</span>}
                   </button>
                   {canChannels && (

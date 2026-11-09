@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { api, uploadRaw } from "./api";
 import { can, isOwner } from "./permissions";
 import { EmojiTab } from "./EmojiSettings";
+import { ChannelPermsTab } from "./ChannelPerms";
 import { RolesTab } from "./Roles";
 import type { BanEntry, DeletedMessage, ServerDetail, ServerSummary, Settings } from "./types";
 import { dateTimeOf, extractInviteCode, fmtDuration, fmtSize, hue, squareImage } from "./util";
@@ -100,6 +101,7 @@ const AUDIT_TEXT: Record<string, (e: any) => string> = {
   "mod.untimeout": (e) => `${e.actor} removed ${e.target}'s timeout`,
   "channel.create": (e) => `${e.actor} created #${e.detail?.name}`,
   "channel.rename": (e) => `${e.actor} renamed #${e.detail?.from} to #${e.detail?.to}`,
+  "channel.permissions": (e) => `${e.actor} changed the permissions of #${e.detail?.name}`,
   "channel.delete": (e) => `${e.actor} deleted #${e.detail?.name}`,
   "server.tag": (e) => (e.detail?.tag ? `${e.actor} set the server tag to ${e.detail.tag}` : `${e.actor} removed the server tag`),
   "server.icon": (e) => (e.detail?.removed ? `${e.actor} removed the server icon` : `${e.actor} changed the server icon`),
@@ -114,7 +116,7 @@ const AUDIT_TEXT: Record<string, (e: any) => string> = {
   "message.delete": (e) => `${e.actor} deleted a message by ${e.target}`,
 };
 
-type Tab = "general" | "roles" | "emojis" | "bans" | "deleted" | "activity" | "danger";
+type Tab = "general" | "roles" | "channelperms" | "emojis" | "bans" | "deleted" | "activity" | "danger";
 
 /** A verified or Huddle Official server's tag: 2 to 4 letters or numbers that members can wear next to their name. */
 function ServerTagField({ server, onError }: { server: ServerDetail; onError: (e: unknown) => void }) {
@@ -149,6 +151,7 @@ export function SettingsModal({ server, onClose, onSaved, onDeleted, onError }: 
   const tabs: [Tab, string][] = [];
   if (can(server, "manage_server")) tabs.push(["general", "General"]);
   if (can(server, "manage_roles") || server.roles.length > 0) tabs.push(["roles", "Roles"]);
+  if (can(server, "manage_channels")) tabs.push(["channelperms", "Channel permissions"]);
   if (can(server, "manage_emojis")) tabs.push(["emojis", "Emoji & stickers"]);
   if (can(server, "ban_members")) tabs.push(["bans", "Bans"]);
   if (can(server, "manage_messages")) tabs.push(["deleted", "Deleted messages"]);
@@ -264,6 +267,8 @@ export function SettingsModal({ server, onClose, onSaved, onDeleted, onError }: 
       )}
 
       {tab === "roles" && <RolesTab server={server} onError={onError} />}
+
+      {tab === "channelperms" && <ChannelPermsTab server={server} onError={onError} />}
 
       {tab === "emojis" && <EmojiTab server={server} onError={onError} />}
 

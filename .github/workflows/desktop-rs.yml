@@ -1,0 +1,87 @@
+name: Desktop app (Rust)
+
+# Builds the Rust version of the Windows app (desktop-rs/) and publishes it the same way the Electron one was: installer plus
+# latest.yml in the R2 "desktop/" folder, so the website's download page and the in-app updater keep working unchanged.
+#
+# NOT YET RUN: it was written alongside the port and has never executed. Run it by hand once ("Run workflow") and check the
+# installer on a real Windows computer (desktop-rs/WINDOWS-CHECKLIST.md) before relying on it. Do not enable both this and
+# desktop.yml for the same release: they would overwrite each other's files in R2.
+on:
+  workflow_dispatch:
+  push:
+    tags: ["desktop-rs-v*"]
+
+concurrency:
+  group: desktop-release
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: desktop-rs
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: desktop-rs
+      - name: Use the version from the tag (desktop-rs-v3.1.0 becomes 3.1.0)
+        if: ${{ startsWith(github.ref, 'refs/tags/desktop-rs-v') }}
+        shell: bash
+        run: sed -i "0,/^version = .*/s//version = \"${GITHUB_REF_NAME#desktop-rs-v}\"/" Cargo.toml
+      - run: cargo test --locked
+      - name: Build (the address goes into the program so it connects without asking)
+        run: cargo build --release --locked
+        env:
+          HUDDLE_DEFAULT_URL: ${{ vars.HUDDLE_URL }}
+      - name: Make the installer
+        run: |
+          cargo install cargo-packager --locked
+          cargo packager --release
+      - name: Write the update feed
+        shell: bash
+        run: node scripts/make-latest-yml.js dist > dist/latest.yml
+      - uses: actions/upload-artifact@v4
+        with:
+          name: huddle-desktop-rs
+          if-no-files-found: error
+          path: |
+            desktop-rs/dist/*.exe
+            desktop-rs/dist/latest.yml
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    env:
+      R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+      R2_BUCKET: ${{ secrets.R2_BUCKET }}
+      AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+      AWS_DEFAULT_REGION: auto
+      AWS_REQUEST_CHECKSUM_CALCULATION: when_required
+      AWS_RESPONSE_CHECKSUM_VALIDATION: when_required
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: installers
+          merge-multiple: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Publish to the website's download page
+        if: ${{ env.R2_BUCKET != '' }}
+        run: |
+          ls -l installers
+          node desktop-rs/scripts/make-manifest.js installers > latest.json
+          ENDPOINT="https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com"
+          aws s3 sync installers "s3://${R2_BUCKET}/desktop" --delete --exclude "latest.json" --endpoint-url "$ENDPOINT"
+          aws s3 cp latest.json "s3://${R2_BUCKET}/desktop/latest.json" --content-type application/json --endpoint-url "$ENDPOINT"
+      - name: Nothing to publish to
+        if: ${{ env.R2_BUCKET == '' }}
+        run: echo "R2 secrets aren't set, so the installer was built but not published. It's in this run's artifacts."

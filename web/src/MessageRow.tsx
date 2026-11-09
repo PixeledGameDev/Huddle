@@ -20,6 +20,7 @@ interface Props {
   me: User;
   canManage: boolean;
   timedOut: boolean;
+  canReact: boolean;
   byName: Map<string, Member>;
   byId: Map<string, Member>;
   editing: boolean;
@@ -152,7 +153,7 @@ export default function MessageRow(p: Props) {
               {m.reactions.map((r) => {
                 const mine = r.userIds.includes(me.id);
                 return (
-                  <button key={r.emoji} className={mine ? "react mine" : "react"} aria-pressed={mine} disabled={timedOut} title={r.userIds.map(p.nameOf).join(", ")} onClick={() => p.onReact(r.emoji)}>
+                  <button key={r.emoji} className={mine ? "react mine" : "react"} aria-pressed={mine} disabled={timedOut || !p.canReact} title={r.userIds.map(p.nameOf).join(", ")} onClick={() => p.onReact(r.emoji)}>
                     <Emoji emoji={r.emoji} /> <span>{r.userIds.length}</span>
                   </button>
                 );
@@ -165,7 +166,7 @@ export default function MessageRow(p: Props) {
         <div className={p.pickerOpen ? "msg-tools open" : "msg-tools"} onClick={(e) => e.stopPropagation()}>
           {!timedOut && (
             <>
-              <button aria-label="Add reaction" aria-expanded={p.pickerOpen} onClick={p.onTogglePicker}><Icon name="smile-plus" /></button>
+              {p.canReact && <button aria-label="Add reaction" aria-expanded={p.pickerOpen} onClick={p.onTogglePicker}><Icon name="smile-plus" /></button>}
               <button onClick={p.onReply}>Reply</button>
               {isMine && !m.poll && <button onClick={p.onStartEdit}>Edit</button>}
             </>

@@ -1164,3 +1164,14 @@ button.icon .ico { width: 1.3em; height: 1.3em; vertical-align: middle; }
 /* ---- server tags ---- */
 .stag { display: inline-flex; align-items: center; gap: 3px; margin-left: 6px; padding: 0 5px; border-radius: 4px; font-size: 10.5px; font-weight: 700; line-height: 16px; letter-spacing: .04em; vertical-align: middle; background: color-mix(in srgb, var(--accent, #6f8cff) 22%, transparent); color: var(--accent, #6f8cff); }
 .stag.official-tag { background: color-mix(in srgb, #e0a526 24%, transparent); color: #e0a526; }
+
+/* ---- channel permissions ---- */
+.chan-lock { display: inline-flex; margin-left: auto; opacity: .6; }
+.chan-lock .ico { width: 12px; height: 12px; }
+.perm-grid-wrap { overflow-x: auto; }
+.perm-grid { border-collapse: collapse; width: 100%; font-size: 13px; }
+.perm-grid th, .perm-grid td { padding: 6px 8px; text-align: left; vertical-align: middle; border-bottom: 1px solid var(--line, rgba(128,128,128,.25)); }
+.perm-grid thead th { font-size: 12px; white-space: nowrap; }
+.perm-grid select { font-size: 12px; padding: 3px 6px; }
+.perm-grid select.perm-allow { color: #2e9d5b; font-weight: 600; }
+.perm-grid select.perm-deny { color: #d64545; font-weight: 600; }

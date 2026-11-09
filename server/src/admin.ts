@@ -5,6 +5,7 @@ import { channelSlug } from "./fileutil";
 import { HttpError, h } from "./http";
 import { isHuddleAdmin, membership, requireMember, requirePerm, type Permission } from "./perms";
 import { emitServer, emitUser, leaveServerRooms } from "./realtime";
+import { CHANNEL_PERMS } from "./channelperms";
 
 export const adminRouter = Router();
 
@@ -112,6 +113,54 @@ adminRouter.patch("/servers/:serverId/channels/:channelId", h(async (req, res) =
   if (before && before.name !== name) await q(`insert into audit_log(server_id, actor_id, action, detail) values ($1, $2, 'channel.rename', $3)`, [serverId, req.user!.id, JSON.stringify({ from: before.name, to: name })]);
   emitServer(serverId, "channel.update", { serverId });
   res.json({ channel: ch });
+}));
+
+// ---------- channel permissions (needs manage channels) ----------
+/** What each role (and "everyone", roleId null) is explicitly allowed or denied in this channel. Anything not listed is inherited. */
+adminRouter.get("/servers/:serverId/channels/:channelId/permissions", h(async (req, res) => {
+  const { serverId, channelId } = req.params;
+  await requirePerm(serverId, req.user!.id, "manage_channels");
+  const ch = await one(`select 1 from channels where id = $1 and server_id = $2`, [channelId, serverId]);
+  if (!ch) throw new HttpError(404, "Channel not found.");
+  const rows = await q<any>(`select role_id, allow, deny from channel_overrides where channel_id = $1`, [channelId]);
+  res.json({ permissions: CHANNEL_PERMS, overrides: rows.map((r) => ({ roleId: (r.role_id ?? null) as string | null, allow: r.allow as string[], deny: r.deny as string[] })) });
+}));
+
+const overridesSchema = z.object({
+  overrides: z
+    .array(z.object({ roleId: z.string().uuid().nullable(), allow: z.array(z.enum(CHANNEL_PERMS)).max(CHANNEL_PERMS.length), deny: z.array(z.enum(CHANNEL_PERMS)).max(CHANNEL_PERMS.length) }))
+    .max(60),
+});
+
+/** Replaces the channel's overrides with exactly the ones sent. */
+adminRouter.put("/servers/:serverId/channels/:channelId/permissions", h(async (req, res) => {
+  const { serverId, channelId } = req.params;
+  const user = req.user!;
+  await requirePerm(serverId, user.id, "manage_channels");
+  const ch = await one<{ name: string }>(`select name from channels where id = $1 and server_id = $2`, [channelId, serverId]);
+  if (!ch) throw new HttpError(404, "Channel not found.");
+  const { overrides } = overridesSchema.parse(req.body);
+  const seen = new Set<string | null>();
+  const keep: { roleId: string | null; allow: string[]; deny: string[] }[] = [];
+  for (const o of overrides) {
+    if (seen.has(o.roleId)) throw new HttpError(400, "Each role can only be listed once.");
+    seen.add(o.roleId);
+    const allow = [...new Set(o.allow)], deny = [...new Set(o.deny)];
+    if (allow.some((p) => deny.includes(p))) throw new HttpError(400, "A permission can't be both allowed and denied for the same role.");
+    if (allow.length || deny.length) keep.push({ roleId: o.roleId, allow, deny });
+  }
+  const roleIds = keep.map((o) => o.roleId).filter((r): r is string => !!r);
+  if (roleIds.length) {
+    const found = await q(`select id from server_roles where server_id = $1 and id = any($2::uuid[])`, [serverId, roleIds]);
+    if (found.length !== roleIds.length) throw new HttpError(400, "One of those roles doesn't exist in this server.");
+  }
+  await tx(async (c) => {
+    await q(`delete from channel_overrides where channel_id = $1`, [channelId], c);
+    for (const o of keep) await q(`insert into channel_overrides(channel_id, role_id, allow, deny) values ($1, $2, $3::text[], $4::text[])`, [channelId, o.roleId, o.allow, o.deny], c);
+  });
+  await q(`insert into audit_log(server_id, actor_id, action, detail) values ($1, $2, 'channel.permissions', $3)`, [serverId, user.id, JSON.stringify({ name: ch.name })]);
+  emitServer(serverId, "channel.update", { serverId });
+  res.json({ ok: true });
 }));
 
 // ---------- deleted messages (needs manage messages) ----------

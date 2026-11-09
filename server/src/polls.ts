@@ -4,7 +4,8 @@ import { one, q, tx } from "./db";
 import { getMessageDto, pollDtos } from "./hydrate";
 import { HttpError, h, rateLimit } from "./http";
 import { assertCanWrite, channelServer, requireMember } from "./perms";
-import { emitServer } from "./realtime";
+import { emitChannel } from "./realtime";
+import { requireChannelPerms } from "./channelperms";
 
 export const pollsRouter = Router();
 
@@ -20,7 +21,8 @@ pollsRouter.post("/channels/:channelId/polls", h(async (req, res) => {
   const user = req.user!;
   const { channelId } = req.params;
   const serverId = await channelServer(channelId);
-  await requireMember(serverId, user.id);
+  const me = await requireMember(serverId, user.id);
+  await requireChannelPerms(channelId, serverId, user.id, me, "send_messages");
   await assertCanWrite(serverId, user.id);
   rateLimit(`poll:${user.id}`, 5, 60_000);
   const body = createSchema.parse(req.body);
@@ -37,7 +39,7 @@ pollsRouter.post("/channels/:channelId/polls", h(async (req, res) => {
     return m!.id;
   });
   const message = await getMessageDto(messageId, null);
-  emitServer(serverId, "message.create", message);
+  await emitChannel(serverId, channelId, "message.create", message);
   res.json({ message });
 }));
 
@@ -54,14 +56,15 @@ const isClosed = (p: any) => !!p.closed_at || (!!p.ends_at && new Date(p.ends_at
 
 async function broadcast(p: any) {
   const poll = (await pollDtos([p.id], null)).get(p.id)!;
-  emitServer(p.server_id, "poll.update", { serverId: p.server_id, channelId: p.channel_id, messageId: p.message_id, poll });
+  await emitChannel(p.server_id, p.channel_id, "poll.update", { serverId: p.server_id, channelId: p.channel_id, messageId: p.message_id, poll });
 }
 
 pollsRouter.put("/polls/:pollId/vote", h(async (req, res) => {
   const user = req.user!;
   rateLimit(`pollvote:${user.id}`, 30, 10_000);
   const p = await pollContext(req.params.pollId);
-  await requireMember(p.server_id, user.id);
+  const voter = await requireMember(p.server_id, user.id);
+  await requireChannelPerms(p.channel_id, p.server_id, user.id, voter);
   await assertCanWrite(p.server_id, user.id);
   if (isClosed(p)) throw new HttpError(409, "This poll is closed.");
   const { optionIds } = z.object({ optionIds: z.array(z.string().uuid()).max(10) }).parse(req.body);
@@ -83,6 +86,7 @@ pollsRouter.post("/polls/:pollId/close", h(async (req, res) => {
   const user = req.user!;
   const p = await pollContext(req.params.pollId);
   const me = await requireMember(p.server_id, user.id);
+  await requireChannelPerms(p.channel_id, p.server_id, user.id, me);
   if (p.author_id !== user.id && !me.perms.has("manage_messages")) throw new HttpError(403, "Only the poll's author or someone who can manage messages can close it.");
   if (isClosed(p)) throw new HttpError(409, "This poll is already closed.");
   await q(`update polls set closed_at = now() where id = $1`, [p.id]);

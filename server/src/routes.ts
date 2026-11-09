@@ -24,6 +24,7 @@ import { emitServer, isOnline, joinHuddleAdmins, joinServerRooms, leaveServerRoo
 import { listOpenVotes, voteRouter } from "./votes";
 import { perksOf, serverPerks } from "./perks";
 import { TAG_RE, asUserTag, userTagSql } from "./tags";
+import { channelsFor } from "./channelperms";
 
 export const api = Router();
 api.use(voteRouter, messagesRouter, pollsRouter, profilesRouter, adminRouter, gifsRouter, embedsRouter, dmsRouter, huddleAdminRouter, deletionRouter, securityRouter, passkeyRouter, suggestionsRouter, rolesRouter, friendsRouter, emojisRouter);
@@ -56,7 +57,6 @@ async function serverDetail(serverId: string, userId: string) {
   const s = await one<any>(`select * from servers where id = $1`, [serverId]);
   if (!s) throw new HttpError(404, "Server not found.");
   const me = await requireMember(serverId, userId);
-  const channels = await q(`select id, name from channels where server_id = $1 order by created_at`, [serverId]);
   const roles = await q<any>(
     `select r.id, r.name, r.color, r.permissions, r.position, r.hoist, r.self_assignable, r.section_name, (select count(*)::int from member_roles mr where mr.role_id = r.id) as member_count
        from server_roles r where r.server_id = $1 order by r.position desc`,
@@ -65,6 +65,7 @@ async function serverDetail(serverId: string, userId: string) {
   const assigned = await q<{ user_id: string; role_id: string }>(`select user_id, role_id from member_roles where server_id = $1`, [serverId]);
   const positionOf = new Map<string, number>(roles.map((r) => [r.id as string, r.position as number]));
   const roleIdsOf = (userId: string) => assigned.filter((a) => a.user_id === userId).map((a) => a.role_id).sort((a, b) => (positionOf.get(b) ?? 0) - (positionOf.get(a) ?? 0));
+  const channels = await channelsFor(serverId, me, roleIdsOf(userId)); // only the channels this member can see, with what they can do in each
   const emojis = await q<{ id: string; name: string; mime: string }>(`select id, name, mime from server_emojis where server_id = $1 order by lower(name)`, [serverId]);
   const stickers = await q<{ id: string; name: string }>(`select id, name from server_stickers where server_id = $1 order by lower(name)`, [serverId]);
   const legacyAdminCount = me.role === "owner" ? (await one<{ n: number }>(`select count(*)::int as n from memberships where server_id = $1 and role = 'admin'`, [serverId]))!.n : 0;

@@ -20,6 +20,8 @@ interface Props {
   timeoutUntil: string | null;
   replyTo: Message | null;
   gifsEnabled: boolean;
+  canSend?: boolean;
+  canAttach?: boolean;
   onCancelReply: () => void;
   onSend: (content: string, attachmentIds: string[], extra: { replyTo?: string; gifUrl?: string; stickerId?: string }) => Promise<boolean>;
   onUpload: (file: File) => Promise<Attachment>;
@@ -35,7 +37,7 @@ const STICKER_PANEL = "sticker";
 
 const Composer = forwardRef<ComposerHandle, Props>(function Composer(props, ref) {
   const assets = useServerAssets();
-  const { channel, me, members, canEveryone, timedOut, timeoutUntil, replyTo, gifsEnabled, onCancelReply, onSend, onUpload, onTyping, onOpenPoll, placeholder } = props;
+  const { channel, me, members, canEveryone, timedOut, timeoutUntil, replyTo, gifsEnabled, canSend = true, canAttach = true, onCancelReply, onSend, onUpload, onTyping, onOpenPoll, placeholder } = props;
   const [text, setText] = useState("");
   const [caret, setCaret] = useState(0);
   const [sel, setSel] = useState(0);
@@ -63,7 +65,7 @@ const Composer = forwardRef<ComposerHandle, Props>(function Composer(props, ref)
   }, [panel]);
 
   function addFiles(list: FileList | File[]) {
-    if (timedOut) return;
+    if (timedOut || !canAttach) return;
     const room = MAX_ATTACHMENTS - pendingRef.current.length;
     for (const file of [...list].slice(0, Math.max(0, room))) {
       const key = `${Date.now()}-${Math.random()}`;
@@ -179,6 +181,14 @@ const Composer = forwardRef<ComposerHandle, Props>(function Composer(props, ref)
     }
   }
 
+  if (!canSend) {
+    return (
+      <footer className="composer">
+        <div className="timeout-note">You don't have permission to send messages in #{channel.name}.</div>
+      </footer>
+    );
+  }
+
   if (timedOut) {
     return (
       <footer className="composer">
@@ -208,8 +218,12 @@ const Composer = forwardRef<ComposerHandle, Props>(function Composer(props, ref)
         </ul>
       )}
       <div className="compose-row">
-        <button className="tool" aria-label="Attach files" title="Attach files (or drop or paste them)" disabled={pending.length >= MAX_ATTACHMENTS} onClick={() => fileRef.current?.click()}><Icon name="paperclip" /></button>
-        <input ref={fileRef} type="file" multiple hidden onChange={(e) => { if (e.target.files) addFiles(e.target.files); e.target.value = ""; }} />
+        {canAttach && (
+          <>
+            <button className="tool" aria-label="Attach files" title="Attach files (or drop or paste them)" disabled={pending.length >= MAX_ATTACHMENTS} onClick={() => fileRef.current?.click()}><Icon name="paperclip" /></button>
+            <input ref={fileRef} type="file" multiple hidden onChange={(e) => { if (e.target.files) addFiles(e.target.files); e.target.value = ""; }} />
+          </>
+        )}
         <div className="ta-wrap">
           {suggestions.length > 0 && (
             <ul className="suggest" role="listbox">

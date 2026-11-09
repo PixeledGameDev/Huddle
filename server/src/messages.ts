@@ -10,7 +10,8 @@ import { getMessageDto, hydrate, messageSelect } from "./hydrate";
 import { HttpError, h, rateLimit } from "./http";
 import { assertCanWrite, channelServer, requireMember } from "./perms";
 import { cleanCustomEmoji } from "./emojis";
-import { emitServer } from "./realtime";
+import { emitChannel } from "./realtime";
+import { requireChannelPerms } from "./channelperms";
 import { deleteObject, putObject, r2Enabled } from "./storage";
 import { revealDm } from "./dms";
 
@@ -38,7 +39,8 @@ async function resolveMentions(serverId: string, content: string, canEveryone: b
 
 messagesRouter.get("/channels/:channelId/messages", h(async (req, res) => {
   const serverId = await channelServer(req.params.channelId);
-  await requireMember(serverId, req.user!.id);
+  const me = await requireMember(serverId, req.user!.id);
+  await requireChannelPerms(req.params.channelId, serverId, req.user!.id, me);
   const before = z.coerce.number().int().positive().optional().parse(req.query.before);
   const rows = await q(`${messageSelect} where m.channel_id = $1 and ($2::bigint is null or m.id < $2::bigint) order by m.id desc limit 50`, [req.params.channelId, before ?? null]);
   res.json({ messages: await hydrate(rows.reverse(), req.user!.id), hasMore: rows.length === 50 });
@@ -82,6 +84,7 @@ messagesRouter.post("/channels/:channelId/messages", h(async (req, res) => {
     one<{ name: string; avatar_version: number }>(`select coalesce(display_name, username) as name, avatar_version from users where id = $1`, [user.id]),
     resolveMentions(serverId, body.content, true),
   ]);
+  await requireChannelPerms(channelId, serverId, user.id, me, "send_messages", ...(attachmentIds.length ? (["attach_files"] as const) : []));
   if (body.stickerId && !sticker) throw new HttpError(400, "That sticker isn't available in this server.");
   if (body.replyTo && !reply) throw new HttpError(400, "The message you're replying to no longer exists.");
   const everyone = mentioned.everyone && me.perms.has("mention_everyone");
@@ -130,7 +133,7 @@ messagesRouter.post("/channels/:channelId/messages", h(async (req, res) => {
     poll: null,
   };
   if (ch.is_dm) await revealDm(serverId); // only direct messages can have a hidden conversation to bring back
-  emitServer(serverId, "message.create", message);
+  await emitChannel(serverId, channelId, "message.create", message);
   res.json({ message });
 }));
 
@@ -155,6 +158,7 @@ messagesRouter.patch("/messages/:messageId", h(async (req, res) => {
   const messageId = messageParam(req.params);
   const m = await messageContext(messageId);
   const me = await requireMember(m.server_id, user.id);
+  await requireChannelPerms(m.channel_id, m.server_id, user.id, me);
   if (m.author_id !== user.id) throw new HttpError(403, "You can only edit your own messages.");
   if (m.is_poll) throw new HttpError(400, "Polls can't be edited.");
   await assertCanWrite(m.server_id, user.id);
@@ -169,7 +173,7 @@ messagesRouter.patch("/messages/:messageId", h(async (req, res) => {
     await q(`update messages set content = $2, edited_at = now(), mentions = $3::uuid[], mentions_everyone = $4 where id = $1::bigint`, [messageId, content, notify, everyone]);
   }
   const message = await getMessageDto(messageId, null);
-  emitServer(m.server_id, "message.update", message);
+  await emitChannel(m.server_id, m.channel_id, "message.update", message);
   res.json({ message });
 }));
 
@@ -178,6 +182,7 @@ messagesRouter.delete("/messages/:messageId", h(async (req, res) => {
   const messageId = messageParam(req.params);
   const m = await messageContext(messageId);
   const me = await requireMember(m.server_id, user.id);
+  await requireChannelPerms(m.channel_id, m.server_id, user.id, me);
   const canManage = me.perms.has("manage_messages");
   if (m.author_id !== user.id && !canManage) throw new HttpError(403, "You can only delete your own messages.");
   await tx(async (c) => {
@@ -199,7 +204,7 @@ messagesRouter.delete("/messages/:messageId", h(async (req, res) => {
     if (m.author_id !== user.id)
       await q(`insert into audit_log(server_id, actor_id, target_id, action, detail) values ($1, $2, $3, 'message.delete', '{}')`, [m.server_id, user.id, m.author_id], c);
   });
-  emitServer(m.server_id, "message.delete", { serverId: m.server_id, channelId: m.channel_id, messageId });
+  await emitChannel(m.server_id, m.channel_id, "message.delete", { serverId: m.server_id, channelId: m.channel_id, messageId });
   res.json({ ok: true });
 }));
 
@@ -218,7 +223,8 @@ messagesRouter.post(
   h(async (req, res) => {
     const user = req.user!;
     const serverId = await channelServer(req.params.channelId);
-    await requireMember(serverId, user.id);
+    const me = await requireMember(serverId, user.id);
+    await requireChannelPerms(req.params.channelId, serverId, user.id, me, "send_messages", "attach_files");
     await assertCanWrite(serverId, user.id);
     const data = req.body;
     if (!Buffer.isBuffer(data) || data.length === 0) throw new HttpError(400, "That file is empty.");
@@ -258,11 +264,12 @@ messagesRouter.post(
 
 messagesRouter.get("/files/:fileId", h(async (req, res) => {
   const f = await one<any>(
-    `select a.name, a.mime, a.size, a.data, a.storage_key, c.server_id from attachments a join channels c on c.id = a.channel_id where a.id = $1 and a.message_id is not null`,
+    `select a.name, a.mime, a.size, a.data, a.storage_key, a.channel_id, c.server_id from attachments a join channels c on c.id = a.channel_id where a.id = $1 and a.message_id is not null`,
     [req.params.fileId]
   );
   if (!f) throw new HttpError(404, "File not found.");
-  await requireMember(f.server_id, req.user!.id);
+  const me = await requireMember(f.server_id, req.user!.id);
+  await requireChannelPerms(f.channel_id, f.server_id, req.user!.id, me);
   await serveFile(req, res, { ...f, size: Number(f.size) });
 }));
 
@@ -273,9 +280,10 @@ async function reactionContext(messageId: string, userId: string) {
     [messageId]
   );
   if (!m) throw new HttpError(404, "Message not found.");
-  await requireMember(m.server_id, userId);
+  const me = await requireMember(m.server_id, userId);
+  await requireChannelPerms(m.channel_id, m.server_id, userId, me);
   await assertCanWrite(m.server_id, userId);
-  return m;
+  return { ...m, me };
 }
 const reactionParams = (p: Record<string, string>) => ({
   messageId: z.string().regex(/^\d+$/, "Message not found.").parse(p.messageId),
@@ -294,6 +302,7 @@ messagesRouter.put("/messages/:messageId/reactions/:emoji", h(async (req, res) =
   rateLimit(`react:${user.id}`, 30, 10_000);
   const { messageId, emoji } = reactionParams(req.params);
   const m = await reactionContext(messageId, user.id);
+  await requireChannelPerms(m.channel_id, m.server_id, user.id, m.me, "add_reactions");
   await assertEmojiUsable(m.server_id, emoji);
   const stats = await one<{ n: number; has: boolean }>(
     `select count(distinct emoji)::int as n, coalesce(bool_or(emoji = $2), false) as has from reactions where message_id = $1::bigint`,
@@ -302,7 +311,7 @@ messagesRouter.put("/messages/:messageId/reactions/:emoji", h(async (req, res) =
   const maxReactions = (await serverPerks(m.server_id)).reactions;
   if (!stats!.has && stats!.n >= maxReactions) throw new HttpError(400, `A message can have at most ${maxReactions} different reactions.`);
   const added = await q(`insert into reactions(message_id, user_id, emoji) values ($1::bigint, $2, $3) on conflict do nothing returning 1`, [messageId, user.id, emoji]);
-  if (added.length) emitServer(m.server_id, "reaction.update", { serverId: m.server_id, channelId: m.channel_id, messageId, emoji, userId: user.id, added: true });
+  if (added.length) await emitChannel(m.server_id, m.channel_id, "reaction.update", { serverId: m.server_id, channelId: m.channel_id, messageId, emoji, userId: user.id, added: true });
   res.json({ ok: true });
 }));
 
@@ -312,6 +321,6 @@ messagesRouter.delete("/messages/:messageId/reactions/:emoji", h(async (req, res
   const { messageId, emoji } = reactionParams(req.params);
   const m = await reactionContext(messageId, user.id);
   const removed = await q(`delete from reactions where message_id = $1::bigint and user_id = $2 and emoji = $3 returning 1`, [messageId, user.id, emoji]);
-  if (removed.length) emitServer(m.server_id, "reaction.update", { serverId: m.server_id, channelId: m.channel_id, messageId, emoji, userId: user.id, added: false });
+  if (removed.length) await emitChannel(m.server_id, m.channel_id, "reaction.update", { serverId: m.server_id, channelId: m.channel_id, messageId, emoji, userId: user.id, added: false });
   res.json({ ok: true });
 }));

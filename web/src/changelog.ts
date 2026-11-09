@@ -13,6 +13,15 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "5.27",
+    date: "2026-11-06",
+    title: "Channel permissions",
+    changes: [
+      "Anyone who can manage channels can now set permissions for each channel: for everyone, or for particular roles, allow or deny viewing the channel, sending messages, adding reactions and attaching files. Find it in server settings under Channel permissions.",
+      "Channels you can't view are hidden from you completely, including their messages, files and live activity. Channels with custom permissions show a small lock.",
+    ],
+  },
+  {
     version: "5.26",
     date: "2026-11-06",
     title: "Server tags, and servers everyone joins",

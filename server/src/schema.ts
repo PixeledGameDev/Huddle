@@ -370,6 +370,14 @@ create index if not exists welcome_deliveries_user on welcome_deliveries(user_id
 alter table servers add column if not exists tag text;
 alter table users add column if not exists tag_server_id uuid references servers(id) on delete set null;
 -- v26: servers everyone is added to when they make an account (and, when one is added here, everyone who already has one)
+-- v27: per-channel permissions. A row says what one role (or role_id null = everyone) is explicitly allowed or denied in one channel.
+create table if not exists channel_overrides (
+  channel_id uuid not null references channels(id) on delete cascade,
+  role_id uuid references server_roles(id) on delete cascade,
+  allow text[] not null default '{}',
+  deny text[] not null default '{}'
+);
+create unique index if not exists channel_overrides_unique on channel_overrides(channel_id, coalesce(role_id, '00000000-0000-0000-0000-000000000000'::uuid));
 create table if not exists auto_join_servers (
   server_id uuid primary key references servers(id) on delete cascade,
   added_by uuid references users(id) on delete set null,
