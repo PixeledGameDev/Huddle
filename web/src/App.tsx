@@ -505,6 +505,17 @@ function Main({ me, initialServerId, onUser, onLogout }: { me: User; initialServ
     }
   }
 
+  async function runCommand(botId: string, name: string, options: Record<string, string>) {
+    if (!channelId) return false;
+    try {
+      await api(`/channels/${channelId}/commands`, "POST", { botId, name, options });
+      return true;
+    } catch (e) {
+      fail(e);
+      return false;
+    }
+  }
+
   async function editMessage(m: Message, content: string) {
     try {
       const { message } = await api<{ message: Message }>(`/messages/${m.id}`, "PATCH", { content });
@@ -959,6 +970,7 @@ function Main({ me, initialServerId, onUser, onLogout }: { me: User; initialServ
               replyTo={replyTo}
               onReply={setReplyTo}
               onSend={send}
+              onRunCommand={runCommand}
               onUpload={(file) => uploadFile(channelId!, file)}
               onReact={react}
               onEdit={editMessage}

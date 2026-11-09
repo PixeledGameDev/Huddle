@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { api, uploadRaw } from "./api";
 import { can, isOwner } from "./permissions";
 import { EmojiTab } from "./EmojiSettings";
+import { ServerBotsTab } from "./BotSettings";
 import { ChannelPermsTab } from "./ChannelPerms";
 import { RolesTab } from "./Roles";
 import type { BanEntry, DeletedMessage, ServerDetail, ServerSummary, Settings } from "./types";
@@ -118,7 +119,7 @@ const AUDIT_TEXT: Record<string, (e: any) => string> = {
   "message.delete": (e) => `${e.actor} deleted a message by ${e.target}`,
 };
 
-type Tab = "general" | "roles" | "channelperms" | "emojis" | "bans" | "deleted" | "activity" | "danger";
+type Tab = "general" | "roles" | "channelperms" | "emojis" | "bots" | "bans" | "deleted" | "activity" | "danger";
 
 /** Most letters or numbers a server tag can have (the server enforces the same limit). */
 const TAG_MAX = 12;
@@ -213,6 +214,7 @@ export function SettingsModal({ server, onClose, onSaved, onDeleted, onError }: 
   if (can(server, "manage_roles") || server.roles.length > 0) tabs.push(["roles", "Roles"]);
   if (can(server, "manage_channels")) tabs.push(["channelperms", "Channel permissions"]);
   if (can(server, "manage_emojis")) tabs.push(["emojis", "Emoji & stickers"]);
+  if (can(server, "manage_server")) tabs.push(["bots", "Bots"]);
   if (can(server, "ban_members")) tabs.push(["bans", "Bans"]);
   if (can(server, "manage_messages")) tabs.push(["deleted", "Deleted messages"]);
   if (can(server, "view_audit_log")) tabs.push(["activity", "Activity"]);
@@ -331,6 +333,8 @@ export function SettingsModal({ server, onClose, onSaved, onDeleted, onError }: 
       {tab === "channelperms" && <ChannelPermsTab server={server} onError={onError} />}
 
       {tab === "emojis" && <EmojiTab server={server} onError={onError} />}
+
+      {tab === "bots" && <ServerBotsTab server={server} onError={onError} />}
 
       {tab === "bans" && (
         <ul className="rows">

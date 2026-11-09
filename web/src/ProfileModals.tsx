@@ -3,6 +3,7 @@ import { DesktopSettings } from "./DesktopSettings";
 import { NotificationSettings } from "./NotificationSettings";
 import { confirmDialog } from "./Dialogs";
 import { SecuritySettings } from "./SecuritySettings";
+import { BotSettings } from "./BotSettings";
 import { useEffect, useState } from "react";
 import { api, ApiError, uploadRaw } from "./api";
 import { Avatar } from "./Avatar";
@@ -461,6 +462,8 @@ export function MyProfileModal({ me, servers = [], onClose, onUser, onDeleted, o
               </div>
               <hr />
               <SecuritySettings onError={onError} />
+              <hr />
+              <BotSettings onError={onError} />
               <hr />
               <div className="stack danger-zone">
                 <h3>Delete account</h3>

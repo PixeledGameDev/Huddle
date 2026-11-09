@@ -56,6 +56,8 @@ export interface Member {
   accent: string | null;
   statusText: string;
   nameFont?: string;
+  /** A bot account (not a person). */
+  bot?: boolean;
   role: Role;
   /** Role ids, highest ranked first. */
   roleIds: string[];
@@ -149,6 +151,9 @@ export interface Message {
   authorId: string;
   authorName: string;
   authorAvatar: number;
+  authorBot?: boolean;
+  /** Set when a bot sent this as the answer to someone running one of its slash commands. */
+  commandUse?: { name: string; userId: string | null; userName: string | null } | null;
   content: string;
   createdAt: string;
   editedAt: string | null;
@@ -191,3 +196,7 @@ export interface DmSummary {
   blockedByMe: boolean;
   user: { id: string; username: string; displayName: string | null; avatarVersion: number; accent: string | null; statusText: string; nameFont?: string };
 }
+
+export interface BotAccount { id: string; username: string; displayName: string | null; description: string; public: boolean; avatarVersion: number; createdAt: string; lastUsedAt: string | null; servers: number; owner?: string }
+export interface SlashOption { name: string; description: string; type: "string" | "integer" | "number" | "boolean"; required: boolean }
+export interface SlashCommand { botId: string; botName: string; botDisplayName: string; name: string; description: string; options: SlashOption[] }

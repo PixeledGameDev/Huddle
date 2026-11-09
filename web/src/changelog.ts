@@ -13,6 +13,17 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "5.31",
+    date: "2026-11-10",
+    title: "Bots",
+    changes: [
+      "You can now make bots: Account settings → Bots. A bot signs in with a token and can read and send messages in the servers it's added to.",
+      "Server managers can add their own bots, or any public bot, from server settings → Bots. Give a bot a role to control what it can do.",
+      "Bots can have slash commands. Type / in the message box to see what the bots in a server offer.",
+      "You can message bots directly. Bots show a BOT tag next to their name.",
+    ],
+  },
+  {
     version: "5.30",
     date: "2026-11-09",
     title: "More customizable server tags",

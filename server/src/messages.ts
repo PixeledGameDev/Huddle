@@ -120,6 +120,7 @@ messagesRouter.post("/channels/:channelId/messages", h(async (req, res) => {
     authorName: author?.name ?? user.username,
     authorAvatar: author?.avatar_version ?? 0,
     authorBot: !!(req as any).isBot,
+    commandUse: null,
     content,
     createdAt: new Date(row.created_at).toISOString(),
     editedAt: null as string | null,

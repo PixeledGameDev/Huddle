@@ -4,6 +4,7 @@ import fs from "fs";
 import path from "path";
 import { ZodError } from "zod";
 import { authRouter, cleanupSessions, requireAuth } from "./auth";
+import { sweepInteractions } from "./bots";
 import { migrate, q, requestStats, startPoolWarmer } from "./db";
 import { downloadsRouter } from "./downloads";
 import { bootstrapHuddle } from "./huddleAdmin";
@@ -110,6 +111,7 @@ async function main() {
   // Uploads that never got attached to a message are removed after an hour.
   setInterval(() => q(`delete from attachments where message_id is null and created_at < now() - interval '1 hour'`).catch(console.error), 10 * 60_000).unref();
   setInterval(() => cleanupSessions().catch(console.error), 6 * 3600_000).unref();
+  setInterval(() => sweepInteractions().catch(console.error), 3600_000).unref();
 
   const port = Number(process.env.PORT ?? 3000);
   server.listen(port, () => {

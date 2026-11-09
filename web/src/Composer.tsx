@@ -1,7 +1,8 @@
 import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
 import EmojiPicker from "./EmojiPicker";
 import GifPicker from "./GifPicker";
-import type { Attachment, Channel, Member, Message, User } from "./types";
+import { api } from "./api";
+import type { Attachment, Channel, Member, Message, SlashCommand, User } from "./types";
 import { plainPreview } from "./format";
 import { Emoji } from "./Rich";
 import { searchShortcodes } from "./shortcodes";
@@ -25,25 +26,46 @@ interface Props {
   onCancelReply: () => void;
   onSend: (content: string, attachmentIds: string[], extra: { replyTo?: string; gifUrl?: string; stickerId?: string }) => Promise<boolean>;
   onUpload: (file: File) => Promise<Attachment>;
+  onRunCommand?: (botId: string, name: string, options: Record<string, string>) => Promise<boolean>;
   onTyping: () => void;
   onOpenPoll: () => void;
   placeholder?: string;
 }
 
 interface Pending { key: string; name: string; size: number; status: "uploading" | "ready" | "error"; error?: string; attachment?: Attachment }
-interface Suggestion { key: string; username: string; label: string; emoji?: string }
+interface Suggestion { key: string; username: string; label: string; emoji?: string; command?: SlashCommand }
+
+/** Reads "/name value other:value" against the commands available here. Values fill the options in order (the last one takes the rest); name:value sets one directly. */
+function parseSlash(text: string, commands: SlashCommand[]) {
+  const m = /^\/(\S+)\s*([\s\S]*)$/.exec(text);
+  if (!m) return null;
+  const head = m[1].toLowerCase();
+  const cmd = commands.find((c) => c.name === head) ?? commands.find((c) => `${c.botName.toLowerCase()}.${c.name}` === head);
+  if (!cmd) return null;
+  const options: Record<string, string> = {};
+  const positional: string[] = [];
+  for (const t of m[2].split(/\s+/).filter(Boolean)) {
+    const k = /^([a-z0-9_-]+):(.*)$/.exec(t);
+    if (k && cmd.options.some((o) => o.name === k[1])) options[k[1]] = k[2];
+    else positional.push(t);
+  }
+  const free = cmd.options.filter((o) => !(o.name in options));
+  for (let i = 0; i < free.length && positional.length; i++) options[free[i].name] = i === free.length - 1 ? positional.splice(0).join(" ") : positional.shift()!;
+  return { cmd, options };
+}
 
 const STICKER_PANEL = "sticker";
 
 const Composer = forwardRef<ComposerHandle, Props>(function Composer(props, ref) {
   const assets = useServerAssets();
-  const { channel, me, members, canEveryone, timedOut, timeoutUntil, replyTo, gifsEnabled, canSend = true, canAttach = true, onCancelReply, onSend, onUpload, onTyping, onOpenPoll, placeholder } = props;
+  const { channel, me, members, canEveryone, timedOut, timeoutUntil, replyTo, gifsEnabled, canSend = true, canAttach = true, onCancelReply, onSend, onUpload, onRunCommand, onTyping, onOpenPoll, placeholder } = props;
   const [text, setText] = useState("");
   const [caret, setCaret] = useState(0);
   const [sel, setSel] = useState(0);
   const [dismissed, setDismissed] = useState<string | null>(null);
   const [pending, setPending] = useState<Pending[]>([]);
   const [panel, setPanel] = useState<"emoji" | "gif" | "sticker" | null>(null);
+  const [commands, setCommands] = useState<SlashCommand[]>([]);
   const taRef = useRef<HTMLTextAreaElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const pendingRef = useRef<Pending[]>([]);
@@ -56,6 +78,13 @@ const Composer = forwardRef<ComposerHandle, Props>(function Composer(props, ref)
     setPending([]);
     setPanel(null);
   }, [channel.id]);
+
+  // Slash commands come from the bots in this server (or direct message).
+  useEffect(() => {
+    let live = true;
+    api<{ commands: SlashCommand[] }>(`/channels/${channel.id}/commands`).then((r) => { if (live) setCommands(r.commands); }, () => { if (live) setCommands([]); });
+    return () => { live = false; };
+  }, [channel.id, members.length]);
 
   useEffect(() => {
     if (!panel) return;
@@ -97,7 +126,21 @@ const Composer = forwardRef<ComposerHandle, Props>(function Composer(props, ref)
     return m ? { query: m[1].slice(1), start: before.length - m[1].length } : null;
   }, [text, caret]);
 
+  // ---- /command autocomplete (only while the whole message is "/" and the start of a command name)
+  const slashQuery = useMemo(() => {
+    if (!commands.length) return null;
+    const m = /^\/([A-Za-z0-9_.-]*)$/.exec(text);
+    return m ? m[1].toLowerCase() : null;
+  }, [text, commands.length]);
+
   const suggestions: Suggestion[] = useMemo(() => {
+    if (slashQuery !== null) {
+      if (dismissed === `/${slashQuery}`) return [];
+      return commands
+        .filter((c) => c.name.startsWith(slashQuery) || `${c.botName.toLowerCase()}.${c.name}`.startsWith(slashQuery))
+        .slice(0, 8)
+        .map((c) => ({ key: `cmd:${c.botId}:${c.name}`, username: "", label: `/${c.name}`, command: c }));
+    }
     if (mentionQuery) {
       if (dismissed === `${mentionQuery.start}:${mentionQuery.query}`) return [];
       const q = mentionQuery.query.toLowerCase();
@@ -114,9 +157,9 @@ const Composer = forwardRef<ComposerHandle, Props>(function Composer(props, ref)
       return [...custom, ...searchShortcodes(emojiQuery.query).map((e) => ({ key: `emoji:${e.name}`, username: "", label: `:${e.name}:`, emoji: e.glyph }))].slice(0, 8);
     }
     return [];
-  }, [mentionQuery, emojiQuery, dismissed, members, me.id, canEveryone, assets.emojis]);
+  }, [slashQuery, commands, mentionQuery, emojiQuery, dismissed, members, me.id, canEveryone, assets.emojis]);
 
-  useEffect(() => setSel(0), [mentionQuery?.query, emojiQuery?.query]);
+  useEffect(() => setSel(0), [mentionQuery?.query, emojiQuery?.query, slashQuery]);
 
   function insertMention(s: Suggestion) {
     if (!mentionQuery) return;
@@ -134,6 +177,21 @@ const Composer = forwardRef<ComposerHandle, Props>(function Composer(props, ref)
 
   /** Picks a suggestion: a @mention, or an emoji that replaces the :partial_name being typed. */
   function acceptSuggestion(s: Suggestion) {
+    if (s.command) {
+      const c = s.command;
+      const dupes = commands.filter((x) => x.name === c.name).length > 1;
+      const head = dupes ? `${c.botName.toLowerCase()}.${c.name}` : c.name;
+      if (!c.options.length && onRunCommand) { // nothing to fill in: run it right away
+        setText("");
+        void onRunCommand(c.botId, c.name, {}).then((ok) => { if (!ok) setText(`/${head}`); });
+        return;
+      }
+      const next = `/${head} `;
+      setText(next);
+      setCaret(next.length);
+      requestAnimationFrame(() => taRef.current?.focus());
+      return;
+    }
     if (!s.emoji) return insertMention(s);
     if (!emojiQuery) return;
     const before = text.slice(0, emojiQuery.start);
@@ -162,6 +220,14 @@ const Composer = forwardRef<ComposerHandle, Props>(function Composer(props, ref)
     const content = text.trim();
     const ready = pending.filter((p) => p.status === "ready");
     if ((!content && !ready.length) || timedOut || uploading) return;
+    if (content.startsWith("/") && onRunCommand && !ready.length) {
+      const parsed = parseSlash(content, commands);
+      if (parsed) {
+        setText("");
+        if (!(await onRunCommand(parsed.cmd.botId, parsed.cmd.name, parsed.options))) setText(content);
+        return;
+      }
+    }
     const snapshot = { text, pending };
     setText("");
     setPending([]);
@@ -232,7 +298,9 @@ const Composer = forwardRef<ComposerHandle, Props>(function Composer(props, ref)
             <ul className="suggest" role="listbox">
               {suggestions.map((s, i) => (
                 <li key={s.key} role="option" aria-selected={i === sel} className={i === sel ? "on" : ""} onMouseDown={(e) => { e.preventDefault(); acceptSuggestion(s); }}>
-                  {s.emoji ? (
+                  {s.command ? (
+                    <><strong>{s.label}</strong> <small>{s.command.options.map((o) => (o.required ? `<${o.name}>` : `[${o.name}]`)).join(" ")} {s.command.description} · {s.command.botDisplayName}</small></>
+                  ) : s.emoji ? (
                     <><Emoji emoji={s.emoji} /> <strong>{s.label}</strong></>
                   ) : (
                     <><strong>{s.label}</strong> <small>@{s.username}</small></>
@@ -260,7 +328,7 @@ const Composer = forwardRef<ComposerHandle, Props>(function Composer(props, ref)
                 if (e.key === "ArrowDown") { e.preventDefault(); setSel((s) => (s + 1) % suggestions.length); return; }
                 if (e.key === "ArrowUp") { e.preventDefault(); setSel((s) => (s - 1 + suggestions.length) % suggestions.length); return; }
                 if (e.key === "Enter" || e.key === "Tab") { e.preventDefault(); acceptSuggestion(suggestions[sel]); return; }
-                if (e.key === "Escape") { e.preventDefault(); setDismissed(mentionQuery ? `${mentionQuery.start}:${mentionQuery.query}` : `:${emojiQuery!.start}:${emojiQuery!.query}`); return; }
+                if (e.key === "Escape") { e.preventDefault(); setDismissed(slashQuery !== null ? `/${slashQuery}` : mentionQuery ? `${mentionQuery.start}:${mentionQuery.query}` : `:${emojiQuery!.start}:${emojiQuery!.query}`); return; }
               }
               if (e.key === "Escape" && replyTo) { onCancelReply(); return; }
               if (e.key === "Enter" && !e.shiftKey) {

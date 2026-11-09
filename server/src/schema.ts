@@ -469,4 +469,27 @@ create table if not exists bot_tokens (
   created_at timestamptz not null default now(),
   last_used_at timestamptz
 );
+
+-- v33: public bots, slash commands, and the messages bots send in reply to one.
+alter table users add column if not exists bot_public boolean not null default false;
+create table if not exists bot_commands (
+  bot_id uuid not null references users(id) on delete cascade,
+  name text not null,
+  description text not null default '',
+  options jsonb not null default '[]',
+  primary key (bot_id, name)
+);
+create table if not exists interactions (
+  id uuid primary key default gen_random_uuid(),
+  bot_id uuid not null references users(id) on delete cascade,
+  channel_id uuid not null references channels(id) on delete cascade,
+  user_id uuid not null references users(id) on delete cascade,
+  command text not null,
+  options jsonb not null default '{}',
+  responses int not null default 0,
+  created_at timestamptz not null default now()
+);
+create index if not exists interactions_created on interactions(created_at);
+alter table messages add column if not exists via_command text;
+alter table messages add column if not exists via_user uuid references users(id) on delete set null;
 `;

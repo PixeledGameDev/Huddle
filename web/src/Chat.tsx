@@ -23,6 +23,7 @@ interface Props {
   onReply: (m: Message | null) => void;
   onSend: (content: string, attachmentIds: string[], extra: { replyTo?: string; gifUrl?: string; stickerId?: string }) => Promise<boolean>;
   onUpload: (file: File) => Promise<Attachment>;
+  onRunCommand: (botId: string, name: string, options: Record<string, string>) => Promise<boolean>;
   onReact: (m: Message, emoji: string) => void;
   onEdit: (m: Message, content: string) => Promise<boolean>;
   onDelete: (m: Message) => void;
@@ -194,6 +195,7 @@ export default function Chat(p: Props) {
         onCancelReply={() => p.onReply(null)}
         onSend={(content, ids, extra) => { stick.current = true; return p.onSend(content, ids, extra); }}
         onUpload={p.onUpload}
+        onRunCommand={p.onRunCommand}
         onTyping={p.onTyping}
         onOpenPoll={p.onOpenPoll}
         placeholder={p.dm ? `Message ${nameOfUser(p.dm.user)}` : undefined}

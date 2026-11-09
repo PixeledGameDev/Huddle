@@ -3,8 +3,10 @@ import { Router, type NextFunction, type Request, type Response } from "express"
 import { z } from "zod";
 import { one, q } from "./db";
 import { HttpError, h, rateLimit } from "./http";
-import { requirePerm, assertNotDm } from "./perms";
-import { dropUser, emitServer, joinServerRooms } from "./realtime";
+import { assertCanWrite, assertNotDm, channelServer, requireMember, requirePerm } from "./perms";
+import { requireChannelPerms } from "./channelperms";
+import { getMessageDto } from "./hydrate";
+import { dropUser, emitChannel, emitServer, emitUser, isOnline, joinServerRooms } from "./realtime";
 import type { AuthUser } from "./auth";
 
 /**
@@ -60,6 +62,9 @@ export const isDevBot = async (userId: string) => !!(await one(`select 1 from us
 const BOT_ALLOWED: [string, RegExp][] = [
   ["GET", /^\/bot\/me$/],
   ["GET", /^\/bot\/servers$/],
+  ["GET", /^\/bot\/commands$/],
+  ["PUT", /^\/bot\/commands$/],
+  ["POST", /^\/interactions\/[0-9a-f-]{36}\/respond$/],
   ["GET", /^\/servers\/[0-9a-f-]{36}$/],
   ["GET", /^\/channels\/[0-9a-f-]{36}\/messages$/],
   ["POST", /^\/channels\/[0-9a-f-]{36}\/messages$/],
@@ -90,13 +95,14 @@ const botDto = (r: any) => ({
   username: r.username as string,
   displayName: (r.display_name ?? null) as string | null,
   description: (r.bot_description ?? "") as string,
+  public: !!r.bot_public,
   avatarVersion: r.avatar_version as number,
   createdAt: new Date(r.created_at).toISOString(),
   lastUsedAt: r.last_used_at ? new Date(r.last_used_at).toISOString() : null,
   servers: (r.server_count ?? 0) as number,
 });
 
-const mineSql = `select u.id, u.username, u.display_name, u.bot_description, u.avatar_version, u.created_at, t.last_used_at,
+const mineSql = `select u.id, u.username, u.display_name, u.bot_description, u.bot_public, u.avatar_version, u.created_at, t.last_used_at,
                         (select count(*)::int from memberships m join servers s on s.id = m.server_id where m.user_id = u.id and not s.is_dm) as server_count
                    from users u left join bot_tokens t on t.bot_id = u.id`;
 
@@ -139,10 +145,12 @@ async function ownedBot(req: Request) {
 botsRouter.patch("/bots/:botId", h(async (req, res) => {
   humanOnly(req);
   const bot = await ownedBot(req);
-  const { displayName, description } = z.object({ displayName: z.string().trim().min(1).max(32).nullable().optional(), description: z.string().trim().max(200).optional() }).parse(req.body);
+  const { displayName, description, public: isPublic } = z
+    .object({ displayName: z.string().trim().min(1).max(32).nullable().optional(), description: z.string().trim().max(200).optional(), public: z.boolean().optional() })
+    .parse(req.body);
   await q(
-    `update users set display_name = case when $2::boolean then $3 else display_name end, bot_description = coalesce($4, bot_description) where id = $1`,
-    [bot.id, displayName !== undefined, displayName ?? null, description ?? null]
+    `update users set display_name = case when $2::boolean then $3 else display_name end, bot_description = coalesce($4, bot_description), bot_public = coalesce($5, bot_public) where id = $1`,
+    [bot.id, displayName !== undefined, displayName ?? null, description ?? null, isPublic ?? null]
   );
   res.json({ bot: botDto((await one(`${mineSql} where u.id = $1`, [bot.id]))) });
 }));
@@ -173,7 +181,7 @@ botsRouter.delete("/bots/:botId", h(async (req, res) => {
   res.json({ ok: true });
 }));
 
-/** Puts one of your bots in a server you manage. Bots can't join by invite, so this is the only way in. */
+/** Puts a bot in a server you manage: one of yours, or any public bot. Bots can't join by invite, so this is the only way in. */
 botsRouter.post("/servers/:serverId/bots", h(async (req, res) => {
   humanOnly(req);
   const { serverId } = req.params;
@@ -181,8 +189,8 @@ botsRouter.post("/servers/:serverId/bots", h(async (req, res) => {
   await requirePerm(serverId, me, "manage_server");
   await assertNotDm(serverId);
   const { botId } = z.object({ botId: z.string().uuid() }).parse(req.body);
-  const bot = await one<{ id: string }>(`select id from users where id = $1 and bot_owner = $2 and deleted_at is null`, [botId, me]);
-  if (!bot) throw new HttpError(404, "Bot not found. You can only add bots you own.");
+  const bot = await one<{ id: string }>(`select id from users where id = $1 and bot_owner is not null and deleted_at is null and (bot_owner = $2 or bot_public)`, [botId, me]);
+  if (!bot) throw new HttpError(404, "Bot not found. You can add bots you own and bots that are public.");
   if (await one(`select 1 from server_bans where server_id = $1 and user_id = $2 and until > now()`, [serverId, bot.id])) throw new HttpError(403, "That bot is banned from this server.");
   const fresh = await q(`insert into memberships(server_id, user_id) values ($1, $2) on conflict do nothing returning 1`, [serverId, bot.id]);
   if (!fresh.length) throw new HttpError(409, "That bot is already in this server.");
@@ -208,3 +216,180 @@ botsRouter.get("/bot/servers", h(async (req, res) => {
   );
   res.json({ servers });
 }));
+
+/** Finds public bots by name, so someone can add a bot they don't own. Shows each bot's owner so people know who runs it. */
+botsRouter.get("/bots/public", h(async (req, res) => {
+  humanOnly(req);
+  rateLimit(`botsearch:${req.user!.id}`, 30, 60_000);
+  const term = z.string().trim().max(40).default("").parse(req.query.q ?? "");
+  const rows = await q(
+    `select u.id, u.username, u.display_name, u.bot_description, u.bot_public, u.avatar_version, u.created_at, null::timestamptz as last_used_at, 0 as server_count,
+            o.username as owner_name
+       from users u join users o on o.id = u.bot_owner
+      where u.bot_owner is not null and u.bot_public and u.deleted_at is null
+        and ($1 = '' or u.username ilike '%' || replace(replace($1, '%', ''), '_', '\\_') || '%' or u.display_name ilike '%' || replace(replace($1, '%', ''), '_', '\\_') || '%')
+      order by u.username limit 20`,
+    [term]
+  );
+  res.json({ bots: rows.map((r: any) => ({ ...botDto(r), owner: r.owner_name as string })) });
+}));
+
+// ---------- slash commands ----------
+
+const COMMAND_NAME = /^[a-z0-9_-]{1,32}$/;
+const optionSchema = z.object({
+  name: z.string().regex(COMMAND_NAME, "Option names are 1–32 lowercase letters, numbers, - or _."),
+  description: z.string().trim().max(100).default(""),
+  type: z.enum(["string", "integer", "number", "boolean"]).default("string"),
+  required: z.boolean().default(false),
+});
+const commandSchema = z.object({
+  name: z.string().regex(COMMAND_NAME, "Command names are 1–32 lowercase letters, numbers, - or _."),
+  description: z.string().trim().min(1).max(100),
+  options: z.array(optionSchema).max(10).default([]),
+});
+type CommandOption = z.infer<typeof optionSchema>;
+
+/** The bot sets its whole list of commands at once; anything not in the list is removed. */
+botsRouter.put("/bot/commands", h(async (req, res) => {
+  if (!(req as any).isBot) throw new HttpError(403, "This is for bots.");
+  const botId = req.user!.id;
+  rateLimit(`botcmds:${botId}`, 10, 60_000);
+  const { commands } = z.object({ commands: z.array(commandSchema).max(50) }).parse(req.body);
+  if (new Set(commands.map((c) => c.name)).size !== commands.length) throw new HttpError(400, "Two commands have the same name.");
+  await replaceCommands(botId, commands);
+  res.json({ commands });
+}));
+
+async function replaceCommands(botId: string, commands: z.infer<typeof commandSchema>[]) {
+  await q(`delete from bot_commands where bot_id = $1 and not (name = any($2::text[]))`, [botId, commands.map((c) => c.name)]);
+  for (const c of commands)
+    await q(
+      `insert into bot_commands(bot_id, name, description, options) values ($1, $2, $3, $4::jsonb)
+       on conflict (bot_id, name) do update set description = excluded.description, options = excluded.options`,
+      [botId, c.name, c.description, JSON.stringify(c.options)]
+    );
+}
+
+botsRouter.get("/bot/commands", h(async (req, res) => {
+  if (!(req as any).isBot) throw new HttpError(403, "This is for bots.");
+  res.json({ commands: await q(`select name, description, options from bot_commands where bot_id = $1 order by name`, [req.user!.id]) });
+}));
+
+/** Every command available in a server (or DM): from each bot that is a member there. The message box offers these when someone types "/". */
+botsRouter.get("/servers/:serverId/commands", h(async (req, res) => {
+  humanOnly(req);
+  await requireMember(req.params.serverId, req.user!.id);
+  const rows = await q<any>(
+    `select c.bot_id, u.username as bot_name, coalesce(u.display_name, u.username) as bot_display, c.name, c.description, c.options
+       from memberships m join bot_commands c on c.bot_id = m.user_id join users u on u.id = m.user_id
+      where m.server_id = $1 and u.deleted_at is null order by c.name, u.username`,
+    [req.params.serverId]
+  );
+  res.json({ commands: rows.map((r) => ({ botId: r.bot_id, botName: r.bot_name, botDisplayName: r.bot_display, name: r.name, description: r.description, options: r.options })) });
+}));
+
+botsRouter.get("/channels/:channelId/commands", h(async (req, res) => {
+  humanOnly(req);
+  const serverId = await channelServer(req.params.channelId);
+  await requireMember(serverId, req.user!.id);
+  const rows = await q<any>(
+    `select c.bot_id, u.username as bot_name, coalesce(u.display_name, u.username) as bot_display, c.name, c.description, c.options
+       from memberships m join bot_commands c on c.bot_id = m.user_id join users u on u.id = m.user_id
+      where m.server_id = $1 and u.deleted_at is null order by c.name, u.username`,
+    [serverId]
+  );
+  res.json({ commands: rows.map((r) => ({ botId: r.bot_id, botName: r.bot_name, botDisplayName: r.bot_display, name: r.name, description: r.description, options: r.options })) });
+}));
+
+/** Checks what someone typed against the command's options and returns clean values. */
+function cleanOptions(defs: CommandOption[], given: Record<string, unknown>) {
+  const out: Record<string, string | number | boolean> = {};
+  for (const d of defs) {
+    const v = given[d.name];
+    if (v === undefined || v === null || v === "") {
+      if (d.required) throw new HttpError(400, `"${d.name}" is required.`);
+      continue;
+    }
+    if (d.type === "boolean") {
+      if (typeof v === "boolean") out[d.name] = v;
+      else if (v === "true" || v === "false") out[d.name] = v === "true";
+      else throw new HttpError(400, `"${d.name}" must be true or false.`);
+    } else if (d.type === "integer" || d.type === "number") {
+      const n = typeof v === "number" ? v : typeof v === "string" && v.trim() !== "" ? Number(v) : NaN;
+      if (!Number.isFinite(n) || (d.type === "integer" && !Number.isInteger(n))) throw new HttpError(400, `"${d.name}" must be ${d.type === "integer" ? "a whole number" : "a number"}.`);
+      out[d.name] = n;
+    } else {
+      if (typeof v !== "string" || v.length > 1000) throw new HttpError(400, `"${d.name}" must be text up to 1000 characters.`);
+      out[d.name] = v;
+    }
+  }
+  return out;
+}
+
+const INTERACTION_MINUTES = 3;
+const MAX_RESPONSES = 3;
+
+/** Someone runs a command: the bot hears about it as an `interaction.create` event and answers with POST /interactions/:id/respond. */
+botsRouter.post("/channels/:channelId/commands", h(async (req, res) => {
+  humanOnly(req);
+  const user = req.user!;
+  const { channelId } = req.params;
+  rateLimit(`cmd:${user.id}`, 10, 10_000);
+  const body = z.object({ botId: z.string().uuid(), name: z.string().regex(COMMAND_NAME), options: z.record(z.unknown()).default({}) }).parse(req.body);
+  const serverId = await channelServer(channelId);
+  const me = await requireMember(serverId, user.id);
+  await assertCanWrite(serverId, user.id);
+  await requireChannelPerms(channelId, serverId, user.id, me, "send_messages");
+  const cmd = await one<{ options: CommandOption[] }>(
+    `select c.options from bot_commands c join memberships m on m.user_id = c.bot_id and m.server_id = $2
+       join users u on u.id = c.bot_id where c.bot_id = $1 and c.name = $3 and u.deleted_at is null`,
+    [body.botId, serverId, body.name]
+  );
+  if (!cmd) throw new HttpError(404, "That command isn't available here.");
+  if (!isOnline(body.botId)) throw new HttpError(503, "That bot is offline right now.");
+  const options = cleanOptions(cmd.options, body.options);
+  const row = await one<{ id: string }>(
+    `insert into interactions(bot_id, channel_id, user_id, command, options) values ($1, $2, $3, $4, $5::jsonb) returning id`,
+    [body.botId, channelId, user.id, body.name, JSON.stringify(options)]
+  );
+  const author = await one<{ username: string; display_name: string | null }>(`select username, display_name from users where id = $1`, [user.id]);
+  emitUser(body.botId, "interaction.create", {
+    id: row!.id,
+    command: body.name,
+    options,
+    channelId,
+    serverId,
+    user: { id: user.id, username: author!.username, displayName: author!.display_name },
+    expiresInSeconds: INTERACTION_MINUTES * 60,
+  });
+  res.json({ interactionId: row!.id });
+}));
+
+/** The bot answers a command: a message in the same channel, marked as a reply to the command. Up to three answers within three minutes. */
+botsRouter.post("/interactions/:id/respond", h(async (req, res) => {
+  if (!(req as any).isBot) throw new HttpError(403, "This is for bots.");
+  const botId = req.user!.id;
+  rateLimit(`botresp:${botId}`, 30, 10_000);
+  const { content } = z.object({ content: z.string().trim().min(1, "Write a response.").max(2000) }).parse(req.body);
+  const it = await one<{ channel_id: string; user_id: string; command: string; responses: number }>(
+    `update interactions set responses = responses + 1
+      where id = $1 and bot_id = $2 and responses < $3 and created_at > now() - make_interval(mins => $4)
+      returning channel_id, user_id, command, responses`,
+    [req.params.id, botId, MAX_RESPONSES, INTERACTION_MINUTES]
+  );
+  if (!it) throw new HttpError(404, "That command has expired or was already answered.");
+  const serverId = await channelServer(it.channel_id);
+  await requireMember(serverId, botId); // the bot may have been removed since
+  const msg = await one<{ id: string }>(
+    `insert into messages(channel_id, author_id, content, mentions, via_command, via_user) values ($1, $2, $3, $4::uuid[], $5, $6) returning id::text as id`,
+    [it.channel_id, botId, content, [it.user_id], it.command, it.user_id]
+  );
+  const message = await getMessageDto(msg!.id, null);
+  await emitChannel(serverId, it.channel_id, "message.create", message);
+  res.json({ message });
+}));
+
+export async function sweepInteractions() {
+  await q(`delete from interactions where created_at < now() - interval '1 hour'`);
+}

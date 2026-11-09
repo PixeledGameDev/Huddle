@@ -1192,3 +1192,10 @@ button.icon .ico { width: 1.3em; height: 1.3em; vertical-align: middle; }
 .perm-grid select { font-size: 12px; padding: 3px 6px; }
 .perm-grid select.perm-allow { color: #2e9d5b; font-weight: 600; }
 .perm-grid select.perm-deny { color: #d64545; font-weight: 600; }
+
+/* developer bots */
+.bot-badge { background: var(--accent, #5865f2); color: #fff; font-weight: 600; letter-spacing: .04em; font-size: 10px; }
+.bot-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+.bot-card { border: 1px solid var(--line, rgba(255,255,255,.12)); border-radius: 10px; padding: 12px; display: grid; gap: 8px; }
+.bot-card header { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.bot-token { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; word-break: break-all; padding: 8px; border-radius: 8px; background: var(--chip); user-select: all; }

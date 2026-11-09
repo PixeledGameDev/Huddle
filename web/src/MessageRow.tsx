@@ -89,6 +89,9 @@ export default function MessageRow(p: Props) {
 
   return (
     <div id={`msg-${m.id}`} className={`msg${grouped ? " grouped" : ""}${mentionedMe ? " mentioned" : ""}${p.pickerOpen ? " raised" : ""}${tapped ? " tapped" : ""}`} onClick={(e) => { if (!window.matchMedia("(any-hover: hover)").matches && !(e.target as HTMLElement).closest("button, a, input, textarea, video")) setTapped((t) => !t); }}>
+      {m.commandUse && (
+        <div className="reply-ref status-ref"><span className="reply-arrow"><Icon name="reply" /></span><strong>{m.commandUse.userName ?? "Someone"}</strong><span>used</span><code>/{m.commandUse.name}</code></div>
+      )}
       {m.statusReply && (
         <div className="reply-ref status-ref"><span className="reply-arrow"><Icon name="reply" /></span><span>Replied to their status:</span><span className="reply-snippet">“{m.statusReply}”</span></div>
       )}
@@ -112,6 +115,7 @@ export default function MessageRow(p: Props) {
             <div className="msg-meta">
               <button className="name" onClick={() => p.onOpenProfile(m.authorId)}>{author ? <Name user={author} /> : authorName}</button>
               <ServerTag tag={author?.tag} />
+              {(m.authorBot || author?.bot) && <em className="tag bot-badge">BOT</em>}
               <time>{timeOf(m.createdAt)}</time>
             </div>
           )}
