@@ -276,9 +276,15 @@ impl App {
     }
     fn beep(&self) {
         #[cfg(windows)]
-        // SAFETY: MessageBeep takes only a sound type and has no pointers.
-        unsafe {
-            windows_sys::Win32::UI::WindowsAndMessaging::MessageBeep(0);
+        {
+            #[link(name = "user32")]
+            unsafe extern "system" {
+                fn MessageBeep(sound_type: u32) -> i32;
+            }
+            // SAFETY: MessageBeep takes only a sound type (0 = the default beep) and no pointers.
+            unsafe {
+                MessageBeep(0);
+            }
         }
     }
 

@@ -5,6 +5,7 @@
 //! machine this was written on: they need a first build on Windows (see desktop-rs/WINDOWS-CHECKLIST.md).
 use interprocess::local_socket::{prelude::*, GenericNamespaced, ListenerOptions, Stream};
 use std::io::{BufRead, BufReader, Write};
+#[cfg(target_os = "linux")]
 use std::path::PathBuf;
 
 // ---------- one copy at a time ----------
