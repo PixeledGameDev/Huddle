@@ -1,6 +1,7 @@
 import type http from "http";
 import { Server as IOServer } from "socket.io";
 import { userFromCookie } from "./auth";
+import { botTokenFrom, userFromBotToken } from "./bots";
 import { one, q } from "./db";
 import { inMaintenance } from "./maintenance";
 import { isHuddleAdmin } from "./perms";
@@ -87,7 +88,8 @@ export function initRealtime(httpServer: http.Server) {
 
   io.use(async (socket, next) => {
     try {
-      const user = await userFromCookie(socket.handshake.headers.cookie);
+      const botToken = botTokenFrom(typeof socket.handshake.auth?.token === "string" ? `Bot ${socket.handshake.auth.token}` : socket.handshake.headers.authorization);
+      const user = botToken ? await userFromBotToken(botToken) : await userFromCookie(socket.handshake.headers.cookie);
       if (!user) return next(new Error("unauthorized"));
       if (inMaintenance() && !(await isHuddleAdmin(user.id))) return next(new Error("maintenance"));
       socket.data.user = user;

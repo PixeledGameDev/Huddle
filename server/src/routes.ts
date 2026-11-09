@@ -25,9 +25,11 @@ import { listOpenVotes, voteRouter } from "./votes";
 import { perksOf, serverPerks } from "./perks";
 import { HEX_RE, TAG_MAX, TAG_RE, asUserTag, userTagSql } from "./tags";
 import { channelsFor } from "./channelperms";
+import { botGuard, botsRouter } from "./bots";
 
 export const api = Router();
-api.use(voteRouter, messagesRouter, pollsRouter, profilesRouter, adminRouter, gifsRouter, embedsRouter, dmsRouter, huddleAdminRouter, deletionRouter, securityRouter, passkeyRouter, suggestionsRouter, rolesRouter, friendsRouter, emojisRouter);
+api.use(botGuard); // bot tokens only reach the few routes a bot needs
+api.use(botsRouter, voteRouter, messagesRouter, pollsRouter, profilesRouter, adminRouter, gifsRouter, embedsRouter, dmsRouter, huddleAdminRouter, deletionRouter, securityRouter, passkeyRouter, suggestionsRouter, rolesRouter, friendsRouter, emojisRouter);
 
 const settingsColumns = {
   voteEnabled: "vote_enabled",
@@ -71,7 +73,7 @@ async function serverDetail(serverId: string, userId: string) {
   const legacyAdminCount = me.role === "owner" ? (await one<{ n: number }>(`select count(*)::int as n from memberships where server_id = $1 and role = 'admin'`, [serverId]))!.n : 0;
   const members = (
     await q<any>(
-      `select u.id, u.username, u.display_name, u.avatar_version, u.accent, u.status_text, u.name_font, m.role, t.until as timeout_until, ${userTagSql("u")} as user_tag
+      `select u.id, u.username, u.display_name, u.avatar_version, u.accent, u.status_text, u.name_font, m.role, (u.bot_owner is not null) as is_bot, t.until as timeout_until, ${userTagSql("u")} as user_tag
          from memberships m join users u on u.id = m.user_id
          left join server_timeouts t on t.server_id = m.server_id and t.user_id = m.user_id and t.until > now()
         where m.server_id = $1`,
@@ -81,7 +83,7 @@ async function serverDetail(serverId: string, userId: string) {
     .map((r) => {
       const roleIds = roleIdsOf(r.id);
       const top = r.role === "owner" ? OWNER_TOP : r.role === "admin" ? ADMIN_TOP : roleIds.length ? positionOf.get(roleIds[0]) ?? 0 : 0;
-      return { id: r.id, username: r.username, displayName: r.display_name ?? null, avatarVersion: r.avatar_version as number, accent: r.accent ?? null, statusText: r.status_text as string, nameFont: r.name_font as string, tag: asUserTag(r.user_tag), role: r.role as Role, roleIds, top, online: isOnline(r.id), status: statusOf(r.id), timeoutUntil: r.timeout_until ? new Date(r.timeout_until).toISOString() : null };
+      return { id: r.id, username: r.username, bot: !!r.is_bot, displayName: r.display_name ?? null, avatarVersion: r.avatar_version as number, accent: r.accent ?? null, statusText: r.status_text as string, nameFont: r.name_font as string, tag: asUserTag(r.user_tag), role: r.role as Role, roleIds, top, online: isOnline(r.id), status: statusOf(r.id), timeoutUntil: r.timeout_until ? new Date(r.timeout_until).toISOString() : null };
     })
     .sort((a, b) => Number(b.online) - Number(a.online) || a.username.localeCompare(b.username));
   const settings = Object.fromEntries(Object.entries(settingsColumns).map(([k, col]) => [k, s[col]]));

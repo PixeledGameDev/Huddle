@@ -458,4 +458,15 @@ create table if not exists server_tag_icons (
   mime text not null,
   data bytea not null
 );
+
+-- v32: developer bots. A bot is a users row owned by a person (bot_owner); it signs in with a token instead of a password.
+alter table users add column if not exists bot_owner uuid references users(id);
+alter table users add column if not exists bot_description text not null default '';
+create index if not exists users_bot_owner on users(bot_owner) where bot_owner is not null;
+create table if not exists bot_tokens (
+  bot_id uuid primary key references users(id) on delete cascade,
+  token_hash text not null unique,
+  created_at timestamptz not null default now(),
+  last_used_at timestamptz
+);
 `;

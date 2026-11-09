@@ -9,6 +9,7 @@ import { getProfile } from "./profiles";
 import { checkSecondFactor, has2fa } from "./security";
 import { sendWelcomeMessages } from "./welcome";
 import { autoJoinNewUser } from "./autojoin";
+import { botTokenFrom, userFromBotToken } from "./bots";
 
 export interface AuthUser {
   id: string;
@@ -51,6 +52,16 @@ function lookupSession(hash: string): Promise<AuthUser | null> {
 }
 
 export function requireAuth(req: Request, _res: Response, next: NextFunction) {
+  const botToken = botTokenFrom(req.headers.authorization);
+  if (botToken) {
+    userFromBotToken(botToken).then((u) => {
+      if (!u) return next(new HttpError(401, "That bot token isn't valid."));
+      req.user = { id: u.id, username: u.username };
+      (req as any).isBot = true;
+      next();
+    }, next);
+    return;
+  }
   userFromCookie(req.headers.cookie).then((u) => {
     if (!u) return next(new HttpError(401, "Sign in to continue."));
     req.user = u;
@@ -117,7 +128,7 @@ authRouter.post(
     const row = await one<{ id: string; username: string; password_hash: string; is_banned: boolean; ban_forever: boolean; banned_until: Date | null; ban_reason: string | null }>(
       `select id, username, password_hash, coalesce(banned_until > now(), false) as is_banned, coalesce(banned_until = 'infinity', false) as ban_forever,
               case when banned_until = 'infinity' then null else banned_until end as banned_until, ban_reason
-         from users where lower(username) = lower($1)`,
+         from users where lower(username) = lower($1) and bot_owner is null`,
       [username]
     );
     const ok = row ? await verify(row.password_hash, password).catch(() => false) : false;

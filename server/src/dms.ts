@@ -69,6 +69,7 @@ export async function openDm(me: string, userId: string) {
   let created = false;
   if (!serverId) {
     if (await one(`select 1 from users where id = $1 and is_bot`, [userId])) throw new HttpError(403, "Huddle is a bot, so it can't read replies.");
+    if (await one(`select 1 from users where id = $1 and bot_owner is not null`, [userId])) throw new HttpError(403, "You can't send direct messages to bots yet.");
     rateLimit(`newdm:${me}`, 20, 3600_000);
     const shared = await one(
       `select 1 from memberships a join memberships b on a.server_id = b.server_id join servers s on s.id = a.server_id
