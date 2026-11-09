@@ -1,7 +1,7 @@
-//! Settings: a small JSON file in the user's app data folder (port of the settings handling in desktop/src/main.js).
+//! Settings: a small JSON file in the user's app data folder.
 //!
-//! The file lives where the Electron app kept it (%APPDATA%\Huddle\settings.json on Windows) and keeps the same key names, so
-//! the server address and choices carry over from an Electron install. Unknown keys are ignored.
+//! The file lives at %APPDATA%\Huddle\settings.json on Windows, the same place (and with the same key names) the old Electron app
+//! used, so the server address and choices carry over from an old install. Unknown keys are ignored.
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::BTreeMap;

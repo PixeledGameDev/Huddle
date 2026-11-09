@@ -1,8 +1,9 @@
 #!/usr/bin/env node
 /**
  * Decides whether a push should build and publish the desktop app: only when the version in desktop-rs/Cargo.toml changed.
- * (Running the workflow by hand, or pushing a desktop-v… tag, always builds.)
- * Used by .github/workflows/desktop.yml; run from the repository root. Prints the reason and sets the `build` output.
+ * (Running the workflow by hand, or pushing a desktop-rs-v… tag, always builds.)
+ * Not used by a workflow yet: .github/workflows/desktop-rs.yml runs by hand or on a desktop-rs-v… tag. It is kept so that building
+ * on every version bump can be switched on later. Run from the repository root. Prints the reason and sets the `build` output.
  */
 const fs = require("node:fs");
 const path = require("node:path");

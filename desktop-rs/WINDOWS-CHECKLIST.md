@@ -1,4 +1,4 @@
-# Windows checklist (do this before replacing the Electron app)
+# Windows checklist (do this before each release)
 
 The Rust app was written and run on Linux. Everything below needs a real Windows 10/11 computer.
 
@@ -16,6 +16,9 @@ The Rust app was written and run on Linux. Everything below needs a real Windows
 - [ ] The logo menu opens under the logo at the right place (also at 125% / 150% display scaling).
 
 **Page features**
+- [ ] The website knows it is in the app, not a browser: Profile & appearance has **Custom themes** and **Desktop app** settings, and the sign-in page
+      has no "Get the desktop app" link. (If not, `window.huddleDesktop` is missing: open developer tools with F12 and look for a bridge error.)
+- [ ] A custom theme with a background picture applies, and is still there after quitting and reopening the app.
 - [ ] A direct message / @mention shows the reply popup in the bottom-right corner *above the taskbar*, without taking focus from what you are typing.
 - [ ] Reply, Mark as read, Open and the close button work; two messages in one channel update one popup.
 - [ ] The taskbar shows the unread number (overlay icon) and clears when read; the tray icon gets its red dot; upload progress shows on the taskbar button.
@@ -34,7 +37,7 @@ The Rust app was written and run on Linux. Everything below needs a real Windows
 - [ ] Running the program twice shows the first window instead of a second.
 - [ ] Update: publish a higher version; the splash shows the download, the app restarts into the new version by itself, and the new version opens.
       Also test a bad download (changed file) is refused, and that a *running* app shows the "Restart now / Later" popup.
-- [ ] Antivirus/SmartScreen behaviour of the unsigned installer is acceptable (same as the Electron one).
+- [ ] Antivirus/SmartScreen behaviour of the unsigned installer is acceptable (the installer is unsigned).
 
 **Moving users over from Electron**
 - [ ] Installing 3.x over a 2.x Electron install: decide whether the old app is uninstalled (different install folder/app id) and tell people they

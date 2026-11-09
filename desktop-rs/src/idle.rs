@@ -1,4 +1,4 @@
-//! Away from the computer (port of desktop/src/idle.js): after a set time with no keyboard or mouse use (or while the screen
+//! Away from the computer after a set time with no keyboard or mouse use (or while the screen
 //! is locked or the computer sleeps) Huddle tells the server you're idle, and tells it again when you're back. The person's
 //! own choice of status (Online, Do not disturb...) is never changed by this; the server only shows "Idle" when you're
 //! otherwise Online. Reading the system is passed in, so this can be tested without a desktop.

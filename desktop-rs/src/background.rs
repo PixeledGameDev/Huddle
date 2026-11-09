@@ -1,4 +1,4 @@
-//! A tiny stand-in for the Huddle page while the window is unloaded to save memory (port of desktop/src/background.js).
+//! A tiny stand-in for the Huddle page while the window is unloaded to save memory.
 //! It keeps one connection to the server so direct messages, @mentions and @everyone still pop up (and the tray dot still
 //! lights), then the page is rebuilt when you open Huddle.
 use crate::quiet::{sanitize_quiet, Quiet};

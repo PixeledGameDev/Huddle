@@ -268,15 +268,16 @@ A blue download button sits at the bottom of the left rail and opens `/download`
 there's a build to download (it asks `/api/desktop`), so it never leads to an empty page; it's hidden inside the desktop
 app itself and on phone-sized screens.
 
-`desktop/` is an Electron app for Windows, macOS and Linux (see `desktop/README.md`). It opens your server's web app in
-its own window and adds system notifications, an unread badge, a tray icon, and keep-running-in-the-tray. Version 2.0 added
-update popups with Restart now / Later, an automatic Idle status, quiet hours, `huddle://` invite links, a taskbar menu and
-upload progress, global keyboard shortcuts, crash recovery and a Troubleshooting menu (all described in `desktop/README.md`). It's not part
-of the server's build (it isn't in the npm workspaces), so deploying the server doesn't touch it. Installers are built
-by `.github/workflows/desktop.yml` and are unsigned. They're offered to everyone at `/download` on your own site, so the
-repository can stay private: the workflow uploads them to your R2 bucket (setup in `desktop/README.md`) and the server
-serves the page and files from there (`server/src/downloads.ts`; the page is plain HTML with no scripts, and only
-files listed in the uploaded manifest can be fetched).
+`desktop-rs/` is the Windows desktop app (see `desktop-rs/README.md`). It is written in Rust and has no Electron and no bundled
+browser: the page is drawn by the web view that comes with Windows (WebView2). It opens your server's web app in its own
+window and adds system notifications, an unread badge, a tray icon, keep-running-in-the-tray, update popups with Restart now /
+Later, an automatic Idle status, quiet hours, `huddle://` invite links, global keyboard shortcuts and a Troubleshooting menu
+(all described in `desktop-rs/README.md`). Custom themes (Profile & appearance → Custom themes) are offered inside the desktop
+app only. It's not part of the server's build (it isn't in the npm workspaces), so deploying the server doesn't touch it.
+Installers are built by `.github/workflows/desktop-rs.yml` and are unsigned. They're offered to everyone at `/download` on
+your own site, so the repository can stay private: the workflow uploads them to your R2 bucket (setup in
+`desktop-rs/README.md`) and the server serves the page and files from there (`server/src/downloads.ts`; the page is plain HTML
+with no scripts, and only files listed in the uploaded manifest can be fetched).
 
 ## Links and link previews
 

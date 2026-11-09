@@ -21,6 +21,8 @@ interface Props {
   canManage: boolean;
   timedOut: boolean;
   canReact: boolean;
+  /** false in channels where you may read but not send messages: replying is pointless there */
+  canSend?: boolean;
   byName: Map<string, Member>;
   byId: Map<string, Member>;
   editing: boolean;
@@ -167,7 +169,7 @@ export default function MessageRow(p: Props) {
           {!timedOut && (
             <>
               {p.canReact && <button aria-label="Add reaction" aria-expanded={p.pickerOpen} onClick={p.onTogglePicker}><Icon name="smile-plus" /></button>}
-              <button onClick={p.onReply}>Reply</button>
+              {p.canSend !== false && <button onClick={p.onReply}>Reply</button>}
               {isMine && !m.poll && <button onClick={p.onStartEdit}>Edit</button>}
             </>
           )}

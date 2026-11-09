@@ -13,6 +13,34 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "5.30",
+    date: "2026-11-09",
+    title: "More customizable server tags",
+    changes: [
+      "Server tags can now be up to 12 letters or numbers (was 4).",
+      "Servers can give their tag a color and a small picture of their own. Find both under the server's settings, next to the tag.",
+      "Clicking someone's server tag now opens an invite to that server, or takes you there if you're already in it. Server managers can turn this off in the server's tag settings.",
+    ],
+  },
+  {
+    version: "5.29",
+    date: "2026-11-09",
+    title: "Blacked-out message bar",
+    changes: [
+      "In channels where you're not allowed to send messages, the message bar is now blacked out with a lock instead of waiting for you to try and then showing an error. Dropping files onto those channels and replying to messages there are switched off too.",
+    ],
+  },
+  {
+    version: "5.28",
+    date: "2026-11-09",
+    desktop: true,
+    title: "Desktop app: custom themes are back",
+    changes: [
+      "Fixed the desktop app being mistaken for a web browser. Custom themes (Profile & appearance → Custom themes) and the desktop-only settings show up again, and the sign-in page no longer offers to download an app you're already using. This is Huddle desktop 3.0.1, which installs itself the next time the app checks for updates.",
+      "The old Electron version of the desktop app has been retired. Huddle desktop is now only the lightweight app that uses Windows' built-in web view instead of bundling its own browser.",
+    ],
+  },
+  {
     version: "5.27",
     date: "2026-11-06",
     title: "Channel permissions",

@@ -1,5 +1,5 @@
 //! Huddle desktop: a window onto your Huddle server, plus the desktop extras (system notifications, an unread badge, a tray
-//! icon, and staying open in the tray when you close the window). A Rust port of the Electron app in ../desktop.
+//! icon, and staying open in the tray when you close the window).
 //!
 //! The app contains no copy of Huddle itself. It loads your server's own web app, so it is always the same version as the
 //! server, and signing in works exactly like it does in a browser.

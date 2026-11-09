@@ -1,4 +1,4 @@
-//! `huddle://` links and launch commands (port of desktop/src/deeplink.js).
+//! `huddle://` links and launch commands.
 //!
 //! Any web page can hand the app a huddle:// link, so this accepts only the exact shapes below and nothing else. An invite
 //! link never joins anything by itself: it opens the same invite page as a normal link, where joining still needs a click.

@@ -1,4 +1,4 @@
-//! The application: windows, the tray, popups and everything that ties the pieces together (port of desktop/src/main.js).
+//! The application: windows, the tray, popups and everything that ties the pieces together.
 //!
 //! Everything here runs on the main thread inside the window system's event loop. Work that happens elsewhere (timers, the
 //! network, the idle check, other launches of the app) comes back as a `UserEvent::Run` job that is executed with `&mut App`.

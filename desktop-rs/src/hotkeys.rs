@@ -1,4 +1,4 @@
-//! Global shortcuts: keys that work from any program, even while Huddle is hidden in the tray (port of desktop/src/hotkeys.js).
+//! Global shortcuts: keys that work from any program, even while Huddle is hidden in the tray.
 //!
 //! Three actions can have one: show or hide Huddle, open the quick switcher, jump to the next unread message.
 //! They are off until the person sets them, because any combination might already be used by something else.

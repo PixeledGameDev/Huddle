@@ -1,6 +1,5 @@
 //! When Huddle's page crashes the app reloads it. That should fix a one-off crash, but a page that crashes again and again
 //! must not be reloaded forever: after `max` crashes within `window` it stops and lets the person know.
-//! (Port of desktop/src/crashguard.js.)
 // Not connected yet: the web view library doesn't report when the page's process dies (see README, "Known gaps"). The logic is
 // finished and tested so that wiring it up later is one call.
 #![allow(dead_code)]

@@ -252,3 +252,43 @@ profilesRouter.get("/servers/:serverId/icon", h(async (req, res) => {
   await requireMember(req.params.serverId, req.user!.id);
   sendImage(res, await one(`select mime, data from server_icons where server_id = $1`, [req.params.serverId]));
 }));
+
+// A server tag's small picture. It shows next to people's names everywhere, so it is small (256 KB) and anyone signed in may fetch it.
+const tagIconBody = express.raw({ type: "application/octet-stream", limit: 256 * 1024 });
+
+profilesRouter.put("/servers/:serverId/tag-icon", tagIconBody, h(async (req, res) => {
+  const { serverId } = req.params;
+  await requirePerm(serverId, req.user!.id, "manage_server");
+  rateLimit(`tagicon:${req.user!.id}`, 10, 60_000);
+  const s = await one<{ verified: boolean; official: boolean }>(`select verified, official from servers where id = $1 and not is_dm`, [serverId]);
+  if (!s || (!s.verified && !s.official)) throw new HttpError(403, "Only verified and Huddle Official servers can have a tag.");
+  const { mime, data } = readImage(req.body);
+  await tx(async (c) => {
+    await q(`insert into server_tag_icons(server_id, mime, data) values ($1, $2, $3) on conflict (server_id) do update set mime = excluded.mime, data = excluded.data`, [serverId, mime, data], c);
+    await q(`update servers set tag_icon_version = tag_icon_version + 1 where id = $1`, [serverId], c);
+    await q(`insert into audit_log(server_id, actor_id, action, detail) values ($1, $2, 'server.tagicon', '{"removed":false}')`, [serverId, req.user!.id], c);
+  });
+  emitServer(serverId, "server.update", { serverId });
+  res.json({ ok: true });
+}));
+
+profilesRouter.delete("/servers/:serverId/tag-icon", h(async (req, res) => {
+  const { serverId } = req.params;
+  await requirePerm(serverId, req.user!.id, "manage_server");
+  await tx(async (c) => {
+    await q(`delete from server_tag_icons where server_id = $1`, [serverId], c);
+    await q(`update servers set tag_icon_version = 0 where id = $1`, [serverId], c);
+    await q(`insert into audit_log(server_id, actor_id, action, detail) values ($1, $2, 'server.tagicon', '{"removed":true}')`, [serverId, req.user!.id], c);
+  });
+  emitServer(serverId, "server.update", { serverId });
+  res.json({ ok: true });
+}));
+
+profilesRouter.get("/servers/:serverId/tag-icon", h(async (req, res) => {
+  if (!z.string().uuid().safeParse(req.params.serverId).success) throw new HttpError(404, "No image.");
+  sendImage(res, await one(
+    `select i.mime, i.data from server_tag_icons i join servers s on s.id = i.server_id
+      where i.server_id = $1 and s.tag is not null and (s.verified or s.official)`,
+    [req.params.serverId]
+  ));
+}));

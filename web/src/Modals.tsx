@@ -7,6 +7,7 @@ import { RolesTab } from "./Roles";
 import type { BanEntry, DeletedMessage, ServerDetail, ServerSummary, Settings } from "./types";
 import { dateTimeOf, extractInviteCode, fmtDuration, fmtSize, hue, squareImage } from "./util";
 import { Icon } from "./Icon";
+import { ServerTag } from "./ServerTag";
 
 export function Modal({ title, onClose, children, variant }: { title: string; onClose: () => void; children: React.ReactNode; variant?: "profile" | "settings" }) {
   useEffect(() => {
@@ -104,6 +105,7 @@ const AUDIT_TEXT: Record<string, (e: any) => string> = {
   "channel.permissions": (e) => `${e.actor} changed the permissions of #${e.detail?.name}`,
   "channel.delete": (e) => `${e.actor} deleted #${e.detail?.name}`,
   "server.tag": (e) => (e.detail?.tag ? `${e.actor} set the server tag to ${e.detail.tag}` : `${e.actor} removed the server tag`),
+  "server.tagicon": (e) => (e.detail?.removed ? `${e.actor} removed the server tag picture` : `${e.actor} changed the server tag picture`),
   "server.icon": (e) => (e.detail?.removed ? `${e.actor} removed the server icon` : `${e.actor} changed the server icon`),
   "emoji.add": (e) => `${e.actor} added the emoji :${e.detail?.name}:`,
   "emoji.rename": (e) => `${e.actor} renamed the emoji :${e.detail?.from}: to :${e.detail?.to}:`,
@@ -118,31 +120,89 @@ const AUDIT_TEXT: Record<string, (e: any) => string> = {
 
 type Tab = "general" | "roles" | "channelperms" | "emojis" | "bans" | "deleted" | "activity" | "danger";
 
-/** A verified or Huddle Official server's tag: 2 to 4 letters or numbers that members can wear next to their name. */
+/** Most letters or numbers a server tag can have (the server enforces the same limit). */
+const TAG_MAX = 12;
+const TAG_COLORS = ["#6f8cff", "#3ecf8e", "#e0a526", "#ff6b6b", "#c77dff", "#4dd0e1", "#ff8fab", "#9aa4b2"];
+
+/**
+ * A verified or Huddle Official server's tag: up to 12 letters or numbers that members can wear next to their name, with its own
+ * color and picture, and a switch for whether clicking it opens an invite to this server.
+ */
 function ServerTagField({ server, onError }: { server: ServerDetail; onError: (e: unknown) => void }) {
   const [tag, setTag] = useState(server.tag ?? "");
+  const [color, setColor] = useState<string | null>(server.tagColor ?? null);
+  const [invite, setInvite] = useState(server.tagInvite ?? true);
+  const [iconVersion, setIconVersion] = useState(server.tagIconVersion ?? 0);
+  // what is saved on the server right now (kept here so the form doesn't wait for the server's own update to arrive)
+  const [base, setBase] = useState({ tag: server.tag ?? "", color: server.tagColor ?? null, invite: server.tagInvite ?? true });
   const [busy, setBusy] = useState(false);
   const [saved, setSaved] = useState(false);
+  const dirty = tag !== base.tag || color !== base.color || invite !== base.invite;
   async function save(value: string | null) {
     setBusy(true);
     try {
-      const r = await api<{ tag: string | null }>(`/servers/${server.id}/tag`, "PUT", { tag: value });
+      const r = await api<{ tag: string | null; color: string | null; invite: boolean }>(`/servers/${server.id}/tag`, "PUT", { tag: value, color, invite });
       setTag(r.tag ?? "");
+      setColor(r.color ?? null);
+      setInvite(r.invite);
+      setBase({ tag: r.tag ?? "", color: r.color ?? null, invite: r.invite });
       setSaved(true);
       window.setTimeout(() => setSaved(false), 2000);
     } catch (err) { onError(err); }
     setBusy(false);
   }
+  async function setIcon(file: File) {
+    setBusy(true);
+    try {
+      await uploadRaw(`/servers/${server.id}/tag-icon`, await squareImage(file, 64));
+      setIconVersion((v) => v + 1);
+    } catch (err) { onError(err); }
+    setBusy(false);
+  }
+  async function removeIcon() {
+    setBusy(true);
+    try {
+      await api(`/servers/${server.id}/tag-icon`, "DELETE");
+      setIconVersion(0);
+    } catch (err) { onError(err); }
+    setBusy(false);
+  }
+  const preview = tag.length >= 2 ? { text: tag, official: !!server.official, serverId: server.id, color, iconVersion, invite } : null;
   return (
     <div className="stack tight">
       <label>Server tag
         <span className="invite-link-row">
-          <input value={tag} maxLength={4} placeholder="e.g. HDL" onChange={(e) => setTag(e.target.value.replace(/[^A-Za-z0-9]/g, "").toUpperCase())} />
-          <button type="button" disabled={busy || tag.length < 2 || tag === (server.tag ?? "")} onClick={() => void save(tag)}>{saved ? "Saved ✓" : "Save"}</button>
-          {server.tag && <button type="button" disabled={busy} onClick={() => void save(null)}>Remove</button>}
+          <input value={tag} placeholder="e.g. HUDDLE" onChange={(e) => setTag(e.target.value.replace(/[^A-Za-z0-9]/g, "").toUpperCase().slice(0, TAG_MAX))} />
+          <button type="button" disabled={busy || tag.length < 2 || !dirty} onClick={() => void save(tag)}>{saved ? "Saved ✓" : "Save"}</button>
+          {base.tag && <button type="button" disabled={busy} onClick={() => void save(null)}>Remove</button>}
         </span>
-        <small className="muted">2 to 4 letters or numbers. Members can choose to wear it next to their name, in every server.</small>
+        <small className="muted">2 to {TAG_MAX} letters or numbers. Members can choose to wear it next to their name, in every server.</small>
       </label>
+      <div className="tag-look">
+        <span className="muted">Color</span>
+        <span className="tag-swatches">
+          {TAG_COLORS.map((c) => (
+            <button key={c} type="button" className={color === c ? "swatch on" : "swatch"} style={{ background: c }} aria-label={`Use ${c}`} aria-pressed={color === c} onClick={() => setColor(c)} />
+          ))}
+          <input type="color" aria-label="Pick another color" value={color ?? "#6f8cff"} onChange={(e) => setColor(e.target.value)} />
+          {color && <button type="button" className="link left" onClick={() => setColor(null)}>Default</button>}
+        </span>
+      </div>
+      <div className="tag-look">
+        <span className="muted">Picture</span>
+        <span className="tag-swatches">
+          {iconVersion > 0 && <img className="stag-icon big" src={`/api/servers/${server.id}/tag-icon?v=${iconVersion}`} alt="" />}
+          <label className="file-btn">{iconVersion > 0 ? "Change picture" : "Upload picture"}<input type="file" accept="image/png,image/jpeg,image/gif,image/webp" hidden disabled={busy || !base.tag} onChange={(e) => { const f = e.target.files?.[0]; if (f) void setIcon(f); e.target.value = ""; }} /></label>
+          {iconVersion > 0 && <button type="button" className="link left" disabled={busy} onClick={() => void removeIcon()}>Remove picture</button>}
+        </span>
+      </div>
+      {!base.tag && <small className="muted">Save a tag first, then you can add a picture. Color and the invite switch are saved with the tag.</small>}
+      <label className="check">
+        <input type="checkbox" checked={invite} onChange={(e) => setInvite(e.target.checked)} />
+        Clicking the tag opens an invite to this server
+      </label>
+      {preview && <span className="tag-preview muted">Preview: <ServerTag tag={preview} preview /></span>}
+      {dirty && tag.length >= 2 && <small className="muted">You have unsaved changes: press Save.</small>}
     </div>
   );
 }

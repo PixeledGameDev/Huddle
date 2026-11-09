@@ -23,7 +23,7 @@ import { profilesRouter } from "./profiles";
 import { emitServer, isOnline, joinHuddleAdmins, joinServerRooms, leaveServerRooms, statusOf } from "./realtime";
 import { listOpenVotes, voteRouter } from "./votes";
 import { perksOf, serverPerks } from "./perks";
-import { TAG_RE, asUserTag, userTagSql } from "./tags";
+import { HEX_RE, TAG_MAX, TAG_RE, asUserTag, userTagSql } from "./tags";
 import { channelsFor } from "./channelperms";
 
 export const api = Router();
@@ -92,6 +92,9 @@ async function serverDetail(serverId: string, userId: string) {
     verified: s.verified as boolean,
     official: s.official as boolean,
     tag: (s.tag ?? null) as string | null,
+    tagColor: (s.tag_color ?? null) as string | null,
+    tagIconVersion: s.tag_icon_version as number,
+    tagInvite: s.tag_invite as boolean,
     perks: perksOf(s),
     isDm: s.is_dm as boolean,
     ownerId: s.owner_id,
@@ -248,21 +251,56 @@ api.post("/join", h(async (req, res) => {
   res.json({ server: await one(`select id, name, icon_version as "iconVersion", verified, official from servers where id = $1`, [inv.server_id]) });
 }));
 
-/** Sets or clears a server's tag. Only verified and Huddle Official servers can have one (it can always be cleared). */
+/**
+ * Sets or clears a server's tag and how it looks. Only verified and Huddle Official servers can have one (it can always be cleared).
+ * `color` and `invite` are optional: leaving them out keeps what is already saved (null clears the color).
+ */
 api.put("/servers/:serverId/tag", h(async (req, res) => {
   const { serverId } = req.params;
   const user = req.user!;
   await requirePerm(serverId, user.id, "manage_server");
   await assertNotDm(serverId);
-  const { tag } = z.object({ tag: z.string().trim().nullable() }).parse(req.body);
-  if (tag && !TAG_RE.test(tag)) throw new HttpError(400, "A tag is 2 to 4 letters or numbers.");
-  const value = tag ? tag.toUpperCase() : null;
+  const body = z.object({ tag: z.string().trim().nullable(), color: z.string().trim().nullable().optional(), invite: z.boolean().optional() }).parse(req.body);
+  if (body.tag && !TAG_RE.test(body.tag)) throw new HttpError(400, `A tag is 2 to ${TAG_MAX} letters or numbers.`);
+  if (body.color && !HEX_RE.test(body.color)) throw new HttpError(400, "Pick a color like #3366ff.");
+  const value = body.tag ? body.tag.toUpperCase() : null;
   const s = (await one<{ verified: boolean; official: boolean }>(`select verified, official from servers where id = $1`, [serverId]))!;
   if (value && !s.verified && !s.official) throw new HttpError(403, "Only verified and Huddle Official servers can have a tag.");
-  await q(`update servers set tag = $2 where id = $1`, [serverId, value]);
-  await q(`insert into audit_log(server_id, actor_id, action, detail) values ($1, $2, 'server.tag', $3)`, [serverId, user.id, JSON.stringify({ tag: value })]);
+  const row = (await one<{ tag_color: string | null; tag_invite: boolean }>(
+    `update servers set tag = $2,
+            tag_color = case when $3::boolean then $4::text else tag_color end,
+            tag_invite = coalesce($5::boolean, tag_invite)
+      where id = $1 returning tag_color, tag_invite`,
+    [serverId, value, body.color !== undefined, body.color ? body.color.toLowerCase() : null, body.invite ?? null]
+  ))!;
+  await q(`insert into audit_log(server_id, actor_id, action, detail) values ($1, $2, 'server.tag', $3)`, [serverId, user.id, JSON.stringify({ tag: value, color: row.tag_color, invite: row.tag_invite })]);
   emitServer(serverId, "server.update", { serverId });
-  res.json({ ok: true, tag: value });
+  res.json({ ok: true, tag: value, color: row.tag_color, invite: row.tag_invite });
+}));
+
+/**
+ * Clicking a server tag: gives anyone signed in an invite code to that server, as long as it is verified or official, has a tag,
+ * and its owners haven't turned the click-to-invite option off. The code is made once and then reused.
+ */
+api.post("/servers/:serverId/tag-invite", h(async (req, res) => {
+  const user = req.user!;
+  rateLimit(`taginvite:${user.id}`, 30, 60_000);
+  const serverId = z.string().uuid().safeParse(req.params.serverId);
+  if (!serverId.success) throw new HttpError(404, "This server doesn't have an invite.");
+  const s = await one<{ id: string; tag_invite_code: string | null }>(
+    `select id, tag_invite_code from servers where id = $1 and not is_dm and tag is not null and tag_invite and (verified or official)`,
+    [serverId.data]
+  );
+  if (!s) throw new HttpError(404, "This server doesn't have an invite.");
+  if (await one(`select 1 from server_bans where server_id = $1 and user_id = $2 and until > now()`, [s.id, user.id])) throw new HttpError(403, "You're banned from this server.");
+  let code = s.tag_invite_code;
+  if (!code || !(await one(`select 1 from invites where code = $1 and server_id = $2`, [code, s.id]))) {
+    const owner = await one<{ user_id: string }>(`select user_id from memberships where server_id = $1 and role = 'owner' limit 1`, [s.id]);
+    code = crypto.randomBytes(6).toString("base64url");
+    await q(`insert into invites(code, server_id, created_by) values ($1, $2, $3)`, [code, s.id, owner?.user_id ?? user.id]);
+    await q(`update servers set tag_invite_code = $2 where id = $1`, [s.id, code]);
+  }
+  res.json({ code });
 }));
 
 api.post("/servers/:serverId/leave", h(async (req, res) => {

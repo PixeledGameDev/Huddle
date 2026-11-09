@@ -1,4 +1,4 @@
-//! The text behind "Troubleshooting → Copy debug info" (port of desktop/src/debuginfo.js): versions, what the app is doing and
+//! The text behind "Troubleshooting → Copy debug info": versions, what the app is doing and
 //! the last few log lines, ready to paste when asking for help. It holds no messages, passwords or sign-in details, and only
 //! the server's host name.
 use crate::log::redact;

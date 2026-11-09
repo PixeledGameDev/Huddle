@@ -1,4 +1,4 @@
-//! Server-address handling and link safety (port of desktop/src/url.js).
+//! Server-address handling and link safety.
 use regex::Regex;
 use std::sync::LazyLock;
 use url::Url;

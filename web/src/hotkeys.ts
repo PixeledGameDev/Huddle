@@ -1,6 +1,6 @@
 /**
  * Choosing a global shortcut (desktop app): turns a key press into the text the desktop app wants, like "Control+Shift+Space".
- * The desktop app has the final say on what is acceptable (desktop/src/hotkeys.js); this only builds the text and gives early feedback.
+ * The desktop app has the final say on what is acceptable (desktop-rs/src/hotkeys.rs); this only builds the text and gives early feedback.
  */
 export type HotkeyAction = "toggle" | "switcher" | "unread";
 export type HotkeyStatus = "ok" | "off" | "taken" | "invalid" | "duplicate";

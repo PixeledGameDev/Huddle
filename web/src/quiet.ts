@@ -1,6 +1,6 @@
 /**
  * Quiet hours: a daily window (for example 22:00 to 07:00) when Huddle stays silent: no popups, sounds or flashing, while
- * unread counts and badges keep updating. The same rule lives in the desktop app (desktop/src/quiet.js): keep the two in step.
+ * unread counts and badges keep updating. The same rule lives in the desktop app (desktop-rs/src/quiet.rs): keep the two in step.
  */
 export interface QuietHours {
   enabled: boolean;

@@ -65,7 +65,7 @@ const Composer = forwardRef<ComposerHandle, Props>(function Composer(props, ref)
   }, [panel]);
 
   function addFiles(list: FileList | File[]) {
-    if (timedOut || !canAttach) return;
+    if (timedOut || !canSend || !canAttach) return;
     const room = MAX_ATTACHMENTS - pendingRef.current.length;
     for (const file of [...list].slice(0, Math.max(0, room))) {
       const key = `${Date.now()}-${Math.random()}`;
@@ -184,7 +184,10 @@ const Composer = forwardRef<ComposerHandle, Props>(function Composer(props, ref)
   if (!canSend) {
     return (
       <footer className="composer">
-        <div className="timeout-note">You don't have permission to send messages in #{channel.name}.</div>
+        <div className="compose-row blocked" role="note" aria-disabled="true" title="You can read this channel but not send messages in it">
+          <Icon name="lock" />
+          <span>You don't have permission to send messages in #{channel.name}.</span>
+        </div>
       </footer>
     );
   }

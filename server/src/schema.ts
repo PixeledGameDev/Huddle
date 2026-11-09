@@ -447,4 +447,15 @@ create table if not exists passkey_challenges (
   purpose text not null,
   expires_at timestamptz not null default now() + interval '5 minutes'
 );
+
+-- v31: customizable server tags (a color, a small picture, and whether clicking the tag opens an invite to the server)
+alter table servers add column if not exists tag_color text;
+alter table servers add column if not exists tag_icon_version integer not null default 0;
+alter table servers add column if not exists tag_invite boolean not null default true;
+alter table servers add column if not exists tag_invite_code text;
+create table if not exists server_tag_icons (
+  server_id uuid primary key references servers(id) on delete cascade,
+  mime text not null,
+  data bytea not null
+);
 `;

@@ -16,6 +16,8 @@ import { HuddleAdminModal } from "./HuddleAdmin";
 import { SuggestionsModal } from "./Suggestions";
 import { Name } from "./Name";
 import { ThemeEditorModal } from "./ThemeEditor";
+import { TAG_CLICK_EVENT, type TagClickDetail } from "./ServerTag";
+import { TagInviteModal } from "./TagInvite";
 import { UpdateBanner } from "./UpdateBanner";
 import { ServerAssetsContext } from "./ServerAssets";
 import { ServerBadge, serverBadgeLabel } from "./Verified";
@@ -113,6 +115,7 @@ function Main({ me, initialServerId, onUser, onLogout }: { me: User; initialServ
   // /suggestions in the address bar opens the board, so it can be linked to
   const [modal, setModal] = useState<Modal>(() => (window.location.pathname === "/suggestions" ? "suggestions" : null));
   const [profileId, setProfileId] = useState<string | null>(null);
+  const [tagInvite, setTagInvite] = useState<TagClickDetail | null>(null);
   const [friendsTick, setFriendsTick] = useState(0);
   const { data: friendsData } = useFriends(friendsTick);
   const legacyPromptedRef = useRef<Set<string>>(new Set());
@@ -602,6 +605,21 @@ function Main({ me, initialServerId, onUser, onLogout }: { me: User; initialServ
     setActiveId(id);
   }
 
+  // Clicking a server tag (next to someone's name): go to that server if you're in it, otherwise show its invite.
+  useEffect(() => {
+    const onTagClick = (e: Event) => {
+      const d = (e as CustomEvent<TagClickDetail>).detail;
+      if (!d?.serverId) return;
+      setProfileId(null);
+      if (serversRef.current.some((s) => s.id === d.serverId)) {
+        setSideMode("server");
+        setActiveId(d.serverId);
+      } else setTagInvite(d);
+    };
+    window.addEventListener(TAG_CLICK_EVENT, onTagClick);
+    return () => window.removeEventListener(TAG_CLICK_EVENT, onTagClick);
+  }, []);
+
   async function addChannel() {
     const name = await promptDialog("Name your channel", { placeholder: "general", confirmLabel: "Create", maxLength: 40 });
     if (!name || !detail) return;
@@ -1038,6 +1056,7 @@ function Main({ me, initialServerId, onUser, onLogout }: { me: User; initialServ
       {profileId && detail && (
         <ProfileCard userId={profileId} serverId={detail.id} server={detail} meId={me.id} onClose={() => setProfileId(null)} onEdit={() => { setProfileId(null); setModal("myprofile"); }} onMessage={startDm} onChanged={refreshDms} onStartVote={(m) => void startVote(m)} onServerChanged={() => void loadServer(detail.id)} />
       )}
+      {tagInvite && <TagInviteModal serverId={tagInvite.serverId} tag={tagInvite.text} onClose={() => setTagInvite(null)} onJoin={joinInvite} onOpen={openServer} />}
       <div className="toasts" role="status" aria-live="polite">
         {toasts.map((t) => <div key={t.id} className={t.error ? "toast err" : "toast"}>{t.text}</div>)}
       </div>

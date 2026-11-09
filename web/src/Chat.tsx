@@ -101,7 +101,7 @@ export default function Chat(p: Props) {
     <section
       className={dragging ? "chat dragging" : "chat"}
       onDragOver={(e) => {
-        if (timedOut || !e.dataTransfer.types.includes("Files")) return;
+        if (timedOut || !canSend || !canAttach || !e.dataTransfer.types.includes("Files")) return;
         e.preventDefault();
         setDragging(true);
       }}
@@ -154,6 +154,7 @@ export default function Chat(p: Props) {
               canManage={p.canManageMessages}
               timedOut={timedOut}
               canReact={canReact}
+              canSend={canSend}
               byName={byName}
               byId={byId}
               nameOf={nameOf}

@@ -1,11 +1,10 @@
 name: Desktop app (Rust)
 
-# Builds the Rust version of the Windows app (desktop-rs/) and publishes it the same way the Electron one was: installer plus
-# latest.yml in the R2 "desktop/" folder, so the website's download page and the in-app updater keep working unchanged.
+# Builds the Windows app (desktop-rs/) and publishes it: installer plus latest.yml in the R2 "desktop/" folder, so the website's
+# download page and the in-app updater keep working. This is the only desktop workflow (the old Electron app was removed).
 #
-# NOT YET RUN: it was written alongside the port and has never executed. Run it by hand once ("Run workflow") and check the
-# installer on a real Windows computer (desktop-rs/WINDOWS-CHECKLIST.md) before relying on it. Do not enable both this and
-# desktop.yml for the same release: they would overwrite each other's files in R2.
+# Run it by hand ("Run workflow") or push a tag like desktop-rs-v3.0.1. The version is `version` in desktop-rs/Cargo.toml.
+# Check each new installer on a real Windows computer (desktop-rs/WINDOWS-CHECKLIST.md) before relying on it.
 on:
   workflow_dispatch:
   push:
@@ -34,6 +33,9 @@ jobs:
         if: ${{ startsWith(github.ref, 'refs/tags/desktop-rs-v') }}
         shell: bash
         run: sed -i "0,/^version = .*/s//version = \"${GITHUB_REF_NAME#desktop-rs-v}\"/" Cargo.toml
+      - name: Test the page bridge (what makes the website see the desktop app)
+        shell: bash
+        run: node --test test/*.test.js
       - run: cargo test --locked
       - name: Build (the address goes into the program so it connects without asking)
         run: cargo build --release --locked

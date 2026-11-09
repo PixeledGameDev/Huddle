@@ -1,5 +1,15 @@
 /** A server tag worn next to a name. */
-export interface UserTag { text: string; official: boolean; serverId: string }
+export interface UserTag {
+  text: string;
+  official: boolean;
+  serverId: string;
+  /** #rrggbb, or null for the default look */
+  color?: string | null;
+  /** 0 = no picture; otherwise the version of the tag's picture */
+  iconVersion?: number;
+  /** clicking the tag opens an invite to its server */
+  invite?: boolean;
+}
 export interface User {
   id: string;
   username: string;
@@ -93,6 +103,10 @@ export interface ServerDetail {
   official?: boolean;
   /** The server's own tag (only worn by people while it is verified or official). */
   tag?: string | null;
+  tagColor?: string | null;
+  tagIconVersion?: number;
+  /** clicking the tag opens an invite to this server */
+  tagInvite?: boolean;
   /** What this server may have, which depends on its badge (Verified and Huddle Official get more). */
   perks: { emojis: number; stickers: number; channels: number; roles: number; storageMb: number; reactions: number };
   isDm: boolean;

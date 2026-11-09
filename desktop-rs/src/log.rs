@@ -1,4 +1,4 @@
-//! A small log file for the desktop app (port of desktop/src/log.js): errors, crashes and a few milestones, kept in the app's
+//! A small log file for the desktop app: errors, crashes and a few milestones, kept in the app's
 //! data folder so there is something to look at when something goes wrong.
 //!
 //! The file is `huddle.log`; when it gets big it becomes `huddle.1.log` (and so on) and a fresh one starts, so the logs

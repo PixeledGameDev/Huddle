@@ -1,7 +1,7 @@
-//! Automatic updates (port of desktop/src/update.js and updatecheck.js).
+//! Automatic updates.
 //!
 //! The app checks the Huddle server it is connected to (its /desktop-updates folder, which serves the files the "Desktop app"
-//! workflow publishes) and installs newer versions by itself. The feed is the same `latest.yml` electron-builder wrote, so the
+//! workflow publishes) and installs newer versions by itself. The feed is a `latest.yml` in electron-builder's format, so the
 //! server, the R2 bucket and the download page need no changes: this reads `version`, the installer's file name and its
 //! sha512, downloads the installer, checks the checksum, and runs it silently.
 use base64::Engine;

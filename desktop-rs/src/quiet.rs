@@ -1,4 +1,4 @@
-//! Quiet hours (port of desktop/src/quiet.js): a daily window when Huddle stays silent. No popups, sounds or taskbar
+//! Quiet hours: a daily window when Huddle stays silent. No popups, sounds or taskbar
 //! flashing; unread counts and badges still update. The same rule lives in the website's notify code (web/src/quiet.ts).
 use chrono::Timelike;
 use regex::Regex;

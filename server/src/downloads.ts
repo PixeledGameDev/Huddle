@@ -100,8 +100,8 @@ downloadsRouter.get("/download/:name", h(async (req: Request, res: Response) => 
 }));
 
 /**
- * Files the desktop app's updater reads (electron-updater, "generic" provider): latest.yml, latest-mac.yml and
- * latest-linux.yml describe the newest version, and the installers they name sit next to them. They come from the same
+ * Files the desktop app's updater reads (an electron-builder style "generic" feed): latest.yml (and latest-mac.yml /
+ * latest-linux.yml, if those are ever published) describe the newest version, and the installers they name sit next to them. They come from the same
  * "desktop/" folder as the downloads. The app has no sign-in when it asks, so only these file types and plain names are served.
  */
 const UPDATE_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,120}\.(yml|exe|dmg|zip|AppImage|blockmap)$/;
