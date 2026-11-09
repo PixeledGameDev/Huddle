@@ -99,10 +99,11 @@ jobs:
         if: ${{ env.R2_BUCKET != '' }}
         run: |
           ls -l installers
-          node desktop/scripts/make-manifest.js installers > latest.json
           ENDPOINT="https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com"
-          aws s3 sync installers "s3://${R2_BUCKET}/desktop" --delete --exclude "latest.json" --endpoint-url "$ENDPOINT"
-          aws s3 cp latest.json "s3://${R2_BUCKET}/desktop/latest.json" --content-type application/json --endpoint-url "$ENDPOINT"
+          # This Electron build is only the bridge to the Rust app (desktop-rs). So it uploads just its own installer and update feed:
+          # no --delete (that would remove the Rust installer) and no new latest.json (that is the download page's list, which must
+          # keep showing the Rust installer).
+          aws s3 sync installers "s3://${R2_BUCKET}/desktop" --endpoint-url "$ENDPOINT"
       - name: Nothing to publish to
         if: ${{ env.R2_BUCKET == '' }}
         run: echo "R2 secrets aren't set, so the installers were built but not published. They're in this run's artifacts."

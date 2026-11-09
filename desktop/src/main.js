@@ -5,6 +5,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const { fileURLToPath } = require("node:url");
 const { normalizeServerUrl, sameOrigin, isSafeExternal } = require("./url");
+const { downloadPageUrl } = require("./migrate");
 const { updateFeedUrl, canAutoUpdate, createUpdater } = require("./update");
 const { createLogger } = require("./log");
 const { formatDebugInfo } = require("./debuginfo");
@@ -25,6 +26,12 @@ const { createCrashGuard, shouldReload } = require("./crashguard");
  */
 const isMac = process.platform === "darwin";
 const SETUP_PAGE = path.join(__dirname, "setup.html");
+const MIGRATION_PAGE = path.join(__dirname, "migrate.html");
+
+// This is the last Electron version of Huddle. The desktop app has moved to a new program, so this version no longer opens Huddle:
+// it shows one page that sends people to the new installer, and it never looks for updates (which would otherwise install the new
+// program silently and leave nothing to open). Set to false to get the full Electron app back.
+const MIGRATION = true;
 const ICON = path.join(__dirname, "..", "build", "icon.png");
 const TRAY_ICON = path.join(__dirname, "..", "build", "tray.png");
 const TRAY_ICON_UNREAD = path.join(__dirname, "..", "build", "tray-unread.png");
@@ -1186,8 +1193,38 @@ app.on("web-contents-created", (_e, contents) => {
   contents.on("will-attach-webview", (e) => e.preventDefault()); // nothing here uses <webview>, so nothing may
 });
 
+let migrationWin = null;
+function showMigration() {
+  loadSettings();
+  // Stop starting with the computer: the new app sets that up again itself, from the same settings.
+  try { app.setLoginItemSettings({ openAtLogin: false }); } catch { /* not supported here: nothing to undo */ }
+  const download = downloadPageUrl(serverUrl());
+  migrationWin = new BrowserWindow({
+    width: 560,
+    height: 430,
+    resizable: false,
+    maximizable: false,
+    fullscreenable: false,
+    autoHideMenuBar: true,
+    title: "Huddle",
+    backgroundColor: "#0f1322",
+    icon: fs.existsSync(ICON) ? ICON : undefined,
+    webPreferences: { contextIsolation: true, sandbox: true, nodeIntegration: false, spellcheck: false },
+  });
+  migrationWin.setMenuBarVisibility(false);
+  const external = (url) => { if (isSafeExternal(url)) void shell.openExternal(url); };
+  migrationWin.webContents.setWindowOpenHandler(({ url }) => { external(url); return { action: "deny" }; });
+  migrationWin.webContents.on("will-navigate", (e, url) => { e.preventDefault(); external(url); });
+  migrationWin.on("closed", () => { migrationWin = null; app.quit(); });
+  void migrationWin.loadFile(MIGRATION_PAGE, download ? { query: { download } } : undefined);
+}
+
 if (!app.requestSingleInstanceLock()) {
   app.quit();
+} else if (MIGRATION) {
+  app.on("second-instance", () => { if (migrationWin) { if (migrationWin.isMinimized()) migrationWin.restore(); migrationWin.focus(); } });
+  app.whenReady().then(showMigration);
+  app.on("window-all-closed", () => app.quit());
 } else {
   app.on("second-instance", (_e, argv) => handleLaunch(argv));
   app.on("open-url", (e, url) => { e.preventDefault(); handleLaunch([url]); }); // macOS delivers links this way
