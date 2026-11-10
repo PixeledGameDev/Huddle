@@ -6,6 +6,7 @@ import { HttpError, h, rateLimit } from "./http";
 import { assertCanWrite, assertNotDm, channelServer, requireMember, requirePerm } from "./perms";
 import { requireChannelPerms } from "./channelperms";
 import { getMessageDto } from "./hydrate";
+import { resolveMentions } from "./messages";
 import { dropUser, emitChannel, emitServer, emitUser, isOnline, joinServerRooms } from "./realtime";
 import type { AuthUser } from "./auth";
 
@@ -406,9 +407,12 @@ botsRouter.post("/interactions/:id/respond", h(async (req, res) => {
   if (!it) throw new HttpError(404, "That command has expired or was already answered.");
   const serverId = await channelServer(it.channel_id);
   await requireMember(serverId, botId); // the bot may have been removed since
+  // The person who ran the command is notified, and so is anyone @mentioned in the answer (never @everyone).
+  const { ids: mentioned } = await resolveMentions(serverId, content, false);
+  const notify = [...new Set([it.user_id, ...mentioned])];
   const msg = await one<{ id: string }>(
     `insert into messages(channel_id, author_id, content, mentions, via_command, via_user) values ($1, $2, $3, $4::uuid[], $5, $6) returning id::text as id`,
-    [it.channel_id, botId, content, [it.user_id], it.command, it.user_id]
+    [it.channel_id, botId, content, notify, it.command, it.user_id]
   );
   const message = await getMessageDto(msg!.id, null);
   await emitChannel(serverId, it.channel_id, "message.create", message);

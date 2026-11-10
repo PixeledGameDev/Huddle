@@ -25,7 +25,7 @@ const MAX_ATTACHMENTS = 4;
 const EMOJI_RE = /^[\p{Extended_Pictographic}\p{Emoji_Modifier}\p{Regional_Indicator}\u200d\ufe0f]{1,16}$/u;
 
 /** @username mentions resolve only to current members. @everyone needs the Mention everyone permission. */
-async function resolveMentions(serverId: string, content: string, canEveryone: boolean) {
+export async function resolveMentions(serverId: string, content: string, canEveryone: boolean) {
   const names = new Set<string>();
   for (const m of content.matchAll(/(?<![\w@])@([A-Za-z0-9_]{3,20})(?!\w)/g)) names.add(m[1].toLowerCase());
   const everyone = names.delete("everyone") && canEveryone;
