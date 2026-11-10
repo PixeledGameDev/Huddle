@@ -2,6 +2,7 @@ import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState }
 import EmojiPicker from "./EmojiPicker";
 import GifPicker from "./GifPicker";
 import { api } from "./api";
+import { CommandForm } from "./CommandForm";
 import type { Attachment, Channel, Member, Message, SlashCommand, User } from "./types";
 import { plainPreview } from "./format";
 import { Emoji } from "./Rich";
@@ -66,6 +67,8 @@ const Composer = forwardRef<ComposerHandle, Props>(function Composer(props, ref)
   const [pending, setPending] = useState<Pending[]>([]);
   const [panel, setPanel] = useState<"emoji" | "gif" | "sticker" | null>(null);
   const [commands, setCommands] = useState<SlashCommand[]>([]);
+  const [roles, setRoles] = useState<{ id: string; name: string }[]>([]);
+  const [form, setForm] = useState<SlashCommand | null>(null);
   const taRef = useRef<HTMLTextAreaElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const pendingRef = useRef<Pending[]>([]);
@@ -77,12 +80,13 @@ const Composer = forwardRef<ComposerHandle, Props>(function Composer(props, ref)
   useEffect(() => {
     setPending([]);
     setPanel(null);
+    setForm(null);
   }, [channel.id]);
 
   // Slash commands come from the bots in this server (or direct message).
   useEffect(() => {
     let live = true;
-    api<{ commands: SlashCommand[] }>(`/channels/${channel.id}/commands`).then((r) => { if (live) setCommands(r.commands); }, () => { if (live) setCommands([]); });
+    api<{ commands: SlashCommand[]; roles: { id: string; name: string }[] }>(`/channels/${channel.id}/commands`).then((r) => { if (live) { setCommands(r.commands); setRoles(r.roles ?? []); } }, () => { if (live) { setCommands([]); setRoles([]); } });
     return () => { live = false; };
   }, [channel.id, members.length]);
 
@@ -179,17 +183,14 @@ const Composer = forwardRef<ComposerHandle, Props>(function Composer(props, ref)
   function acceptSuggestion(s: Suggestion) {
     if (s.command) {
       const c = s.command;
-      const dupes = commands.filter((x) => x.name === c.name).length > 1;
-      const head = dupes ? `${c.botName.toLowerCase()}.${c.name}` : c.name;
+      const head = commands.filter((x) => x.name === c.name).length > 1 ? `${c.botName.toLowerCase()}.${c.name}` : c.name;
       if (!c.options.length && onRunCommand) { // nothing to fill in: run it right away
         setText("");
         void onRunCommand(c.botId, c.name, {}).then((ok) => { if (!ok) setText(`/${head}`); });
         return;
       }
-      const next = `/${head} `;
-      setText(next);
-      setCaret(next.length);
-      requestAnimationFrame(() => taRef.current?.focus());
+      setText("");
+      setForm(c);
       return;
     }
     if (!s.emoji) return insertMention(s);
@@ -223,6 +224,12 @@ const Composer = forwardRef<ComposerHandle, Props>(function Composer(props, ref)
     if (content.startsWith("/") && onRunCommand && !ready.length) {
       const parsed = parseSlash(content, commands);
       if (parsed) {
+        for (const o of parsed.cmd.options) {
+          const v = parsed.options[o.name]?.replace(/^@/, "").toLowerCase();
+          if (!v) continue;
+          if (o.type === "user") { const m = members.find((x) => x.username.toLowerCase() === v || nameOfUser(x).toLowerCase() === v); if (m) parsed.options[o.name] = m.id; }
+          if (o.type === "role") { const r = roles.find((x) => x.name.toLowerCase() === v); if (r) parsed.options[o.name] = r.id; }
+        }
         setText("");
         if (!(await onRunCommand(parsed.cmd.botId, parsed.cmd.name, parsed.options))) setText(content);
         return;
@@ -309,7 +316,12 @@ const Composer = forwardRef<ComposerHandle, Props>(function Composer(props, ref)
               ))}
             </ul>
           )}
+          {form && onRunCommand && (
+            <CommandForm cmd={form} roles={roles} members={members} onCancel={() => { setForm(null); requestAnimationFrame(() => taRef.current?.focus()); }}
+              onRun={async (values) => { const ok = await onRunCommand(form.botId, form.name, values); if (ok) { setForm(null); requestAnimationFrame(() => taRef.current?.focus()); } return ok; }} />
+          )}
           <textarea
+            style={form ? { display: "none" } : undefined}
             ref={taRef}
             rows={1}
             value={text}

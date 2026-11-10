@@ -198,5 +198,5 @@ export interface DmSummary {
 }
 
 export interface BotAccount { id: string; username: string; displayName: string | null; description: string; public: boolean; avatarVersion: number; createdAt: string; lastUsedAt: string | null; servers: number; owner?: string }
-export interface SlashOption { name: string; description: string; type: "string" | "integer" | "number" | "boolean"; required: boolean }
+export interface SlashOption { name: string; description: string; type: "string" | "integer" | "number" | "boolean" | "user" | "role"; required: boolean; choices?: { name: string; value: string }[] }
 export interface SlashCommand { botId: string; botName: string; botDisplayName: string; name: string; description: string; options: SlashOption[] }

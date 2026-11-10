@@ -240,8 +240,11 @@ const COMMAND_NAME = /^[a-z0-9_-]{1,32}$/;
 const optionSchema = z.object({
   name: z.string().regex(COMMAND_NAME, "Option names are 1–32 lowercase letters, numbers, - or _."),
   description: z.string().trim().max(100).default(""),
-  type: z.enum(["string", "integer", "number", "boolean"]).default("string"),
+  /** "user" is a member of the server and "role" one of its roles: the message box shows a picker, and the bot gets the id. */
+  type: z.enum(["string", "integer", "number", "boolean", "user", "role"]).default("string"),
   required: z.boolean().default(false),
+  /** For text options: the only values allowed. The message box shows a drop-down. */
+  choices: z.array(z.object({ name: z.string().trim().min(1).max(40), value: z.string().min(1).max(100) })).max(25).optional(),
 });
 const commandSchema = z.object({
   name: z.string().regex(COMMAND_NAME, "Command names are 1–32 lowercase letters, numbers, - or _."),
@@ -299,11 +302,12 @@ botsRouter.get("/channels/:channelId/commands", h(async (req, res) => {
       where m.server_id = $1 and u.deleted_at is null order by c.name, u.username`,
     [serverId]
   );
-  res.json({ commands: rows.map((r) => ({ botId: r.bot_id, botName: r.bot_name, botDisplayName: r.bot_display, name: r.name, description: r.description, options: r.options })) });
+  const roles = await q<{ id: string; name: string }>(`select id, name from server_roles where server_id = $1 order by position desc`, [serverId]);
+  res.json({ roles, commands: rows.map((r) => ({ botId: r.bot_id, botName: r.bot_name, botDisplayName: r.bot_display, name: r.name, description: r.description, options: r.options })) });
 }));
 
 /** Checks what someone typed against the command's options and returns clean values. */
-function cleanOptions(defs: CommandOption[], given: Record<string, unknown>) {
+async function cleanOptions(serverId: string, defs: CommandOption[], given: Record<string, unknown>) {
   const out: Record<string, string | number | boolean> = {};
   for (const d of defs) {
     const v = given[d.name];
@@ -319,8 +323,15 @@ function cleanOptions(defs: CommandOption[], given: Record<string, unknown>) {
       const n = typeof v === "number" ? v : typeof v === "string" && v.trim() !== "" ? Number(v) : NaN;
       if (!Number.isFinite(n) || (d.type === "integer" && !Number.isInteger(n))) throw new HttpError(400, `"${d.name}" must be ${d.type === "integer" ? "a whole number" : "a number"}.`);
       out[d.name] = n;
+    } else if (d.type === "user") {
+      if (typeof v !== "string" || !(await one(`select 1 from memberships where server_id = $1 and user_id::text = $2`, [serverId, v]))) throw new HttpError(400, `"${d.name}" must be someone in this server.`);
+      out[d.name] = v;
+    } else if (d.type === "role") {
+      if (typeof v !== "string" || !(await one(`select 1 from server_roles where server_id = $1 and id::text = $2`, [serverId, v]))) throw new HttpError(400, `"${d.name}" must be a role in this server.`);
+      out[d.name] = v;
     } else {
       if (typeof v !== "string" || v.length > 1000) throw new HttpError(400, `"${d.name}" must be text up to 1000 characters.`);
+      if (d.choices?.length && !d.choices.some((c) => c.value === v)) throw new HttpError(400, `"${d.name}" must be one of: ${d.choices.map((c) => c.name).join(", ")}.`);
       out[d.name] = v;
     }
   }
@@ -348,16 +359,30 @@ botsRouter.post("/channels/:channelId/commands", h(async (req, res) => {
   );
   if (!cmd) throw new HttpError(404, "That command isn't available here.");
   if (!isOnline(body.botId)) throw new HttpError(503, "That bot is offline right now.");
-  const options = cleanOptions(cmd.options, body.options);
+  const options = await cleanOptions(serverId, cmd.options, body.options);
   const row = await one<{ id: string }>(
     `insert into interactions(bot_id, channel_id, user_id, command, options) values ($1, $2, $3, $4, $5::jsonb) returning id`,
     [body.botId, channelId, user.id, body.name, JSON.stringify(options)]
   );
   const author = await one<{ username: string; display_name: string | null }>(`select username, display_name from users where id = $1`, [user.id]);
+  // For "user" and "role" options the bot is told their names too, so it doesn't have to look them up.
+  const resolved: { users: Record<string, { username: string; displayName: string | null }>; roles: Record<string, string> } = { users: {}, roles: {} };
+  for (const d of cmd.options) {
+    const v = options[d.name];
+    if (typeof v !== "string") continue;
+    if (d.type === "user") {
+      const u = await one<{ username: string; display_name: string | null }>(`select username, display_name from users where id::text = $1`, [v]);
+      if (u) resolved.users[v] = { username: u.username, displayName: u.display_name };
+    } else if (d.type === "role") {
+      const r = await one<{ name: string }>(`select name from server_roles where id::text = $1`, [v]);
+      if (r) resolved.roles[v] = r.name;
+    }
+  }
   emitUser(body.botId, "interaction.create", {
     id: row!.id,
     command: body.name,
     options,
+    resolved,
     channelId,
     serverId,
     user: { id: user.id, username: author!.username, displayName: author!.display_name },

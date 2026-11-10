@@ -1199,3 +1199,12 @@ button.icon .ico { width: 1.3em; height: 1.3em; vertical-align: middle; }
 .bot-card { border: 1px solid var(--line, rgba(255,255,255,.12)); border-radius: 10px; padding: 12px; display: grid; gap: 8px; }
 .bot-card header { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .bot-token { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; word-break: break-all; padding: 8px; border-radius: 8px; background: var(--chip); user-select: all; }
+
+/* slash command option boxes */
+.cmd-form { display: grid; gap: 8px; padding: 10px; border: 1px solid var(--line, rgba(255,255,255,.12)); border-radius: 10px; background: var(--chip, rgba(255,255,255,.05)); }
+.cmd-head { display: flex; align-items: center; gap: 8px; }
+.cmd-head small { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cmd-fields { display: grid; gap: 8px; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); }
+.cmd-field { display: grid; gap: 4px; }
+.cmd-label i { opacity: .6; font-style: normal; font-size: 11px; }
+.cmd-form .row { justify-content: flex-end; }

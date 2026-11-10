@@ -13,6 +13,15 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "5.32",
+    date: "2026-11-10",
+    title: "Bot command options",
+    changes: [
+      "Slash commands now show a box for each option in the message bar, so you can see everything a command accepts.",
+      "Commands can ask for a person, a role, or a choice from a list.",
+    ],
+  },
+  {
     version: "5.31",
     date: "2026-11-10",
     title: "Bots",
