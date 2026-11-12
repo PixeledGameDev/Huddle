@@ -26,6 +26,9 @@ pub struct Settings {
     pub launch_at_startup: bool,
     pub start_in_background: bool,
     pub last_run_version: Option<String>,
+    /// The version the update installer was last started for. Still newer than the running app at the next launch means the
+    /// install didn't work, so the splash screen must not try it again (see `update::should_install_at_startup`).
+    pub install_attempt: Option<String>,
     pub unload_when_hidden: bool,
     pub notify_prefs: Option<Value>,
     pub auto_idle: bool,
@@ -43,6 +46,7 @@ impl Default for Settings {
             launch_at_startup: true,
             start_in_background: false,
             last_run_version: None,
+            install_attempt: None,
             unload_when_hidden: true,
             notify_prefs: None,
             auto_idle: true,

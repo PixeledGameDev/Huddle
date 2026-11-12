@@ -37,6 +37,8 @@ The Rust app was written and run on Linux. Everything below needs a real Windows
 - [ ] Running the program twice shows the first window instead of a second.
 - [ ] Update: publish a higher version; the splash shows the download, the app restarts into the new version by itself, and the new version opens.
       Also test a bad download (changed file) is refused, and that a *running* app shows the "Restart now / Later" popup.
+- [ ] Failed update: publish a higher version whose installer fails (or make the installer exit with an error). Huddle must still open on the old version, not restart in a loop or stay on the splash screen; `%APPDATA%\Huddle\updates\install.log` records the installer's exit code.
+- [ ] Update that removes the old version but fails to install the new one (for example an installer that uninstalls and then exits with an error): Huddle must not be left missing. The hand-off script runs the downloaded installer again with a progress window, then as the normal setup wizard, and `install.log` says which step ran. Nobody should have to download the installer from the website again.
 - [ ] Antivirus/SmartScreen behaviour of the unsigned installer is acceptable (the installer is unsigned).
 
 **Moving users over from Electron**

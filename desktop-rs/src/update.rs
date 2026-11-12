@@ -134,11 +134,26 @@ pub struct Updater {
     on_state: StateCallback,
 }
 
+/// Undoes a check that was abandoned half way. The splash screen stops waiting for a slow download after a few minutes and drops
+/// the check; without this the updater would stay stuck on "downloading" and refuse every later check until the app restarted.
+struct CheckGuard<'a>(&'a Updater);
+
+impl Drop for CheckGuard<'_> {
+    fn drop(&mut self) {
+        *self.0.checking.lock().unwrap() = false;
+        if matches!(self.0.state().status.as_str(), "checking" | "downloading") {
+            self.0.set(UpdateState::idle());
+        }
+    }
+}
+
 impl Updater {
     pub fn new(dir: PathBuf, current: &str, on_state: StateCallback) -> Arc<Self> {
         let client = reqwest::Client::builder().user_agent(format!("HuddleDesktop/{current}")).connect_timeout(Duration::from_secs(15)).build().unwrap_or_default();
         Arc::new(Updater { client, dir, current: current.into(), state: Mutex::new(UpdateState::idle()), installer: Mutex::new(None), checking: Mutex::new(false), on_state })
     }
+    /// Where the installer hand-off writes how the install went (the installer's exit code), for working out a failed update.
+    pub fn install_log(&self) -> PathBuf { self.dir.join("install.log") }
     pub fn state(&self) -> UpdateState { self.state.lock().unwrap().clone() }
     /// The downloaded installer, when an update is ready to install.
     pub fn ready_installer(&self) -> Option<PathBuf> {
@@ -159,10 +174,10 @@ impl Updater {
             }
             *checking = true;
         }
+        // Resets the "checking" flag even if this future is dropped half way (see `CheckGuard`).
+        let _guard = CheckGuard(self);
         self.set(UpdateState::checking());
-        let result = self.check_inner(feed_url).await;
-        *self.checking.lock().unwrap() = false;
-        if let Err(message) = result {
+        if let Err(message) = self.check_inner(feed_url).await {
             self.set(UpdateState::error(message));
         }
         self.state()
@@ -236,26 +251,70 @@ impl Updater {
     }
 }
 
+/// The PowerShell script that hands over to the installer: wait for this app to be gone, run the installer silently, note how it
+/// went, then open Huddle again.
+///
+/// The installer replaces an old version by uninstalling it first, so a silent install that fails part way can leave no Huddle at
+/// all, which used to mean downloading the installer from the website again. The installer is already on this computer, so when
+/// Huddle is missing afterwards the script runs it again: first with a progress window (`/P`), then as the normal setup wizard.
+/// When Huddle is there (the new version, or the old one because the install never started) it is reopened, so the person is
+/// never left with nothing; `should_install_at_startup` stops a failed install from turning that into a restart loop.
+#[cfg_attr(not(windows), allow(dead_code))]
+pub fn installer_script(app_pid: u32, installer: &Path, exe: &Path, log_file: &Path) -> String {
+    // Only single quotes (doubled inside a name) so the script survives being passed on a command line.
+    let q = |p: &Path| p.to_string_lossy().replace('\'', "''");
+    let (inst, exe, log) = (q(installer), q(exe), q(log_file));
+    // One log line; `{{0}}` is PowerShell's own format placeholder, not Rust's.
+    let note = |text: &str| format!("Add-Content -LiteralPath '{log}' ('{{0}} {text}' -f (Get-Date -Format s)) -ErrorAction SilentlyContinue");
+    let finished = format!("Add-Content -LiteralPath '{log}' ('{{0}} installer finished, exit code {{1}}' -f (Get-Date -Format s), $p.ExitCode) -ErrorAction SilentlyContinue");
+    let missing = format!("-not (Test-Path -LiteralPath '{exe}')");
+    let present = format!("Test-Path -LiteralPath '{exe}'");
+    format!(
+        "Wait-Process -Id {app_pid} -Timeout 30 -ErrorAction SilentlyContinue; \
+         $p = Start-Process -FilePath '{inst}' -ArgumentList '/S' -Wait -PassThru -ErrorAction SilentlyContinue; \
+         {finished}; \
+         if ({missing}) {{ {note_progress}; Start-Process -FilePath '{inst}' -ArgumentList '/P' -Wait -ErrorAction SilentlyContinue; \
+         if ({missing}) {{ {note_wizard}; Start-Process -FilePath '{inst}' -Wait -ErrorAction SilentlyContinue }} }}; \
+         if ({present}) {{ Start-Process -FilePath '{exe}' }} else {{ {note_gone} }}",
+        note_progress = note("Huddle is missing after the silent install; running the installer again with a progress window"),
+        note_wizard = note("Huddle is still missing; opening the installer for the person to finish"),
+        note_gone = note("Huddle is still missing; the person has to finish the installer by hand"),
+    )
+}
+
+/// A silent install that didn't take (Huddle comes back still on the old version) must not be tried again on every launch: the
+/// splash screen would restart the app forever and never open it. `last_attempt` is the version the installer was last started
+/// for. Installing from the menu or the "restart" prompt is always allowed.
+pub fn should_install_at_startup(last_attempt: Option<&str>, ready_version: Option<&str>) -> bool {
+    match (last_attempt, ready_version) {
+        (Some(tried), Some(ready)) => tried != ready,
+        _ => true,
+    }
+}
+
 /// Starts the downloaded installer silently and lets it reopen Huddle afterwards. Windows only; the caller quits right after.
-pub fn launch_installer(installer: &Path) -> std::io::Result<()> {
+pub fn launch_installer(installer: &Path, log_file: &Path) -> std::io::Result<()> {
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
+        use std::process::Stdio;
         const DETACHED_PROCESS: u32 = 0x0000_0008;
         const CREATE_NO_WINDOW: u32 = 0x0800_0000;
         let exe = std::env::current_exe()?;
-        let quote = |p: &Path| p.to_string_lossy().replace('\'', "''");
-        // Wait a moment for this app to close, run the installer silently, then open the new version.
-        let script = format!(
-            "Start-Sleep -Seconds 2; Start-Process -FilePath '{}' -ArgumentList '/S' -Wait; Start-Process -FilePath '{}'",
-            quote(installer), quote(&exe)
-        );
-        std::process::Command::new("powershell").args(["-NoProfile", "-WindowStyle", "Hidden", "-Command", &script]).creation_flags(DETACHED_PROCESS | CREATE_NO_WINDOW).spawn()?;
+        let script = installer_script(std::process::id(), installer, &exe, log_file);
+        // This app has no console, so give PowerShell explicit empty streams instead of ones it can't use.
+        std::process::Command::new("powershell")
+            .args(["-NoProfile", "-WindowStyle", "Hidden", "-Command", &script])
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .creation_flags(DETACHED_PROCESS | CREATE_NO_WINDOW)
+            .spawn()?;
         Ok(())
     }
     #[cfg(not(windows))]
     {
-        let _ = installer;
+        let _ = (installer, log_file);
         Err(std::io::Error::other("Automatic installation is only available on Windows."))
     }
 }
@@ -483,6 +542,73 @@ mod tests {
         let url = serve(vec![("latest.yml", yml)]); // the installer itself is deliberately not offered
         assert_eq!(u.check(&url).await.status, "ready");
         assert!(!seen.lock().unwrap().contains(&"downloading".to_string()));
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn the_hand_off_script_waits_installs_logs_then_reopens_and_survives_odd_paths() {
+        let script = installer_script(4242, Path::new("C:\\Users\\O'Neil\\Huddle\\updates\\Huddle_9.0.0_x64-setup.exe"), Path::new("C:\\Users\\O'Neil\\Huddle\\huddle-desktop.exe"), Path::new("C:\\Users\\O'Neil\\Huddle\\updates\\install.log"));
+        let (wait, install, log, reopen) = (script.find("Wait-Process -Id 4242").unwrap(), script.find("'/S'").unwrap(), script.find("Add-Content").unwrap(), script.rfind("Start-Process -FilePath 'C:").unwrap());
+        assert!(wait < install && install < log && log < reopen, "{script}");
+        assert!(script.contains("O''Neil") && !script.contains('"'), "{script}");
+        assert!(script.contains("-PassThru") && script.contains("{0} installer finished, exit code {1}"));
+    }
+    #[test]
+    fn a_missing_app_after_the_silent_install_runs_the_installer_again_instead_of_sending_people_to_the_website() {
+        let (inst, exe) = ("C:\\u\\Huddle\\updates\\Huddle_9.0.0_x64-setup.exe", "C:\\u\\Huddle\\huddle-desktop.exe");
+        let script = installer_script(7, Path::new(inst), Path::new(exe), Path::new("C:\\u\\Huddle\\updates\\install.log"));
+        let silent = script.find("'/S'").unwrap();
+        let progress = script.find("'/P'").expect("a second try with a progress window");
+        let wizard = script.rfind(&format!("Start-Process -FilePath '{inst}' -Wait")).expect("a last try with the normal setup wizard");
+        let reopen = script.rfind(&format!("Start-Process -FilePath '{exe}'")).unwrap();
+        assert!(silent < progress && progress < wizard && wizard < reopen, "{script}");
+        // Each retry is only made while the program is still missing, and the reopen only when it is there.
+        assert_eq!(script.matches(&format!("-not (Test-Path -LiteralPath '{exe}')")).count(), 2, "{script}");
+        assert!(script.contains(&format!("if (Test-Path -LiteralPath '{exe}') {{ Start-Process -FilePath '{exe}' }}")), "{script}");
+        assert!(!script.contains('"') && script.matches('{').count() == script.matches('}').count(), "{script}");
+    }
+    #[test]
+    fn an_install_that_did_not_take_is_not_retried_at_every_launch() {
+        assert!(should_install_at_startup(None, Some("3.1.0")));
+        assert!(should_install_at_startup(Some("3.0.5"), Some("3.1.0"))); // a newer version than the failed one gets its own try
+        assert!(!should_install_at_startup(Some("3.1.0"), Some("3.1.0")));
+        assert!(should_install_at_startup(Some("3.1.0"), None));
+    }
+    /// A server that answers latest.yml at once, then starts sending the installer and goes quiet, like a slow wake-up.
+    fn serve_stalling(yml: String, exe_name: &'static str) -> String {
+        use std::io::{Read, Write};
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        std::thread::spawn(move || {
+            for stream in listener.incoming().flatten() {
+                let mut stream = stream;
+                let mut buf = [0u8; 2048];
+                let n = stream.read(&mut buf).unwrap_or(0);
+                let req = String::from_utf8_lossy(&buf[..n]).to_string();
+                let path = req.split_whitespace().nth(1).unwrap_or("/").to_string();
+                if path.ends_with(exe_name) {
+                    let _ = stream.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 1000000\r\nConnection: close\r\n\r\nabc");
+                    let _ = stream.flush();
+                    std::thread::sleep(Duration::from_secs(20));
+                } else {
+                    let _ = stream.write_all(format!("HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{yml}", yml.len()).as_bytes());
+                }
+            }
+        });
+        format!("http://{addr}/desktop-updates")
+    }
+    #[tokio::test]
+    async fn giving_up_on_a_slow_download_does_not_leave_the_updater_stuck() {
+        let installer = vec![5u8; 1_000_000];
+        let yml = feed_for("9.0.0", "Huddle_9.0.0_x64-setup.exe", &installer, &installer);
+        let slow = serve_stalling(yml.clone(), "Huddle_9.0.0_x64-setup.exe");
+        let (u, dir, _) = updater_in("abandon", "3.0.0");
+        // The splash screen's wait runs out part way through the download.
+        assert!(tokio::time::timeout(Duration::from_millis(500), u.check(&slow)).await.is_err());
+        assert_eq!(u.state().status, "idle", "an abandoned download must not stay on 'downloading'");
+        // A later check is not refused: this one finds the good server and finishes.
+        let good = serve(vec![("latest.yml", yml.into_bytes()), ("Huddle_9.0.0_x64-setup.exe", installer)]);
+        assert_eq!(u.check(&good).await.status, "ready");
         let _ = std::fs::remove_dir_all(dir);
     }
 

@@ -13,6 +13,17 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "5.34",
+    date: "2026-11-13",
+    title: "More reliable desktop updates",
+    desktop: true,
+    changes: [
+      "Fixed the desktop app getting stuck on the loading screen after an update. If an update can't be installed, Huddle now opens normally instead of waiting forever.",
+      "A slow update download no longer stops later update checks from working.",
+      "If an update goes wrong part way and leaves Huddle uninstalled, the app now finishes the install itself using the installer it already downloaded. You no longer have to download the installer from the website again.",
+    ],
+  },
+  {
     version: "5.33",
     date: "2026-11-12",
     title: "Games in chat",

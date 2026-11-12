@@ -10,7 +10,7 @@ use crate::idle::{sanitize_idle_settings, IdleSettings, IdleTracker};
 use crate::log::Logger;
 use crate::quiet::{is_quiet_now, sanitize_quiet};
 use crate::settings::{self, Bounds, Settings};
-use crate::update::{can_auto_update, launch_installer, update_feed_url, Schedule, UpdateNotifier, UpdateState, Updater};
+use crate::update::{can_auto_update, is_newer_version, launch_installer, should_install_at_startup, update_feed_url, Schedule, UpdateNotifier, UpdateState, Updater};
 use crate::url::{is_safe_external, normalize_server_url, same_origin};
 use crate::{platform, ui};
 use global_hotkey::{GlobalHotKeyEvent, GlobalHotKeyManager, HotKeyState};
@@ -295,6 +295,7 @@ impl App {
         self.initial_path = invite_path(&launch.deep_link);
         self.logger.info(format!("Huddle {} starting · {} {}{}", env!("CARGO_PKG_VERSION"), std::env::consts::OS, std::env::consts::ARCH, if self.packaged { "" } else { " · from source" }));
         self.note_version_change();
+        self.check_last_install_attempt();
         self.create_tray(target);
         self.init_idle();
         self.apply_hotkeys();
@@ -322,6 +323,18 @@ impl App {
         }
         if self.settings.last_run_version.as_deref() != Some(now) {
             self.settings.last_run_version = Some(now.into());
+            self.save_settings();
+        }
+    }
+
+    /// An update the installer was started for has either taken (we are now that version or newer) or it hasn't. If it hasn't, keep
+    /// the note so the splash screen doesn't try the same installer on every launch.
+    fn check_last_install_attempt(&mut self) {
+        let Some(tried) = self.settings.install_attempt.clone() else { return };
+        if is_newer_version(&tried, env!("CARGO_PKG_VERSION")) {
+            self.logger.warn(format!("The update to {tried} didn't install last time (see updates/install.log); not retrying it automatically at startup."));
+        } else {
+            self.settings.install_attempt = None;
             self.save_settings();
         }
     }
@@ -569,14 +582,35 @@ impl App {
             self.update_poke.notify_one();
         }
     }
-    fn install_update(&mut self) {
-        let Some(path) = self.updater.as_ref().and_then(|u| u.ready_installer()) else { return };
-        match launch_installer(&path) {
+    /// Starts the downloaded installer and quits so it can replace this copy. Returns false (and carries on running) when the
+    /// installer couldn't be started, so callers can fall back instead of waiting for a restart that will never come.
+    fn try_install_update(&mut self) -> bool {
+        let Some(updater) = self.updater.clone() else { return false };
+        let Some(path) = updater.ready_installer() else {
+            self.logger.error("Asked to install an update, but none is ready.");
+            return false;
+        };
+        // Written before the installer starts, so that if it fails we know not to try it again on the next launch.
+        self.settings.install_attempt = updater.state().version;
+        self.flush_settings();
+        match launch_installer(&path, &updater.install_log()) {
             Ok(()) => {
                 self.quitting = true;
                 self.should_exit = true;
+                true
             }
-            Err(e) => self.logger.error(format!("Couldn't start the update installer: {e}")),
+            Err(e) => {
+                self.logger.error(format!("Couldn't start the update installer: {e}"));
+                self.settings.install_attempt = None;
+                self.flush_settings();
+                false
+            }
+        }
+    }
+    /// The person chose to restart and update: tell them if it can't be done.
+    fn install_update(&mut self, target: &Target) {
+        if !self.try_install_update() {
+            self.show_dialog(target, "warning", "Couldn't install the update.", "Huddle is still running as before. You can try again later, or download the newest installer from your Huddle server's download page.", &["OK"], 0, None, |_, _, _| {});
         }
     }
     fn check_now(&mut self, target: &Target) {
@@ -586,7 +620,7 @@ impl App {
         self.spawn(async move { updater.check(&feed).await }, |app, t, state| {
             let current = env!("CARGO_PKG_VERSION");
             match state.status.as_str() {
-                "ready" => app.show_dialog(t, "info", &format!("Huddle {} is ready to install.", state.version.clone().unwrap_or_default()), "Restart Huddle to finish updating.", &["Restart now", "Later"], 0, Some(1), |app, _, i| if i == 0 { app.install_update() }),
+                "ready" => app.show_dialog(t, "info", &format!("Huddle {} is ready to install.", state.version.clone().unwrap_or_default()), "Restart Huddle to finish updating.", &["Restart now", "Later"], 0, Some(1), |app, t, i| if i == 0 { app.install_update(t) }),
                 "downloading" => app.info(t, &format!("Downloading Huddle {}…", state.version.clone().unwrap_or_default()), "You'll get a notification when it's ready to install."),
                 "error" => app.show_dialog(t, "warning", "Couldn't check for updates.", state.message.as_deref().unwrap_or(""), &["OK"], 0, None, |_, _, _| {}),
                 _ => app.info(t, "You're up to date.", &format!("Huddle {current}")),
@@ -601,9 +635,15 @@ impl App {
         self.later(Duration::from_secs(5), |app, _| if app.in_startup_update { app.set_splash("Still checking… the server may be waking up", None) });
         self.spawn(async move { updater.startup_check(&feed).await }, |app, _, ready| {
             app.in_startup_update = false;
+            let version = app.updater.as_ref().and_then(|u| u.state().version);
+            if ready && !should_install_at_startup(app.settings.install_attempt.as_deref(), version.as_deref()) {
+                app.logger.warn("An update is ready, but installing it didn't work last time; opening Huddle instead.");
+                return app.after_startup_update(false);
+            }
             if ready {
                 app.set_splash("Installing update… Huddle will reopen by itself.", None);
-                app.later(Duration::from_millis(1500), |app, _| app.install_update());
+                // If the installer can't be started, open Huddle as it is rather than sit on the splash screen forever.
+                app.later(Duration::from_millis(1500), |app, _| if !app.try_install_update() { app.after_startup_update(false) });
             } else {
                 app.after_startup_update(false);
             }
@@ -1049,7 +1089,7 @@ impl App {
             "copy-debug" => self.copy_debug_info(target),
             "open-logs" => { let _ = std::fs::create_dir_all(&self.logger.dir); if open::that(&self.logger.dir).is_err() { self.show_dialog(target, "warning", "Couldn't open the logs folder.", &self.logger.dir.display().to_string(), &["OK"], 0, None, |_, _, _| {}); } }
             "check-updates" => self.check_now(target),
-            "install-update" => self.install_update(),
+            "install-update" => self.install_update(target),
             "zoom-in" => self.zoom(0.5),
             "zoom-out" => self.zoom(-0.5),
             "zoom-reset" => self.zoom(0.0),
@@ -1348,7 +1388,7 @@ impl App {
             "toast:action" => {
                 if self.toasts[i].update.is_none() { return; }
                 match args.as_str() {
-                    Some("restart") => { self.close_toast(target, wid); self.install_update(); }
+                    Some("restart") => { self.close_toast(target, wid); self.install_update(target); }
                     Some("later") => { self.update_notifier.snooze(Instant::now()); self.close_toast(target, wid); }
                     _ => {}
                 }
@@ -1471,7 +1511,7 @@ impl App {
                 (Some(u), Some(feed), Some(id)) => self.spawn(async move { u.check(&feed).await }, move |app, _, s| app.resolve(wid, id, serde_json::to_value(s).unwrap_or(Value::Null))),
                 _ => answer(self, Value::Null),
             },
-            "update:install" => self.install_update(),
+            "update:install" => self.install_update(target),
             "update-info" => {
                 let v = json!({"version": env!("CARGO_PKG_VERSION"), "justUpdatedFrom": self.just_updated_from.take()});
                 answer(self, v);
