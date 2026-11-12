@@ -3,6 +3,7 @@ import { useMemo, useState } from "react";
 import { Avatar } from "./Avatar";
 import { Name } from "./Name";
 import { embedUrlsIn, plainPreview } from "./format";
+import { GameEmbed } from "./GameEmbed";
 import { LinkEmbed } from "./LinkEmbed";
 import { Lightbox } from "./Lightbox";
 import { VideoPlayer } from "./VideoPlayer";
@@ -11,7 +12,7 @@ import EmojiPicker from "./EmojiPicker";
 import { PollCard } from "./Polls";
 import { Emoji, RichText } from "./Rich";
 import type { Member, Message, ServerSummary, User } from "./types";
-import { fmtSize, inviteCodesIn, nameOfUser, timeOf } from "./util";
+import { fmtSize, gameIdsIn, inviteCodesIn, nameOfUser, timeOf } from "./util";
 import { Icon } from "./Icon";
 
 interface Props {
@@ -83,6 +84,7 @@ export default function MessageRow(p: Props) {
   const isMine = m.authorId === me.id;
   const canDelete = isMine || canManage;
   const embedUrls = useMemo(() => embedUrlsIn(m.content), [m.content]);
+  const gameIds = useMemo(() => gameIdsIn(m.content), [m.content]);
   const pictures = useMemo(() => m.attachments.filter((a) => a.mime.startsWith("image/")), [m.attachments]);
   const [viewing, setViewing] = useState<number | null>(null); // which of this message's pictures is open
   const [tapped, setTapped] = useState(false); // phones and tablets: tap a message to show its buttons
@@ -130,6 +132,7 @@ export default function MessageRow(p: Props) {
             )
           )}
           {inviteCodesIn(m.content).map((code) => <InviteEmbed key={code} code={code} onJoin={p.onJoinInvite} onOpen={p.onOpenServer} />)}
+          {!p.editing && gameIds.map((id) => <GameEmbed key={id} botId={id} botName={author?.bot || m.authorBot ? authorName : "a bot"} onLayout={p.onImageLoad} />)}
           {!p.editing && embedUrls.map((url) => <LinkEmbed key={url} url={url} onLayout={p.onImageLoad} />)}
           {m.sticker && <img className="sticker" src={`/api/stickers/${m.sticker.id}`} alt={m.sticker.name} title={m.sticker.name} loading="lazy" onLoad={p.onImageLoad} />}
           {m.gif && <img className="gif" src={m.gif} alt="GIF" loading="lazy" onLoad={p.onImageLoad} />}

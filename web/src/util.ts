@@ -86,6 +86,18 @@ export function isOwnInviteUrl(url: string, host = typeof window !== "undefined"
   }
 }
 
+/** A bot's game link looks like https://<this app>/games/<bot id>. */
+export const GAME_URL_RE = /https?:\/\/[^\s/]+\/games\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})(?![0-9a-zA-Z-])/g;
+
+/** Ids of the bots whose games are linked in a message, for links that point at this app (at most 2). */
+export function gameIdsIn(text: string): string[] {
+  const ids: string[] = [];
+  for (const m of text.matchAll(new RegExp(GAME_URL_RE))) {
+    if (isOwnInviteUrl(m[0]) && !ids.includes(m[1])) ids.push(m[1]);
+  }
+  return ids.slice(0, 2);
+}
+
 /** Distinct invite codes for links in a message that point at this app (at most 3). */
 export function inviteCodesIn(text: string): string[] {
   const codes: string[] = [];

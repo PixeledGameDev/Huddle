@@ -7,6 +7,7 @@ import { authRouter, cleanupSessions, requireAuth } from "./auth";
 import { sweepInteractions } from "./bots";
 import { migrate, q, requestStats, startPoolWarmer } from "./db";
 import { downloadsRouter } from "./downloads";
+import { gamesRouter, startBotHost, stopAllBots } from "./botHost";
 import { bootstrapHuddle } from "./huddleAdmin";
 import { inviteMeta, invitesRouter } from "./invites";
 import { loadMaintenance, maintenanceGate, maintenanceRouter, startMaintenanceWatcher } from "./maintenance";
@@ -47,10 +48,13 @@ async function main() {
     });
     requestStats.run(stats, next);
   });
+  // Uploading a bot script or game is the one place a request body can be bigger than 20 KB.
+  app.use("/api/huddle/bots", express.json({ limit: "1mb" }));
   app.use(express.json({ limit: "20kb" }));
 
   app.get("/healthz", (_req, res) => void res.send("ok"));
   app.use(downloadsRouter); // desktop app downloads: public, so the page works before signing in
+  app.use(gamesRouter); // games that bots play in chat: public, and sandboxed
   app.use("/api", maintenanceRouter);
   app.use("/api", maintenanceGate); // while maintenance is on, only Huddle Admins get past here
   app.use("/api/auth", authRouter);
@@ -123,8 +127,13 @@ async function main() {
     } else {
       console.log("File storage: Postgres (set the R2_* variables to use Cloudflare R2)");
     }
+    startBotHost(port).catch((e) => console.error("Bot scripts failed to start", e));
   });
 }
+
+// Python scripts that Huddle runs for bots are stopped with it.
+for (const sig of ["SIGTERM", "SIGINT"] as const) process.on(sig, () => { try { stopAllBots(); } catch { /* shutting down anyway */ } process.exit(0); });
+process.on("exit", () => { try { stopAllBots(); } catch { /* shutting down anyway */ } });
 
 main().catch((e) => {
   console.error(e);

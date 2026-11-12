@@ -1,5 +1,5 @@
 import { SHORTCODES } from "./emojiData";
-import { INVITE_URL_RE, isOwnInviteUrl } from "./util";
+import { GAME_URL_RE, INVITE_URL_RE, isOwnInviteUrl } from "./util";
 
 /**
  * Message formatting: *italic*, **bold**, ***both***, and ||spoiler||. Formatting nests, and a backslash
@@ -164,6 +164,12 @@ function isInviteLink(url: string) {
   return !!m && m[0] === url && isOwnInviteUrl(url);
 }
 
+/** Is this one of this app's own game links? Those get the game card instead of a link preview. */
+function isGameLink(url: string) {
+  const m = new RegExp(GAME_URL_RE).exec(url);
+  return !!m && m[0] === url && isOwnInviteUrl(url);
+}
+
 /**
  * Links in a message that should get a preview card: in order, without repeats, at most 3. Links inside a spoiler
  * are skipped (a card would give the spoiler away), and so are this app's invite links (they have their own card).
@@ -172,7 +178,7 @@ export function embedUrlsIn(text: string): string[] {
   const urls: string[] = [];
   const walk = (nodes: FNode[]) => {
     for (const n of nodes) {
-      if (n.t === "url") { if (!isInviteLink(n.v) && !urls.includes(n.v)) urls.push(n.v); }
+      if (n.t === "url") { if (!isInviteLink(n.v) && !isGameLink(n.v) && !urls.includes(n.v)) urls.push(n.v); }
       else if (n.t === "b" || n.t === "i") walk(n.c);
     }
   };

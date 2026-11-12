@@ -13,6 +13,15 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "5.33",
+    date: "2026-11-12",
+    title: "Games in chat",
+    changes: [
+      "Some bots now have a game. Add one to your server, type /play, and press Play on the message it sends to play without leaving the chat.",
+      "Deep Answer is the first game: name answers for each prompt and dive as deep as you can.",
+    ],
+  },
+  {
     version: "5.32",
     date: "2026-11-10",
     title: "Bot command options",

@@ -26,10 +26,11 @@ import { perksOf, serverPerks } from "./perks";
 import { HEX_RE, TAG_MAX, TAG_RE, asUserTag, userTagSql } from "./tags";
 import { channelsFor } from "./channelperms";
 import { botGuard, botsRouter } from "./bots";
+import { botHostRouter } from "./botHost";
 
 export const api = Router();
 api.use(botGuard); // bot tokens only reach the few routes a bot needs
-api.use(botsRouter, voteRouter, messagesRouter, pollsRouter, profilesRouter, adminRouter, gifsRouter, embedsRouter, dmsRouter, huddleAdminRouter, deletionRouter, securityRouter, passkeyRouter, suggestionsRouter, rolesRouter, friendsRouter, emojisRouter);
+api.use(botsRouter, voteRouter, messagesRouter, pollsRouter, profilesRouter, adminRouter, gifsRouter, embedsRouter, dmsRouter, huddleAdminRouter, botHostRouter, deletionRouter, securityRouter, passkeyRouter, suggestionsRouter, rolesRouter, friendsRouter, emojisRouter);
 
 const settingsColumns = {
   voteEnabled: "vote_enabled",

@@ -408,6 +408,11 @@ hr { border: 0; border-top: 1px solid var(--line); margin: 20px 0; }
 /* links and link previews */
 .msg-link { color: var(--accent); text-decoration: underline; overflow-wrap: anywhere; }
 .embed { display: grid; gap: 4px; margin-top: 6px; padding: 10px 12px; max-width: 440px; border: 1px solid var(--line); border-left: 4px solid var(--accent); border-radius: 8px; background: var(--surface2); }
+.game-embed { margin-top: 6px; max-width: 640px; border: 1px solid var(--line); border-left: 4px solid var(--accent); border-radius: 8px; background: var(--surface2); overflow: hidden; }
+.game-embed-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 12px; }
+.game-embed-actions { display: flex; align-items: center; gap: 12px; }
+.bot-log { max-height: 220px; overflow: auto; margin: 0; padding: 8px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface2); font: 12px/1.4 ui-monospace, Menlo, Consolas, monospace; white-space: pre-wrap; word-break: break-word; }
+.game-embed-frame { display: block; width: 100%; height: min(640px, 80vh); border: 0; border-top: 1px solid var(--line); background: #0b1230; }
 .embed-loading { height: 1px; margin: 0; padding: 0; border: 0; background: none; }
 .embed-plain { border-left-color: var(--line); }
 .embed-site { color: var(--dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -425,6 +430,7 @@ hr { border: 0; border-top: 1px solid var(--line); margin: 20px 0; }
 .row { display: flex; gap: 10px; align-items: end; }
 .row > label { flex: 1; min-width: 0; }
 .row > input { flex: 1; min-width: 0; }
+.row > .grow { flex: 1; min-width: 0; align-self: center; }
 .plain-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
 .plain-list li { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
 .hint { color: var(--dim); }

@@ -1,4 +1,5 @@
 import crypto from "crypto";
+import { EventEmitter } from "events";
 import { Router, type NextFunction, type Request, type Response } from "express";
 import { z } from "zod";
 import { one, q } from "./db";
@@ -33,6 +34,27 @@ const botCache = new Map<string, { user: AuthUser; at: number }>();
 export const clearBotCache = () => botCache.clear();
 setInterval(() => { const now = Date.now(); for (const [k, v] of botCache) if (now - v.at > AUTH_TTL_MS) botCache.delete(k); }, 30_000).unref();
 
+/** Tells other modules when a bot is removed (the script runner stops its processes). */
+export const botEvents = new EventEmitter();
+
+/**
+ * Tokens for bot scripts that Huddle itself runs. They live only in memory, are made fresh each time a script starts, and
+ * never touch the bot's own token, so hosting a script doesn't sign the owner's other connections out.
+ */
+const hostedTokens = new Map<string, string>(); // sha(token) -> bot id
+export function registerHostedToken(botId: string): string {
+  const token = newToken();
+  hostedTokens.set(sha(token), botId);
+  return token;
+}
+export function revokeHostedTokens(botId: string) {
+  let had = false;
+  for (const [k, v] of hostedTokens) if (v === botId) { hostedTokens.delete(k); had = true; }
+  if (!had) return;
+  clearBotCache();
+  dropUser(botId); // only the script Huddle was running is meant to go; an outside connection with the bot's own token signs straight back in
+}
+
 /** Reads "Bot <token>" from an Authorization header (or a bare token from the socket handshake). */
 export function botTokenFrom(header?: string | null): string | null {
   const m = /^Bot\s+(hb_[A-Za-z0-9_-]{20,100})$/.exec((header ?? "").trim());
@@ -43,13 +65,20 @@ export async function userFromBotToken(token: string): Promise<(AuthUser & { isB
   const key = sha(token);
   const hit = botCache.get(key);
   if (hit && Date.now() - hit.at < AUTH_TTL_MS) return { ...hit.user, isBot: true };
-  const user = await one<AuthUser>(
-    `select u.id, u.username from bot_tokens t join users u on u.id = t.bot_id
-      where t.token_hash = $1 and u.bot_owner is not null and u.deleted_at is null and (u.banned_until is null or u.banned_until <= now())`,
-    [key]
-  );
+  const hosted = hostedTokens.get(key);
+  const user = hosted
+    ? await one<AuthUser>(
+        `select u.id, u.username from users u where u.id = $1 and u.bot_owner is not null and u.deleted_at is null and (u.banned_until is null or u.banned_until <= now())`,
+        [hosted]
+      )
+    : await one<AuthUser>(
+        `select u.id, u.username from bot_tokens t join users u on u.id = t.bot_id
+          where t.token_hash = $1 and u.bot_owner is not null and u.deleted_at is null and (u.banned_until is null or u.banned_until <= now())`,
+        [key]
+      );
   if (!user) return null;
   botCache.set(key, { user, at: Date.now() });
+  if (hosted) return { ...user, isBot: true };
   q(`update bot_tokens set last_used_at = now() where token_hash = $1 and (last_used_at is null or last_used_at < now() - interval '5 minutes')`, [key]).catch(() => {});
   return { ...user, isBot: true };
 }
@@ -173,6 +202,9 @@ botsRouter.delete("/bots/:botId", h(async (req, res) => {
   humanOnly(req);
   const bot = await ownedBot(req);
   await q(`delete from bot_tokens where bot_id = $1`, [bot.id]);
+  await q(`delete from bot_scripts where bot_id = $1`, [bot.id]);
+  await q(`delete from bot_games where bot_id = $1`, [bot.id]);
+  botEvents.emit("removed", bot.id);
   const servers = await q<{ server_id: string }>(`delete from memberships m using servers s where m.user_id = $1 and s.id = m.server_id and not s.is_dm returning m.server_id`, [bot.id]);
   await q(`delete from member_roles where user_id = $1`, [bot.id]);
   await q(`update users set deleted_at = now(), display_name = null, bot_description = '', username = 'deleted_' || substr(replace(id::text, '-', ''), 1, 12) where id = $1`, [bot.id]);
@@ -262,7 +294,8 @@ botsRouter.put("/bot/commands", h(async (req, res) => {
   const { commands } = z.object({ commands: z.array(commandSchema).max(50) }).parse(req.body);
   if (new Set(commands.map((c) => c.name)).size !== commands.length) throw new HttpError(400, "Two commands have the same name.");
   await replaceCommands(botId, commands);
-  res.json({ commands });
+  await ensurePlayCommand(botId);
+  res.json({ commands: await q(`select name, description, options from bot_commands where bot_id = $1 order by name`, [botId]) });
 }));
 
 async function replaceCommands(botId: string, commands: z.infer<typeof commandSchema>[]) {
@@ -273,6 +306,16 @@ async function replaceCommands(botId: string, commands: z.infer<typeof commandSc
        on conflict (bot_id, name) do update set description = excluded.description, options = excluded.options`,
       [botId, c.name, c.description, JSON.stringify(c.options)]
     );
+}
+
+/** A bot with a game always offers /play, even when its own script sets its list of commands. */
+export async function ensurePlayCommand(botId: string) {
+  if (!(await one(`select 1 from bot_games where bot_id = $1`, [botId]))) return;
+  await q(
+    `insert into bot_commands(bot_id, name, description, options) values ($1, 'play', 'Play this bot''s game right here in the chat.', '[]'::jsonb)
+     on conflict (bot_id, name) do nothing`,
+    [botId]
+  );
 }
 
 botsRouter.get("/bot/commands", h(async (req, res) => {
@@ -359,6 +402,21 @@ botsRouter.post("/channels/:channelId/commands", h(async (req, res) => {
     [body.botId, serverId, body.name]
   );
   if (!cmd) throw new HttpError(404, "That command isn't available here.");
+  // A bot with a game answers /play itself, so the game works even when the bot has no script running.
+  if (body.name === "play") {
+    const game = await one<{ title: string }>(`select title from bot_games where bot_id = $1`, [body.botId]);
+    if (game) {
+      const url = `${req.protocol}://${req.get("host")}/games/${body.botId}`;
+      const content = `**${game.title}** is ready. Press Play below, or open it in its own tab: ${url}`;
+      const { ids: mentioned } = await resolveMentions(serverId, content, false);
+      const msg = await one<{ id: string }>(
+        `insert into messages(channel_id, author_id, content, mentions, via_command, via_user) values ($1, $2, $3, $4::uuid[], 'play', $5) returning id::text as id`,
+        [channelId, body.botId, content, [...new Set([user.id, ...mentioned])], user.id]
+      );
+      await emitChannel(serverId, channelId, "message.create", await getMessageDto(msg!.id, null));
+      return void res.json({ interactionId: null });
+    }
+  }
   if (!isOnline(body.botId)) throw new HttpError(503, "That bot is offline right now.");
   const options = await cleanOptions(serverId, cmd.options, body.options);
   const row = await one<{ id: string }>(

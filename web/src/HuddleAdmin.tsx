@@ -40,6 +40,11 @@ function adminAuditText(e: { action: string; detail: any; actor: string | null }
     case "welcome.remove": return `${who} removed a welcome message`;
     case "server.official": return `${who} made ${d.name} Huddle Official`;
     case "server.unofficial": return `${who} removed Huddle Official from ${d.name}`;
+    case "bot.script.add": return `${who} uploaded ${d.filename} to the bot @${d.bot}`;
+    case "bot.script.remove": return `${who} removed ${d.filename} from the bot @${d.bot}`;
+    case "bot.game.set": return `${who} gave the bot @${d.bot} the game ${d.title}`;
+    case "bot.game.remove": return `${who} removed the game from the bot @${d.bot}`;
+    case "bot.create": return `${who} made the bot @${d.bot} for the game ${d.game}`;
     default: return `${who}: ${e.action}`;
   }
 }
@@ -104,6 +109,198 @@ function AutoJoinSection({ people, servers, onNotice, onError, onChanged }: { pe
       </label>
       <button className="primary" disabled={busy || !serverId || items.length >= max}>{busy ? "Adding…" : items.length >= max ? `Limit of ${max} reached` : "Add everyone to this server"}</button>
     </form>
+  );
+}
+
+interface HostedBot {
+  id: string;
+  username: string;
+  displayName: string | null;
+  owner: string;
+  public: boolean;
+  online: boolean;
+  game: { title: string } | null;
+  scripts: { filename: string; size: number; updatedAt: string; status: string; restarts: number; startedAt: string | null }[];
+}
+interface BotHosting {
+  hosting: { enabled: boolean; pythonVersion: string | null };
+  limits: { scripts: number; scriptKb: number; gameKb: number };
+  builtinGames: { slug: string; title: string }[];
+  bots: HostedBot[];
+}
+
+const STATUS_TEXT: Record<string, string> = {
+  starting: "Starting", running: "Running", finished: "Finished", crashed: "Crashed, restarting", failed: "Stopped after crashing", stopped: "Not running",
+};
+
+/** Python scripts that run for a bot whenever Huddle starts, and games a bot can play in chat. */
+function BotHostSection({ onNotice, onError, onChanged }: { onNotice: (t: string) => void; onError: (e: unknown) => void; onChanged: () => void }) {
+  const [info, setInfo] = useState<BotHosting | null>(null);
+  const [botId, setBotId] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [logFile, setLogFile] = useState<string | null>(null);
+  const [logLines, setLogLines] = useState<string[]>([]);
+  const [slug, setSlug] = useState("");
+  const [newName, setNewName] = useState("");
+  const [gameChoice, setGameChoice] = useState("");
+  const [customTitle, setCustomTitle] = useState("");
+
+  const load = useCallback(() => {
+    api<BotHosting>("/huddle/bots").then((r) => {
+      setInfo(r);
+      setBotId((cur) => (r.bots.some((b) => b.id === cur) ? cur : r.bots[0]?.id ?? ""));
+      setSlug((cur) => cur || r.builtinGames[0]?.slug || "");
+      setGameChoice((cur) => cur || r.builtinGames[0]?.slug || "");
+    }, onError);
+  }, [onError]);
+  useEffect(load, [load]);
+
+  const bot = info?.bots.find((b) => b.id === botId) ?? null;
+  const loadLogs = useCallback((file: string) => {
+    if (!botId) return;
+    api<{ lines: string[] }>(`/huddle/bots/${botId}/logs?file=${encodeURIComponent(file)}`).then((r) => setLogLines(r.lines), onError);
+  }, [botId, onError]);
+  useEffect(() => { setLogFile(null); setLogLines([]); }, [botId]);
+  useEffect(() => {
+    if (!logFile) return;
+    loadLogs(logFile);
+    const t = setInterval(() => loadLogs(logFile), 3000);
+    return () => clearInterval(t);
+  }, [logFile, loadLogs]);
+
+  async function run(work: () => Promise<unknown>, done?: string) {
+    if (busy) return;
+    setBusy(true);
+    try {
+      await work();
+      if (done) onNotice(done);
+      load();
+      onChanged();
+    } catch (err) { onError(err); }
+    setBusy(false);
+  }
+
+  const createFromGame = (e: React.FormEvent) => {
+    e.preventDefault();
+    void run(async () => {
+      const r = await api<{ botId: string }>("/huddle/bots/from-game", "POST", { slug, username: newName.trim() });
+      setNewName("");
+      setBotId(r.botId);
+    }, "Bot made. Anyone who manages a server can add it from server settings → Bots, and run /play.");
+  };
+
+  const uploadScripts = (files: FileList | null) => {
+    if (!files?.length || !bot) return;
+    const list = [...files];
+    void run(async () => {
+      for (const f of list) await api(`/huddle/bots/${bot.id}/scripts`, "PUT", { filename: f.name, content: await f.text() });
+    }, `${list.length === 1 ? list[0].name : `${list.length} files`} uploaded. The bot's scripts were restarted.`);
+  };
+
+  const removeScript = async (file: string) => {
+    if (!bot || !await confirmDialog(`Remove ${file} from @${bot.username}? Its scripts restart without it.`, { confirmLabel: "Remove" })) return;
+    void run(() => api(`/huddle/bots/${bot.id}/scripts/${encodeURIComponent(file)}`, "DELETE"));
+  };
+
+  const setGame = () => bot && void run(() => api(`/huddle/bots/${bot.id}/game`, "PUT", { builtin: gameChoice }), "Game attached. People can run /play with this bot.");
+  const uploadGame = async (files: FileList | null) => {
+    const f = files?.[0];
+    if (!f || !bot) return;
+    const html = await f.text();
+    void run(() => api(`/huddle/bots/${bot.id}/game`, "PUT", { title: customTitle.trim() || f.name.replace(/\.html?$/i, ""), html }), "Game uploaded. People can run /play with this bot.");
+  };
+  const removeGame = async () => {
+    if (!bot || !await confirmDialog(`Take the game away from @${bot.username}? /play stops working. Messages that already show it stop showing it too.`, { confirmLabel: "Remove game" })) return;
+    void run(() => api(`/huddle/bots/${bot.id}/game`, "DELETE"));
+  };
+
+  if (!info) return <div className="stack"><h3>Bot scripts and games</h3><small className="hint">Loading…</small></div>;
+  const pythonNote = !info.hosting.enabled
+    ? "Running scripts is turned off on this server (BOT_HOST_DISABLED is true). Uploaded files are kept and will run once it's turned on."
+    : info.hosting.pythonVersion
+      ? `Python ${info.hosting.pythonVersion} is available.`
+      : "Python 3 wasn't found on this server, so scripts can't run here.";
+
+  return (
+    <div className="stack">
+      <h3>Bot scripts and games</h3>
+      <small className="hint">
+        Upload Python files to a bot and Huddle runs them whenever it starts (after every deploy or restart on Render), and again when you change them. Each script signs in as its bot: it gets the address in <code>HUDDLE_URL</code> and the bot's token in <code>HUDDLE_BOT_TOKEN</code>. A <code>requirements.txt</code> installs packages first.
+        Scripts run with this server's permissions, so only give Huddle Admin to people you trust. {pythonNote}
+      </small>
+
+      {info.builtinGames.length > 0 && (
+        <form className="stack" onSubmit={createFromGame}>
+          <label>
+            Make a public bot from a game that comes with Huddle
+            <select value={slug} onChange={(e) => setSlug(e.target.value)}>
+              {info.builtinGames.map((g) => <option key={g.slug} value={g.slug}>{g.title}</option>)}
+            </select>
+          </label>
+          <div className="row">
+            <input value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="Bot name, like DeepAnswer" maxLength={20} required aria-label="Bot name" />
+            <button className="primary" disabled={busy || !newName.trim()}>Make bot</button>
+          </div>
+        </form>
+      )}
+
+      {info.bots.length === 0 ? (
+        <small className="hint">No bots yet. Make one above, or make one in Account settings → Bots.</small>
+      ) : (
+        <>
+          <label>
+            Bot
+            <select value={botId} onChange={(e) => setBotId(e.target.value)}>
+              {info.bots.map((b) => <option key={b.id} value={b.id}>@{b.username} (made by @{b.owner}){b.online ? " · online" : ""}</option>)}
+            </select>
+          </label>
+
+          {bot && (
+            <>
+              <h4>Game</h4>
+              {bot.game ? (
+                <div className="row">
+                  <span className="grow">{bot.game.title} <small className="hint">People run /play to start it.</small></span>
+                  <button type="button" className="icon" disabled={busy} onClick={() => void removeGame()}>Remove</button>
+                </div>
+              ) : <small className="hint">No game yet.</small>}
+              {info.builtinGames.length > 0 && (
+                <div className="row">
+                  <select value={gameChoice} onChange={(e) => setGameChoice(e.target.value)} aria-label="Game that comes with Huddle">
+                    {info.builtinGames.map((g) => <option key={g.slug} value={g.slug}>{g.title}</option>)}
+                  </select>
+                  <button type="button" className="primary" disabled={busy || !gameChoice} onClick={setGame}>{bot.game ? "Replace with this game" : "Use this game"}</button>
+                </div>
+              )}
+              <label>
+                Or upload your own game: one .html file, up to {info.limits.gameKb} KB, that works without the internet
+                <input value={customTitle} onChange={(e) => setCustomTitle(e.target.value)} placeholder="Game name (optional)" maxLength={60} />
+                <input type="file" accept=".html,.htm,text/html" disabled={busy} onChange={(e) => { void uploadGame(e.target.files); e.target.value = ""; }} />
+              </label>
+
+              <h4>Python scripts</h4>
+              {bot.scripts.length === 0 ? <small className="hint">No files yet.</small> : (
+                <ul className="plain-list welcome-list">
+                  {bot.scripts.map((s) => (
+                    <li key={s.filename}>
+                      <span className="welcome-text">{s.filename} <small className="hint">{STATUS_TEXT[s.status] ?? s.status}{s.restarts ? `, restarted ${s.restarts}×` : ""} · {Math.max(1, Math.round(s.size / 1000))} KB</small></span>
+                      <button type="button" className="icon" onClick={() => setLogFile(logFile === s.filename ? null : s.filename)}>{logFile === s.filename ? "Hide log" : "Log"}</button>
+                      <button type="button" className="icon" disabled={busy} onClick={() => void removeScript(s.filename)}>Remove</button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              {logFile && <pre className="bot-log" aria-label={`Log of ${logFile}`}>{logLines.length ? logLines.join("\n") : "Nothing printed yet."}</pre>}
+              <label>
+                Add .py files (up to {info.limits.scripts} files, {info.limits.scriptKb} KB each)
+                <input type="file" accept=".py,.txt,text/x-python,text/plain" multiple disabled={busy} onChange={(e) => { uploadScripts(e.target.files); e.target.value = ""; }} />
+              </label>
+              {bot.scripts.length > 0 && <button type="button" className="link left" disabled={busy} onClick={() => void run(() => api(`/huddle/bots/${bot.id}/restart`, "POST"), "Restarting this bot's scripts.")}>Restart this bot's scripts</button>}
+            </>
+          )}
+        </>
+      )}
+    </div>
   );
 }
 
@@ -548,6 +745,8 @@ export function HuddleAdminModal({ meId, onClose, onNotice, onError }: { meId: s
               <button className="primary">Give</button>
             </form>
           </div>
+          <hr />
+          <BotHostSection onNotice={onNotice} onError={onError} onChanged={() => loadAudit(false)} />
           <hr />
           <div className="stack">
             <h3>Audit log</h3>

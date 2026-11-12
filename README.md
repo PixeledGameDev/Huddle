@@ -220,6 +220,45 @@ direct messages. Their actions otherwise look like any admin's (for example, del
   be banned or deleted; remove the flag first (permanent ones can't be touched).
 - **Record.** Grants, removals, sends, bans and deletions are written to the `huddle_admin_log` table.
 
+## Bot scripts and games
+
+Huddle Admins can host bots without any outside server: open **Huddle Admin → Bot scripts and games**.
+
+- **Games.** Pick a bot, then give it a game that comes with Huddle (they live in `server/games/`, one `.html` file each) or upload your own
+  single `.html` file (up to 900 KB, no outside files needed). Anyone who adds that bot to a server can run **/play**; the bot answers with a
+  message that has a **Play** button, and the game opens inside the chat. Huddle answers `/play` itself, so a game works even when the bot has no
+  script. Games run in a sandbox with no access to anyone's account, and each also has its own address, `/games/<bot id>`.
+  **Make bot** creates a public bot from a built-in game in one step (it is owned by the admin who made it).
+  **Deep Answer** is the game included now.
+- **Python scripts.** Upload `.py` files to a bot (up to 10 files, 200 KB each). Huddle starts every script when it starts, which on Render means
+  after each deploy or restart, and starts them again right after you upload, change or remove one. A script that crashes is restarted a few times,
+  then left stopped; the **Log** button shows what it printed. Each script gets four environment variables: `HUDDLE_URL`, `HUDDLE_BOT_TOKEN`
+  (made fresh each start, and separate from the token in Account settings), `HUDDLE_BOT_ID` and `HUDDLE_BOT_NAME`. Upload a `requirements.txt` and
+  Huddle installs those packages first.
+
+```python
+import os, requests, socketio  # requirements.txt: requests  and  python-socketio[client]
+
+URL, TOKEN = os.environ["HUDDLE_URL"], os.environ["HUDDLE_BOT_TOKEN"]
+AUTH = {"Authorization": f"Bot {TOKEN}"}
+sio = socketio.Client()
+
+@sio.on("interaction.create")
+def on_command(i):
+    requests.post(f"{URL}/api/interactions/{i['id']}/respond", json={"content": "pong"}, headers=AUTH)
+
+requests.put(f"{URL}/api/bot/commands", json={"commands": [{"name": "ping", "description": "Reply with pong"}]}, headers=AUTH)
+sio.connect(URL, auth={"token": TOKEN})
+sio.wait()
+```
+
+Things to know:
+
+- Scripts run on the same machine as Huddle, with the same permissions as the server. Only give Huddle Admin to people you trust.
+- The machine needs `python3` (the panel says whether it was found). Set `BOT_HOST_DISABLED=true` to stop scripts from running; uploaded files are kept.
+- Files are kept in the database and written to a temporary folder at each start, so nothing about a script lives on the server's disk between deploys.
+- Deleting a bot removes its scripts and game.
+
 ## Suggestions
 
 The 💡 button at the bottom of the left rail (or the address `/suggestions`) opens a site-wide board. Anyone signed in

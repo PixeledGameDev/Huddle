@@ -492,4 +492,20 @@ create table if not exists interactions (
 create index if not exists interactions_created on interactions(created_at);
 alter table messages add column if not exists via_command text;
 alter table messages add column if not exists via_user uuid references users(id) on delete set null;
+
+-- v34: Huddle Admins can host Python scripts for a bot (run when Huddle starts) and give a bot a game that plays inside chat.
+create table if not exists bot_scripts (
+  bot_id uuid not null references users(id) on delete cascade,
+  filename text not null,
+  content text not null,
+  uploaded_by uuid references users(id) on delete set null,
+  updated_at timestamptz not null default now(),
+  primary key (bot_id, filename)
+);
+create table if not exists bot_games (
+  bot_id uuid primary key references users(id) on delete cascade,
+  title text not null,
+  html text not null,
+  updated_at timestamptz not null default now()
+);
 `;

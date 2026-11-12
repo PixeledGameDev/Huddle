@@ -1,0 +1,287 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Deep Answer</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=VT323&display=swap" rel="stylesheet">
+<style>
+:root{--page:#2a7fc9;--ink:#0b1230;--ink2:#1a2a5e;--line:#e8f7ff;--sub:#ffd23f;--bad:#ff5d73;--ok:#5ee6a8;--glow:#4cc9f0;
+--pg:"Press Start 2P",ui-monospace,Menlo,monospace;--vt:"VT323",ui-monospace,Menlo,monospace;
+box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media(prefers-color-scheme:dark){:root:not([data-theme="light"]){--page:#050a1c}}
+:root[data-theme="dark"]{--page:#050a1c}
+*{box-sizing:border-box}
+html,body{margin:0;min-height:100%}
+body{background:var(--page);font-family:var(--vt);font-size:24px;line-height:1.15;color:var(--line);display:flex;justify-content:center;image-rendering:pixelated}
+main{width:100%;max-width:640px;padding:24px 16px 36px}
+.px{box-shadow:0 -4px 0 0 var(--c,var(--line)),0 4px 0 0 var(--c,var(--line)),-4px 0 0 0 var(--c,var(--line)),4px 0 0 0 var(--c,var(--line));margin:4px}
+.stage{position:relative;overflow:hidden;background:var(--ink);min-height:max(560px,calc(100dvh - 72px));--c:var(--line);--g:28px}
+.water{position:absolute;inset:-8px;overflow:hidden;background:#0a1a40}
+.deep{position:absolute;left:0;right:0;top:0;height:calc(var(--world,18) * 100%);background:linear-gradient(#7ad8f7 0.00% 3.57%,#6bd5f6 3.57% 7.14%,#5bd1f5 7.14% 10.71%,#4ebeef 10.71% 14.29%,#41a9e9 14.29% 17.86%,#389de3 17.86% 21.43%,#3192dd 21.43% 25.00%,#2c85d5 25.00% 28.57%,#2977cc 28.57% 32.14%,#256cc3 32.14% 35.71%,#2163bb 35.71% 39.29%,#1e5ab2 39.29% 42.86%,#1c53a8 42.86% 46.43%,#1a4b9d 46.43% 50.00%,#174490 50.00% 53.57%,#153e85 53.57% 57.14%,#13387a 57.14% 60.71%,#113370 60.71% 64.29%,#102e68 64.29% 67.86%,#0f2960 67.86% 71.43%,#0d2458 71.43% 75.00%,#0c2050 75.00% 78.57%,#0b1d47 78.57% 82.14%,#0a1a3f 82.14% 85.71%,#091737 85.71% 89.29%,#08142f 89.29% 92.86%,#071128 92.86% 96.43%,#060e22 96.43% 100.00%);transform:translateY(calc(var(--p,0) * -100% * (var(--world,18) - 1) / var(--world,18)));transition:transform calc(var(--dur,2600) * 1ms) cubic-bezier(.5,0,.3,1);will-change:transform}
+.pf{position:absolute;left:0;right:0;top:0;will-change:transform}
+.pf i{position:absolute;background:#e8f7ff55;box-shadow:inset 0 0 0 2px #e8f7ffcc}
+.fi{position:absolute;left:0}
+@keyframes fxR{from{transform:translateX(-100px)}to{transform:translateX(110vw)}}
+@keyframes fxL{from{transform:translateX(110vw)}to{transform:translateX(-100px)}}
+.rush{position:absolute;left:0;right:0;top:0;height:calc(100% + 300px);background:repeating-linear-gradient(#ffffff14 0 18px,transparent 18px 150px,#ffffff0d 150px 162px,transparent 162px 300px);will-change:transform}.sea{position:absolute;inset:0;z-index:3;pointer-events:none}
+.sea svg{position:absolute;left:16px;top:calc(var(--p,0)*(100% - 72px) + 12px);transition:top 1.1s steps(11)}
+.mk{position:absolute;left:0;width:calc(var(--g) - 10px);text-align:right;font:8px var(--pg);color:#e8f7ffcc;text-shadow:1px 1px 0 #0b1230}
+
+.b{position:absolute;bottom:-8px;background:#e8f7ffcc;animation:rise 10s linear infinite}
+@keyframes rise{to{transform:translateY(-92vh)}}
+.panel{position:absolute;inset:0;z-index:2;display:flex;flex-direction:column;justify-content:flex-start;gap:14px;min-width:0;padding:28px 28px 28px var(--g);background:rgba(5,10,28,var(--dim,.5));-webkit-backdrop-filter:blur(calc(var(--blur,6) * 1px));backdrop-filter:blur(calc(var(--blur,6) * 1px));overflow:auto}
+h1{font:20px/1.4 var(--pg);margin:0;color:var(--sub);text-shadow:3px 3px 0 #b3541e}
+h2{font:12px/1.7 var(--pg);margin:0;color:var(--glow)}
+.hud{display:flex;justify-content:space-between;align-items:center;font:10px var(--pg)}
+.hud b{color:var(--sub);font-weight:400}
+.pips{display:flex;gap:6px}.pips i{width:12px;height:12px;background:#ffffff26}.pips i.on{background:var(--glow)}.pips i.done{background:var(--sub)}
+.q{font:14px/1.7 var(--pg);margin:6px 0 2px}
+.tbar{height:16px;background:#ffffff1a;--c:var(--line);margin:4px}
+.tbar i{display:block;height:100%;width:100%;background:var(--ok);-webkit-mask:repeating-linear-gradient(90deg,#000 0 10px,transparent 10px 14px);mask:repeating-linear-gradient(90deg,#000 0 10px,transparent 10px 14px)}
+.tbar.low i{background:var(--bad)}
+input{font:30px var(--vt);width:100%;padding:10px 14px;background:#050a1c;color:var(--line);border:0;--c:var(--glow);border-radius:0;margin:4px;width:calc(100% - 8px);caret-color:var(--sub)}
+input:focus{outline:0;--c:var(--sub)}
+.shake{animation:sh .3s steps(4)}@keyframes sh{25%{transform:translateX(-6px)}75%{transform:translateX(6px)}}
+button{font:11px var(--pg);color:var(--ink);background:var(--sub);border:0;padding:14px 16px;cursor:pointer;box-shadow:0 4px 0 #b3541e,0 0 0 4px var(--ink),0 0 0 8px var(--sub);margin:8px 8px 12px 4px}
+button:active{transform:translateY(4px);box-shadow:0 0 0 #b3541e,0 0 0 4px var(--ink),0 0 0 8px var(--sub)}
+button.alt{background:var(--glow);box-shadow:0 4px 0 #1b6a8a,0 0 0 4px var(--ink),0 0 0 8px var(--glow)}
+button:focus-visible,input:focus-visible{outline:3px dashed var(--sub);outline-offset:6px}
+.row{display:flex;gap:4px;flex-wrap:wrap}
+.fb{font:11px/1.7 var(--pg);min-height:38px}.fb.bad{color:var(--bad)}
+.pop{animation:pop .5s steps(5)}@keyframes pop{from{transform:translateY(10px);opacity:0}}
+.big{font:28px var(--pg);color:var(--ok);margin:4px 0}
+.res{display:flex;justify-content:space-between;gap:10px;padding:8px 0;border-bottom:3px dotted #ffffff26;font-size:22px}
+.res small{display:block;color:#e8f7ffaa;font-size:20px}.res b{font:10px var(--pg);white-space:nowrap;align-self:center}
+p{margin:0}
+@media(max-width:480px){.stage{--g:14px}.panel{padding:20px 14px}h1{font-size:15px}.q{font-size:12px}.big{font-size:20px}}
+[data-fx="off"] *{animation:none!important;transition:none!important}[data-fx="off"] .amb{display:none}
+.set{display:flex;justify-content:space-between;font:10px var(--pg);margin-top:8px}.set b{color:var(--sub);font-weight:400}
+.hint{font-size:21px;color:#e8f7ffcc;min-height:48px}
+input[type=range]{-webkit-appearance:none;appearance:none;padding:0;height:28px;background:transparent;margin:2px 4px;width:calc(100% - 8px)}
+input[type=range]::-webkit-slider-runnable-track{height:12px;background:#ffffff26;box-shadow:0 0 0 3px var(--line)}
+input[type=range]::-moz-range-track{height:12px;background:#ffffff26;box-shadow:0 0 0 3px var(--line)}
+input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:16px;height:28px;margin-top:-8px;background:var(--sub);border:0;border-radius:0;box-shadow:0 4px 0 #b3541e}
+input[type=range]::-moz-range-thumb{width:16px;height:28px;background:var(--sub);border:0;border-radius:0;box-shadow:0 4px 0 #b3541e}
+main{position:relative;z-index:1}
+.amb{position:fixed;inset:0;overflow:hidden;pointer-events:none;z-index:0}
+.amb>i{position:absolute;bottom:-12px;background:#ffffff66;animation:rise2 linear infinite}
+@keyframes rise2{to{transform:translateY(-112vh)}}
+.fish{position:absolute;left:0;opacity:.5;animation:swim linear infinite}
+@keyframes swim{from{transform:translateX(-80px)}to{transform:translateX(calc(100vw + 20px))}}
+@keyframes swimL{from{transform:translateX(calc(100vw + 20px))}to{transform:translateX(-80px)}}
+.w span{display:inline-block;animation:bob 1.2s steps(4) infinite}
+@keyframes bob{50%{transform:translateY(-6px)}}
+.sea svg#sub{animation:sbob 1.1s steps(2) infinite}
+@keyframes sbob{50%{transform:translateY(6px)}}
+.water::after{content:"";position:absolute;top:0;bottom:0;left:0;width:26px;background:#ffffff1c;animation:ray 4s steps(14) infinite}
+@keyframes ray{from{transform:translateX(-60px) skewX(-20deg)}to{transform:translateX(720px) skewX(-20deg)}}
+.water::before{content:"";position:absolute;left:-16px;right:0;top:0;height:8px;background:repeating-linear-gradient(90deg,#e8f7ff 0 8px,transparent 8px 16px);animation:wv 1s steps(2) infinite;z-index:2;opacity:calc(1 - var(--p,0)*30)}
+@keyframes wv{to{transform:translateX(16px)}}
+.tbar.low{animation:blink .6s steps(2) infinite}@keyframes blink{50%{opacity:.4}}
+.stage.hit{animation:hit .5s steps(5)}@keyframes hit{0%{filter:brightness(1.7)}}
+.stage.rare{animation:rare .6s steps(6)}@keyframes rare{0%{filter:brightness(2)}25%{transform:translate(-4px,2px)}50%{transform:translate(4px,-2px)}75%{transform:translate(-2px,0)}}
+button:hover{transform:translateY(-2px)}
+.water svg#bgsub{position:absolute;left:50%;top:50%;margin:-64px 0 0 -112px;animation:sbob 3s ease-in-out infinite;transition:rotate calc(var(--tt,500) * 1ms) cubic-bezier(.3,1.5,.5,1),scale calc(var(--tt,500) * 1ms) ease;will-change:transform}
+.diving .water svg#bgsub{rotate:calc(var(--tilt,35) * 1deg);scale:var(--scl,1.22);animation:dive .09s ease-in-out infinite}@keyframes dive{0%,100%{transform:translate(calc(var(--shk,3) * -1px),calc(var(--shk,3) * -.7px))}50%{transform:translate(calc(var(--shk,3) * 1px),calc(var(--shk,3) * 1px))}}
+.rd{position:absolute;left:16px;top:calc(var(--p,0)*(100% - 72px) + 12px);transition:top 1.1s steps(11),opacity .2s steps(2);transform:translateY(54px);font:12px var(--pg);color:#ffd23f;text-shadow:2px 2px 0 #0b1230;opacity:0;white-space:nowrap}
+.rd.on{opacity:1}.rd.up{transform:translateY(-24px)}
+@media(max-width:480px){.rd{left:6px}}
+.panel{transition:background-color .6s ease,backdrop-filter .6s ease,-webkit-backdrop-filter .6s ease}
+.panel>*{transition:opacity .35s ease}
+.panel.clear{background:#050a1c00;-webkit-backdrop-filter:blur(0);backdrop-filter:blur(0);pointer-events:none}
+.panel.clear>*{opacity:0}
+.brd{position:absolute;left:0;right:0;bottom:30px;text-align:center;font:calc(var(--cs,56) * 1px)/1.2 var(--pg);color:#ffd23f;text-shadow:4px 4px 0 #0b1230;opacity:0;transform:translateY(16px);transition:opacity .3s ease,transform .3s ease}
+.brd.on{opacity:1;transform:none}
+.brd small{display:block;font-size:12px;margin-bottom:10px;text-shadow:2px 2px 0 #0b1230}
+@media(max-width:480px){.brd{font-size:calc(var(--cs,56) * .57px)}}
+.sk{position:absolute;inset:0;overflow:hidden;opacity:0;transition:opacity .3s ease}
+.diving .sk{opacity:var(--so,1)}
+.sk i{position:absolute;top:100%;background:#e8f7ffb3;animation:streak .45s linear infinite}
+@keyframes streak{to{transform:translateY(-135vh)}}
+.diving .water{animation:rumble .15s linear infinite}@keyframes rumble{0%,100%{translate:0 0}25%{translate:calc(var(--rum,2) * 1px) calc(var(--rum,2) * -1px)}50%{translate:calc(var(--rum,2) * -1px) calc(var(--rum,2) * .5px)}75%{translate:calc(var(--rum,2) * .5px) calc(var(--rum,2) * 1px)}}
+.diving .brd{animation:cshake .12s linear infinite}@keyframes cshake{0%,100%{translate:0 0}50%{translate:0 -3px}}
+.panel>:first-child{margin-top:auto}.panel>:last-child{margin-bottom:auto}
+h1.w{padding-top:10px}
+</style></head>
+<body><main><div class="stage px"><div class="water" id="water"></div><div class="panel" id="app"></div><div class="sea" id="sea"></div></div></main>
+<script>
+const TIERS=[["Surface",5,"#9ad7ff"],["Sunlit",25,"#5ee6a8"],["Twilight",55,"#ffd23f"],["Midnight",85,"#ff9f43"],["Abyss",100,"#ff5d73"]];
+const P=[
+{q:"Name a fruit.",a:["apple,banana,orange,grape,strawberry,lemon,pear,peach,mango,watermelon,pineapple,cherry",
+"kiwi,plum,apricot,lime,coconut,papaya,pomegranate,blueberry,raspberry,grapefruit,fig,melon,nectarine,cranberry,blackberry",
+"lychee,guava,persimmon,quince,dragonfruit,passionfruit,tamarillo,kumquat,starfruit,mulberry,gooseberry,elderberry,jackfruit,date,currant",
+"rambutan,mangosteen,durian,soursop,salak,loquat,jujube,medlar,cherimoya,feijoa,pawpaw,longan,ugli fruit,sapodilla,bilberry","jabuticaba"]},
+{q:"Name a country in Africa.",a:["egypt,nigeria,kenya,south africa,morocco,ethiopia,ghana,algeria",
+"tanzania,uganda,senegal,tunisia,libya,sudan,angola,zimbabwe,zambia,cameroon,mali,namibia,botswana,madagascar,mozambique",
+"rwanda,malawi,niger,chad,gabon,benin,togo,liberia,sierra leone,somalia,mauritania,burundi,congo,ivory coast,eritrea",
+"djibouti,lesotho,eswatini,gambia,guinea,comoros,cape verde,mauritius,seychelles,burkina faso,south sudan,central african republic,equatorial guinea","sao tome and principe"]},
+{q:"Name a musical instrument.",a:["guitar,piano,drums,violin,trumpet,flute,saxophone,bass,cello,clarinet",
+"harp,trombone,banjo,ukulele,accordion,harmonica,oboe,tuba,xylophone,bagpipes,mandolin,organ,bassoon,tambourine,triangle",
+"sitar,didgeridoo,theremin,zither,lute,harpsichord,marimba,glockenspiel,kazoo,djembe,recorder,piccolo,dulcimer,bongos,castanets",
+"ocarina,shamisen,erhu,oud,balalaika,hurdy gurdy,sackbut,serpent,glass harmonica,cimbalom,charango,kalimba,koto,bouzouki,pan flute","nyckelharpa"]},
+{q:"Name a bird.",a:["eagle,owl,parrot,crow,duck,penguin,robin,sparrow,pigeon,chicken",
+"hawk,falcon,swan,flamingo,peacock,ostrich,seagull,pelican,toucan,hummingbird,goose,turkey,woodpecker,heron,crane",
+"kingfisher,cassowary,kiwi,puffin,albatross,kookaburra,lyrebird,hoopoe,magpie,cormorant,ibis,kestrel,nightingale,osprey,shoebill",
+"bowerbird,tinamou,hornbill,quetzal,secretarybird,frogmouth,potoo,oilbird,hoatzin,takahe,kakapo,screamer,tragopan,motmot,wryneck","sunbittern"]},
+{q:"Name a programming language.",a:["python,java,javascript,c,c++,ruby,php,swift,go,rust,kotlin,sql,c#",
+"typescript,perl,lua,haskell,scala,r,matlab,dart,bash,fortran,cobol,lisp,assembly,julia,elixir",
+"erlang,clojure,ocaml,prolog,smalltalk,pascal,ada,scheme,racket,groovy,tcl,forth,apl,f#,crystal",
+"nim,zig,haxe,idris,coq,brainfuck,befunge,io,rexx,snobol,simula,mumps,occam,eiffel,awk","malbolge"]},
+{q:"Name a color.",a:["red,blue,green,yellow,orange,purple,pink,black,white,brown,grey,gray",
+"teal,turquoise,magenta,cyan,indigo,violet,beige,maroon,navy,lavender,gold,silver,crimson,coral,ivory",
+"periwinkle,mauve,chartreuse,vermilion,ochre,cerulean,fuchsia,sienna,taupe,umber,burgundy,amber,azure,russet,saffron",
+"puce,gamboge,celadon,viridian,cinnabar,mikado,smaragdine,ecru,cerise,glaucous,fulvous,carmine,tawny,liver,zaffre","eigengrau"]},
+{q:"Name a moon in our solar system.",a:["moon,europa,titan,io,ganymede,callisto,phobos,deimos",
+"triton,enceladus,charon,mimas,rhea,iapetus,dione,tethys,oberon,titania,miranda,ariel,umbriel,amalthea,hyperion",
+"nereid,proteus,phoebe,himalia,puck,portia,larissa,despina,janus,epimetheus,pandora,prometheus,atlas,pan,thebe",
+"elara,metis,adrastea,sinope,ananke,carme,lysithea,callirrhoe,cressida,desdemona,juliet,belinda,bianca,ophelia,cordelia","megaclite"]},
+{q:"Name a type of tree.",a:["oak,pine,maple,birch,palm,willow,apple,cherry,elm,cedar",
+"ash,beech,fir,spruce,poplar,redwood,cypress,eucalyptus,walnut,olive,hickory,baobab,sycamore,banyan,magnolia",
+"larch,hornbeam,alder,rowan,hazel,yew,linden,juniper,mahogany,teak,ebony,sequoia,acacia,mangrove,tamarind",
+"catalpa,tupelo,sassafras,hawthorn,gingko,ginkgo,kauri,jacaranda,wollemi pine,monkey puzzle,cottonwood,sourwood,osage orange,pawpaw,bottlebrush","dragon blood tree"]},
+{q:"Name an animal that lives in the ocean.",a:["shark,whale,dolphin,fish,octopus,turtle,seal,crab,jellyfish,starfish","squid,lobster,shrimp,seahorse,stingray,orca,eel,clam,oyster,walrus,penguin,manatee,sea lion,barracuda,swordfish","narwhal,nautilus,manta ray,hammerhead,sea otter,urchin,anemone,cuttlefish,krill,sunfish,lionfish,pufferfish,moray eel,mantis shrimp,dugong","anglerfish,viperfish,gulper eel,dumbo octopus,barreleye,hagfish,lanternfish,vampire squid,fangtooth,oarfish,sea pig,goblin shark,tripod fish,siphonophore,yeti crab","pyrosome"]},
+{q:"Name a famous painter.",a:["picasso,van gogh,da vinci,monet,rembrandt,michelangelo,dali,warhol","matisse,cezanne,degas,renoir,klimt,munch,pollock,frida kahlo,rothko,magritte,raphael,vermeer,turner,hopper,goya","caravaggio,botticelli,titian,gauguin,seurat,manet,mondrian,kandinsky,miro,chagall,modigliani,hockney,basquiat,constable,el greco","bosch,bruegel,velazquez,rubens,schiele,courbet,millet,whistler,sargent,hokusai,rousseau,ernst,de chirico,arcimboldo,friedrich,fragonard","hilma af klint"]},
+{q:"Name a dog breed.",a:["labrador,poodle,bulldog,beagle,pug,german shepherd,golden retriever,chihuahua,husky,dachshund","rottweiler,boxer,corgi,dalmatian,great dane,doberman,collie,shih tzu,pomeranian,greyhound,border collie,cocker spaniel,schnauzer,maltese,saint bernard","akita,basenji,whippet,samoyed,weimaraner,vizsla,bloodhound,afghan hound,malamute,newfoundland,bull terrier,airedale,papillon,shar pei,chow chow","otterhound,saluki,komondor,puli,pharaoh hound,xoloitzcuintli,azawakh,affenpinscher,borzoi,keeshond,kuvasz,leonberger,sloughi,lagotto romagnolo,bergamasco","mudi"]},
+{q:"Name a European capital city.",a:["paris,london,rome,madrid,berlin,amsterdam,vienna,lisbon","athens,dublin,prague,budapest,warsaw,stockholm,oslo,copenhagen,brussels,helsinki,bern,zagreb,belgrade,sofia,bucharest","reykjavik,tallinn,riga,vilnius,bratislava,ljubljana,sarajevo,skopje,tirana,kyiv,minsk,chisinau,valletta,luxembourg,podgorica","vaduz,monaco,san marino,andorra la vella,vatican city,pristina,nicosia,torshavn,douglas,st helier","mariehamn"]},
+{q:"Name a Greek god or goddess.",a:["zeus,hera,poseidon,athena,apollo,aphrodite,ares,hades,artemis,hermes","dionysus,demeter,hephaestus,hestia,persephone,eros,nike,pan,helios,hecate,nemesis,morpheus,hypnos,thanatos,iris","selene,eos,gaia,uranus,cronus,rhea,themis,tyche,hebe,asclepius,hygieia,nyx,erebus,tartarus,triton","eris,hemera,aether,pontus,thalassa,oceanus,tethys,hyperion,iapetus,mnemosyne,phoebe,leto,metis,dione,atlas","aristaeus"]},
+{q:"Name a board game.",a:["monopoly,chess,scrabble,checkers,risk,clue,cluedo,uno,battleship,jenga,twister","backgammon,sorry,trivial pursuit,connect four,catan,carcassonne,ticket to ride,pictionary,operation,mouse trap,yahtzee,candy land,mancala,othello,stratego","pandemic,azul,splendor,dominion,agricola,go,mahjong,dixit,codenames,terraforming mars,twilight struggle,gloomhaven,scythe,wingspan,cranium","hive,tigris and euphrates,puerto rico,power grid,caylus,through the ages,twilight imperium,diplomacy,axis and allies,rummikub,blokus,quoridor,abalone,hanabi,ra","senet"]},
+{q:"Name a type of pasta.",a:["spaghetti,penne,macaroni,lasagna,fettuccine,ravioli,linguine,tortellini","fusilli,rigatoni,farfalle,tagliatelle,gnocchi,orzo,cannelloni,pappardelle,angel hair,bucatini,conchiglie,ziti,vermicelli,cavatappi,manicotti","orecchiette,cavatelli,paccheri,trofie,strozzapreti,casarecce,tortelloni,agnolotti,capellini,rotini,radiatori,ditalini,campanelle,gemelli,mafalda","busiate,pici,bigoli,maltagliati,fregola,malloreddus,lorighittas,tagliolini,mezzelune,culurgiones,trenette,lumache,anelli,scialatielli,garganelli","corzetti"]},
+{q:"Name a Shakespeare play.",a:["hamlet,macbeth,romeo and juliet,othello,king lear,the tempest,a midsummer night's dream","twelfth night,julius caesar,much ado about nothing,as you like it,the merchant of venice,richard iii,henry v,the taming of the shrew,antony and cleopatra","coriolanus,timon of athens,measure for measure,cymbeline,pericles,the winter's tale,titus andronicus,the comedy of errors,richard ii,henry iv,love's labour's lost,troilus and cressida,the merry wives of windsor,all's well that ends well,henry viii","king john,henry vi,two gentlemen of verona,two noble kinsmen,edward iii,cardenio,henry iv part 1,henry iv part 2,henry vi part 1,henry vi part 2,henry vi part 3","sir thomas more"]},
+{q:"Name a cheese.",a:["cheddar,mozzarella,parmesan,brie,swiss,feta,gouda,cream cheese","blue cheese,camembert,provolone,gruyere,ricotta,havarti,halloumi,mascarpone,colby,monterey jack,gorgonzola,emmental,pecorino,roquefort,manchego","edam,stilton,paneer,asiago,fontina,taleggio,raclette,jarlsberg,burrata,munster,limburger,cotija,queso fresco,comte,gjetost","epoisses,vacherin,appenzeller,cabrales,idiazabal,tomme,wensleydale,caerphilly,red leicester,double gloucester,reblochon,mimolette,stracchino,castelmagno,scamorza","casu marzu"]}
+];
+
+const norm=s=>s.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/[^a-z0-9+# ]/g," ").replace(/\s+/g," ").trim().replace(/^(the|a|an) /,"");
+const MAPS=P.map(p=>{const m=new Map();p.a.forEach((csv,t)=>csv.split(",").forEach(w=>{const k=norm(w);m.set(k,t);m.set(k.replace(/s$/,""),t)}));return m});
+const near=(a,b)=>{if(Math.abs(a.length-b.length)>1)return false;let x=0,y=0,e=0;while(x<a.length&&y<b.length){if(a[x]===b[y]){x++;y++}else{if(++e>1)return false;if(a.length>b.length)x++;else if(a.length<b.length)y++;else{x++;y++}}}return e+(a.length-x)+(b.length-y)<=1};
+let Q=[];
+const look=(i,s)=>{const n=norm(s);if(!n)return -1;const m=MAPS[Q[i]],n2=n.replace(/s$/,"");if(m.has(n))return m.get(n);if(m.has(n2))return m.get(n2);if(S.d<3&&n.length>=5)for(const[k,t]of m)if(k.length>=5&&near(n,k))return t;return -1};
+const $=document.getElementById("app"),sea=document.getElementById("sea"),water=document.getElementById("water");
+let SECS=20,PT=[5,25,55,85,100];let i=0,res=[],pts=0,t0,tick,lock=false;
+const COL={K:"#0b1230",L:"#fff0a0",Y:"#ffd23f",O:"#e8a317",R:"#ff5d73",G:"#8fa3b8",W:"#e8f7ff"};
+function subSvg(sc,id){const W=28,H=16,g=Array.from({length:H},()=>Array(W).fill("."));
+ const set=(x,y,c)=>{if(x>=0&&x<W&&y>=0&&y<H)g[y][x]=c};
+ for(let y=0;y<H;y++)for(let x=0;x<W;x++){const dx=(x-14)/11,dy=(y-10)/5.6;if(dx*dx+dy*dy<=1)set(x,y,y<8?"L":y<11?"Y":"O")}
+ for(let y=3;y<=6;y++)for(let x=11;x<=17;x++)set(x,y,y===4?"L":"Y");
+ for(let y=4;y<=7;y++)for(let x=2;x<=4;x++)set(x,y,"Y");
+ set(15,0,"K");set(16,0,"K");set(15,1,"K");set(15,2,"K");
+ for(let y=0;y<H;y++)for(let x=0;x<W;x++)if("LYO".includes(g[y][x])&&[[1,0],[-1,0],[0,1],[0,-1]].some(([a,b])=>(g[y+b]?.[x+a]??".")==="."))g[y][x]="K";
+ for(let x=6;x<=21;x++)if("YO".includes(g[12][x]))set(x,12,"R");
+ [9,14,19].forEach(x=>{for(let a=-1;a<=1;a++)for(let b=-1;b<=1;b++)set(x+a,10+b,"K");set(x,10,"W")});
+ for(let y=7;y<=13;y++){set(1,y,"G");set(0,y,"K")}set(2,10,"G");
+ let r="";g.forEach((row,y)=>{let x=0;while(x<W){const c=row[x];if(c==="."){x++;continue}let e=x;while(e<W&&row[e]===c)e++;r+=`<rect x="${x}" y="${y}" width="${e-x}" height="1" fill="${COL[c]}"/>`;x=e}});
+ return `<svg ${id?`id="${id}" `:""}width="${W*sc}" height="${H*sc}" viewBox="0 0 ${W} ${H}" shape-rendering="crispEdges" aria-hidden="true">${r}</svg>`}
+sea.innerHTML='<div class="brd" id="brd"></div>';
+const rnd=k=>Math.abs(Math.sin(k*127.1+3.7)*43758.5453)%1;
+const FH=1800,FC=["#ff9f43","#5ee6a8","#ff5d73","#4cc9f0","#ffd23f"];
+const pfield=near=>{const n=near?90:70,seed=near?900:0;let one="";
+ for(let k=0;k<n;k++){const z=near?8+Math.floor(rnd(seed+k+2)*4)*2:4+Math.floor(rnd(seed+k+2)*2)*2,l=(rnd(seed+k)*98).toFixed(1),t=Math.round(rnd(seed+k+400)*FH),st=`left:${l}%;width:${z}px;height:${z}px;opacity:${near?.9:.5}`;one+=`<i style="${st};top:${t}px"></i><i style="${st};top:${t+FH}px"></i>`}
+ for(let k=0;k<(near?5:8);k++){const dir=rnd(seed+k+700)>.5?1:0,d=(near?9:16)+rnd(seed+k+900)*8,t=Math.round(rnd(seed+k+800)*FH),h=`<div class="fi" style="top:TPXpx;opacity:${near?.9:.55};animation:${dir?"fxR":"fxL"} ${d.toFixed(1)}s linear infinite;animation-delay:-${(rnd(seed+k+950)*d).toFixed(1)}s">${fishSvg(FC[k%5],dir,near?5:3)}</div>`;one+=h.replace("TPX",t)+h.replace("TPX",t+FH)}
+ return `<div class="pf ${near?"near":"far"}" style="height:${FH*2}px">${one}</div>`};
+let scrollPos=0,scrollRaf=0;
+function scrollDive(dp){const SH=stg.clientHeight,dist=SH*CFG.scr*(.3+.7*Math.min(dp,100)/100),p0=scrollPos,t0=performance.now(),D=CFG.dur;
+ const rush=document.getElementById("rush"),far=water.querySelector(".far"),near=water.querySelector(".near");
+ if(!rush||!far||!near)return;cancelAnimationFrame(scrollRaf);
+ const f=n=>{const k=Math.min(1,(n-t0)/D),e=k*k*(3-2*k);scrollPos=p0+dist*e;
+  rush.style.transform=`translateY(${-Math.round(scrollPos%300)}px)`;far.style.transform=`translateY(${-Math.round((scrollPos*.5)%FH)}px)`;near.style.transform=`translateY(${-Math.round((scrollPos*1.6)%FH)}px)`;
+  if(k<1)scrollRaf=requestAnimationFrame(f)};
+ scrollRaf=requestAnimationFrame(f)}
+const buildWater=()=>{water.innerHTML='<div class="deep"></div><div class="rush" id="rush"></div>'+pfield(0)+Array.from({length:70},(_,k)=>{const z=4+Math.floor(rnd(k+1)*4)*2;return `<i class="b" style="left:${(rnd(k)*97).toFixed(1)}%;width:${z}px;height:${z}px;animation-duration:calc(${(6+rnd(k+2)*10).toFixed(1)}s / var(--bs,1));animation-delay:-${(rnd(k+3)*16).toFixed(1)}s"></i>`}).join("")+'<div class="sk">'+Array.from({length:60},(_,k)=>`<i style="left:${(k*1.7+1)%99}%;width:${2+k%3}px;height:${60+(k*37)%120}px;animation-duration:calc(${(.3+(k%5)*.07).toFixed(2)}s / var(--ss,1));animation-delay:-${(k*.11).toFixed(2)}s"></i>`).join("")+'</div>'+subSvg(8,"bgsub")+pfield(1)};
+let lastP=0,lastPts=0,rdT;
+function roll(a,b){const el=document.getElementById("brn");if(!el)return;const t0=performance.now(),D=CFG.dur;const f=n=>{const k=Math.min(1,(n-t0)/D),e=k*k*(3-2*k);el.textContent=Math.round(a+(b-a)*e)+" m";if(k<1)requestAnimationFrame(f)};requestAnimationFrame(f)}
+const stg=document.querySelector(".stage");
+const reveal=()=>requestAnimationFrame(()=>requestAnimationFrame(()=>$.classList.remove("clear")));
+const setDepth=()=>{const p=Math.min(1,pts/Math.max(1,Q.length*100));sea.style.setProperty("--p",p);water.style.setProperty("--p",p);if(p>lastP){trail();roll(lastPts*10,pts*10,p>.5);scrollDive(pts-lastPts)}lastP=p;lastPts=pts};
+
+let S={n:7,d:2,t:20};try{Object.assign(S,JSON.parse(localStorage.getItem("da-set")||"{}"))}catch(e){}
+const DIFF=[0,{n:"Easy",pt:[20,40,60,85,100],d:"Common answers score well and small typos are forgiven."},{n:"Normal",pt:[5,25,55,85,100],d:"Rarer answers score far more. Small typos are forgiven."},{n:"Hard",pt:[0,10,45,80,100],d:"Common answers score nothing and typos do not count."}];
+const sl=(id,label,min,max,step,val)=>`<div class="set"><label for="${id}">${label}</label><b id="${id}v"></b></div><input type="range" id="${id}" min="${min}" max="${max}" step="${step}" value="${val}">`;
+const DEF={dur:2600,clr:650,scr:12,tilt:35,scl:1.22,tt:500,shk:3,rum:2,world:18,bs:4,ss:3,so:1,blur:6,dim:.5,cs:56,pm:3,ps:1};
+const CFG={...DEF};
+const applyCfg=()=>{for(const k in CFG)document.documentElement.style.setProperty("--"+k,CFG[k])};applyCfg();
+let fxOn=true;try{fxOn=localStorage.getItem("da-fx")!=="0"}catch(e){}
+document.documentElement.dataset.fx=fxOn?"on":"off";
+const cv=document.createElement("canvas");cv.style.cssText="position:fixed;inset:0;width:100%;height:100%;pointer-events:none;z-index:99";document.body.appendChild(cv);
+const cx=cv.getContext("2d");let PS=[],raf=0;
+const fit=()=>{cv.width=innerWidth;cv.height=innerHeight};fit();addEventListener("resize",fit);
+function loop(){cx.clearRect(0,0,cv.width,cv.height);PS=PS.filter(p=>p.l>0);
+ for(const p of PS){p.x+=p.vx;p.y+=p.vy;p.vy+=p.g;p.vx*=.95;p.vy*=.95;p.l--;const z=Math.max(2,Math.round(p.s*p.l/p.L/2)*2),x=Math.round(p.x),y=Math.round(p.y);cx.fillStyle="#0b1230";cx.fillRect(x-1,y-1,z+2,z+2);cx.fillStyle=p.c;cx.fillRect(x,y,z,z)}
+ raf=PS.length?requestAnimationFrame(loop):0;if(!raf)cx.clearRect(0,0,cv.width,cv.height)}
+function burst(x,y,n,col,spd=3.2,life=34,sz=6,g=0){if(!fxOn)return;n=Math.round(n*CFG.pm);spd*=CFG.ps;
+ for(let k=0;k<n;k++){const a=k/n*6.283+Math.random()*.4,v=spd*(.6+Math.random()*.7);PS.push({x,y,vx:Math.cos(a)*v,vy:Math.sin(a)*v,l:life,L:life,c:Array.isArray(col)?col[k%col.length]:col,s:sz,g})}
+ if(PS.length>400)PS.splice(0,PS.length-400);if(!raf)raf=requestAnimationFrame(loop)}
+const lastv={};
+const spark=el=>{if(lastv[el.id]===el.value)return;lastv[el.id]=el.value;const r=el.getBoundingClientRect(),f=(el.value-el.min)/(el.max-el.min);burst(r.left+8+f*(r.width-16),r.top+r.height/2,12,"#ffd23f",3.4,30,6)};
+const reward=(t,fb)=>{const r=fb.getBoundingClientRect();burst(r.left+r.width/2,r.top+r.height/2,8+t*7,t>1?[TIERS[t][2],"#e8f7ff"]:TIERS[t][2],2.2+t*.7,34,6+t);const st=document.querySelector(".stage");st.classList.remove("hit","rare");void st.offsetWidth;st.classList.add(t>=3?"rare":"hit")};
+const trail=()=>{const sv=document.getElementById("bgsub");let c=0;const iv=setInterval(()=>{const r=sv.getBoundingClientRect();burst(r.left+r.width*.1,r.top+r.height*.55,3,"#e8f7ff",1.6,34,8,-.25);if(++c>CFG.dur/50)clearInterval(iv)},50)};
+const wv=t=>[...t].map((c,k)=>`<span style="animation-delay:-${(k*.13).toFixed(2)}s">${c}</span>`).join("");
+const FISH=["...FFFF....F",".FFFFFFF..FF","FFWKFFFFFFFF",".FFFFFFF..FF","...FFFF....F"];
+const fishSvg=(c,flip,sc=5)=>{let r="";FISH.forEach((row,y)=>[...row].forEach((ch,x)=>{if(ch!==".")r+=`<rect x="${x}" y="${y}" width="1" height="1" fill="${ch==="F"?c:ch==="W"?"#e8f7ff":"#0b1230"}"/>`}));return `<svg width="${12*sc}" height="${5*sc}" viewBox="0 0 12 5" shape-rendering="crispEdges" style="${flip?"transform:scaleX(-1)":""}">${r}</svg>`};
+const amb=document.createElement("div");amb.className="amb";
+amb.innerHTML=Array.from({length:14},(_,k)=>{const z=4+(k%3)*2;return `<i style="left:${(k*7.3+3)%100}%;width:${z}px;height:${z}px;animation-duration:${9+(k*7)%11}s;animation-delay:-${(k*3)%12}s"></i>`}).join("")+
+[["#ff9f43",18,26,0,0],["#5ee6a8",52,38,-14,1],["#ff5d73",78,32,-6,0]].map(([c,y,d,dl,f])=>`<div class="fish" style="top:${y}%;animation-duration:${d}s;animation-delay:${dl}s;${f?"animation-name:swimL":""}">${fishSvg(c,f?0:1)}</div>`).join("");
+document.body.prepend(amb);
+function start(){
+ pts=0;Q=[];setDepth();
+ S.n=Math.min(Math.max(+S.n||7,3),P.length);S.d=Math.min(Math.max(+S.d||2,1),3);S.t=Math.min(Math.max(+S.t||20,10),60);
+ $.innerHTML=`<h1 class="w">${wv("DEEP")}<br>${wv("ANSWER")}</h1><h2>Rare answers sink you deeper.</h2>
+ <p>Name something for each prompt. Any right answer counts, but the rarer it is, the deeper you dive.</p>
+ ${sl("sn","Questions",3,P.length,1,S.n)}${sl("sd","Difficulty",1,3,1,S.d)}<p class="hint" id="sdd"></p>${sl("st","Time per question",10,60,5,S.t)}
+ <div class="row"><button id="go">Start dive</button><button class="alt" id="fxb">Effects: ${fxOn?"On":"Off"}</button></div>`;
+ const g=id=>document.getElementById(id);
+ const upd=()=>{g("snv").textContent=g("sn").value;g("stv").textContent=g("st").value+"s";const d=DIFF[+g("sd").value];g("sdv").textContent=d.n;g("sdd").textContent=d.d+" A perfect dive reaches "+(g("sn").value*1000)+" m."};
+ g("fxb").onclick=()=>{fxOn=!fxOn;document.documentElement.dataset.fx=fxOn?"on":"off";g("fxb").textContent="Effects: "+(fxOn?"On":"Off");try{localStorage.setItem("da-fx",fxOn?"1":"0")}catch(e){}};
+ ["sn","sd","st"].forEach(id=>g(id).oninput=()=>{upd();spark(g(id))});upd();
+ g("go").onclick=()=>{S={n:+g("sn").value,d:+g("sd").value,t:+g("st").value};try{localStorage.setItem("da-set",JSON.stringify(S))}catch(e){}
+  SECS=S.t;PT=DIFF[S.d].pt;Q=[...P.keys()].sort(()=>Math.random()-.5).slice(0,S.n);i=0;res=[];setDepth();round()};
+}
+function hud(){return `<div class="hud"><div class="pips" aria-label="Prompt ${i+1} of ${Q.length}">${Q.map((_,k)=>`<i class="${k<i?"done":k===i?"on":""}"></i>`).join("")}</div></div>`}
+function round(){
+ lock=false;
+ $.innerHTML=hud()+`<div class="tbar px" id="tbw"><i id="tb"></i></div>
+ <div class="q">${P[Q[i]].q}</div>
+ <input id="in" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="type here" aria-label="Your answer">
+ <div class="row"><button id="ok">Submit</button><button class="alt" id="skip">Skip</button></div>
+ <div class="fb" id="fb" aria-live="polite"></div>`;
+ reveal();const inp=document.getElementById("in");inp.focus();
+ document.getElementById("ok").onclick=submit;
+ document.getElementById("skip").onclick=()=>finish(-1,"");
+ inp.onkeydown=e=>{if(e.key==="Enter")submit()};
+ t0=Date.now();clearInterval(tick);
+ tick=setInterval(()=>{
+  const left=Math.max(0,SECS-(Date.now()-t0)/1000);
+  document.getElementById("tb").style.width=left/SECS*100+"%";
+  document.getElementById("tbw").classList.toggle("low",left<6);
+  if(left<=0)finish(-1,inp.value.trim());
+ },100);
+}
+function submit(){
+ if(lock)return;
+ const inp=document.getElementById("in"),v=inp.value.trim();if(!v)return;
+ const t=look(i,v);
+ if(t<0){const fb=document.getElementById("fb");fb.className="fb bad";fb.textContent="Not on the list. Try another answer.";inp.classList.remove("shake");void inp.offsetWidth;inp.classList.add("shake");inp.select();const r=inp.getBoundingClientRect();burst(r.left+r.width/2,r.top+r.height/2,10,"#ff5d73",2.6,26,6);return}
+ finish(t,v);
+}
+function finish(t,v){
+ if(lock)return;lock=true;clearInterval(tick);
+ const p=t<0?0:PT[t];pts+=p;res.push({v,t,p});
+ $.classList.add("clear");
+ setTimeout(()=>{
+  const b=document.getElementById("brd");
+  b.innerHTML=`<small style="color:${t>=0?TIERS[t][2]:"#ff5d73"}">${t>=0?TIERS[t][0]+" +"+p*10+" m":"No answer logged"}</small><span id="brn">${lastPts*10} m</span>`;
+  b.classList.add("on");setDepth();if(t>=0)reward(t,b);if(p>0)stg.classList.add("diving");
+  setTimeout(()=>{stg.classList.remove("diving");setTimeout(()=>{b.classList.remove("on");setTimeout(()=>{i++;i<Q.length?round():end()},300)},p>0?700:200)},p>0?CFG.dur:800);
+ },CFG.clr);
+}
+function end(){
+ const m=pts*10;
+ const rows=res.map((r,k)=>`<div class="res"><div>${P[Q[k]].q}<small>${r.v||"no answer"}</small></div><b style="color:${r.t>=0?TIERS[r.t][2]:"#e8f7ff88"}">${r.t>=0?TIERS[r.t][0]+" +"+r.p:"0"}</b></div>`).join("");
+ const txt=`Deep Answer: I dove ${m} m of ${Q.length*1000} m (${DIFF[S.d].n}, ${Q.length} prompts, ${SECS}s)\n${res.map(r=>r.t<0?"⬛":["🟦","🟩","🟨","🟧","🟥"][r.t]).join("")}`;
+ $.innerHTML=`<h2>Dive complete</h2><div class="big" id="cnt">0 m</div><p>${pts} of ${Q.length*100} points</p><div>${rows}</div>
+ <div class="row"><button id="sh">Copy result</button><button class="alt" id="again">Dive again</button></div><div class="fb" id="fb" aria-live="polite"></div>`;
+ reveal();let c=0;const iv=setInterval(()=>{const e=document.getElementById("cnt");if(!e)return clearInterval(iv);c=Math.min(m,c+Math.max(10,Math.ceil(m/20)));e.textContent=c+" m";if(c>=m)clearInterval(iv)},40);
+ for(let k=0;k<5;k++)setTimeout(()=>burst(innerWidth*(.15+.175*k),innerHeight*.3,16,["#ffd23f","#4cc9f0","#5ee6a8","#ff5d73"],3.6,46,8,.05),k*180);
+ document.getElementById("again").onclick=start;
+ document.getElementById("sh").onclick=async()=>{try{await navigator.clipboard.writeText(txt);document.getElementById("fb").textContent="Copied."}catch(e){document.getElementById("fb").textContent="Copy failed. Select this text: "+txt}};
+}
+buildWater();start();
+</script></body></html>
