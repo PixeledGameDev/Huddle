@@ -3,8 +3,8 @@
 <style>:root{color-scheme:dark}html,body{margin:0;background:#0a0d18;color:#f4ffee;font:20px/1.15 'VT323',ui-monospace,Consolas,monospace}
 body{display:grid;justify-items:center;padding:12px 8px env(safe-area-inset-bottom,12px);padding-top:max(12px,env(safe-area-inset-top,0px))}
 canvas{image-rendering:pixelated;display:block;background:#000;box-shadow:-4px 0 0 #f4ffee,4px 0 0 #f4ffee,0 -4px 0 #f4ffee,0 4px 0 #f4ffee,-8px 0 0 #050a03,8px 0 0 #050a03,0 -8px 0 #050a03,0 8px 0 #050a03}
-#hud{margin:18px 0 6px;color:#ffe034}#help{max-width:940px;color:#b9c4e4;text-align:center}b{color:#91ff50;font-weight:400}</style></head><body>
-<canvas id="c" tabindex="0"></canvas><div id="help"><b>Default controls</b> &nbsp; P1: A/D move, W up, S down, Space or W jump, F (or J) attack, G (or K) special. P2: arrows move, comma or up arrow jump, period attack, slash special. Hold up or down with attack for other moves (Settings: UP TO JUMP turns W/up-arrow jumping off). Esc pauses; remap in Settings. Click the game once if keys do nothing.</div>
+#hud{margin:18px 0 6px;color:#ffe034}</style></head><body>
+<canvas id="c" tabindex="0"></canvas>
 <script>
 const $=(w,h)=>{const c=document.createElement('canvas');c.width=w;c.height=h;c.x=c.getContext('2d');c.ox=c.oy=0;return c};
 const hash=(x,y)=>((x*73856093^y*19349663)>>>0)%100;
@@ -366,7 +366,7 @@ const PAINT=[Gregory,Chippy,Robot,Smorio,Toasty,Burger,Frog,Ghost,Cactus,Cloud,B
 const ROSTER=SIM.CH.map((c,i)=>({...SIM.META[i],id:i,paint:PAINT[i]}));
 if(PAINT.length!==SIM.CH.length)console.error('roster/painter mismatch');
 const cv=document.getElementById('c'),cx=cv.getContext('2d');cv.width=480;cv.height=270;
-let sc=1;const fit=()=>{sc=Math.max(1,Math.floor(Math.min((innerWidth-40)/480,(innerHeight-90)/270)));cv.style.width=480*sc+'px';cv.style.height=270*sc+'px'};addEventListener('resize',fit);fit();
+let sc=1;const fit=()=>{sc=Math.max(1,Math.floor(Math.min((innerWidth-40)/480,(innerHeight-40)/270)));cv.style.width=480*sc+'px';cv.style.height=270*sc+'px'};addEventListener('resize',fit);fit();
 function rot(r,g,b,deg,k){r/=255;g/=255;b/=255;const mx=Math.max(r,g,b),mn=Math.min(r,g,b),l=(mx+mn)/2,d=mx-mn;let h=0,s=0;if(d){s=d/(1-Math.abs(2*l-1));h=mx==r?((g-b)/d+6)%6:mx==g?(b-r)/d+2:(r-g)/d+4;h*=60}h=(h+deg)%360;s=Math.min(1,s*k);const C=(1-Math.abs(2*l-1))*s,X=C*(1-Math.abs((h/60)%2-1)),m=l-C/2,q=h<60?[C,X,0]:h<120?[X,C,0]:h<180?[0,C,X]:h<240?[0,X,C]:h<300?[X,0,C]:[C,0,X];return q.map(v=>Math.round((v+m)*255))}
 function hue(src,deg,k){const c=$(src.width,src.height);c.x.drawImage(src,0,0);const d=c.x.getImageData(0,0,c.width,c.height),a=d.data;for(let i=0;i<a.length;i+=4){if(!a[i+3])continue;const q=rot(a[i],a[i+1],a[i+2],deg,k);a[i]=q[0];a[i+1]=q[1];a[i+2]=q[2]}c.x.putImageData(d,0,0);return c}
 const hexHue=(h,deg,k)=>'#'+rot(parseInt(h.slice(1,3),16),parseInt(h.slice(3,5),16),parseInt(h.slice(5,7),16),deg,k).map(v=>v.toString(16).padStart(2,'0')).join('');
@@ -583,13 +583,6 @@ function loop(t){acc+=Math.min(100,t-last);last=t;while(acc>=1000/60){T++;if(pre
   if(tr){tr.t++;if(tr.t==15){setScene(tr.s);tr.f&&tr.f()}if(tr.t>=30)tr=null}
   if(scene=='match'&&!tr)tickMatch();else if(scene=='results')upFx();else if(scene=='select')selTick();acc-=1000/60}
  drawFrame();requestAnimationFrame(loop)}requestAnimationFrame(loop);
-
-(function(){const d=document.createElement('div');d.id='dev';d.style.cssText='position:fixed;right:12px;top:12px;width:250px;max-height:90vh;overflow:auto;padding:10px;background:#050a03;color:#f4ffee;font:8px "Press Start 2P",monospace;box-shadow:-4px 0 0 #f4ffee,4px 0 0 #f4ffee,0 -4px 0 #f4ffee,0 4px 0 #f4ffee;display:none;z-index:9';document.body.appendChild(d);
- const P=[['shake','SHAKE',0,2,.1],['flash','FLASH',0,2,.1],['particles','PARTICLES',0,3,.1],['pspeed','PART SPEED',.3,2,.1],['dim','UI DIM',0,1,.05]],tg=()=>{d.style.display=d.style.display=='block'?'none':'block'};
- const build=()=>{d.innerHTML='<div style="color:#ffe034;margin-bottom:8px">TUNING</div>';P.forEach(([k,l,a,b,s])=>{const w=document.createElement('label');w.style.cssText='display:block;margin:8px 0';w.textContent=l+' ';const o=document.createElement('span');o.textContent=TUN[k];o.style.cssText='float:right;color:#91ff50';const r=document.createElement('input');r.type='range';r.min=a;r.max=b;r.step=s;r.value=TUN[k];r.style.width='100%';r.oninput=()=>{TUN[k]=+r.value;o.textContent=r.value};w.append(o,r);d.append(w)});
-  [['PREVIEW',()=>{shake=10;flash=.4;if(g)burst(240,130,24,'ember',-1.57,4,6.3)}],['COPY',()=>{try{navigator.clipboard.writeText(JSON.stringify(TUN))}catch(e){}}],['RESET',()=>{Object.assign(TUN,TUN_DEF);build()}]].forEach(([t,f])=>{const bt=document.createElement('button');bt.textContent=t;bt.onclick=f;bt.style.cssText='margin:6px 6px 0 0;font:8px "Press Start 2P",monospace;background:#3a9f00;color:#f4ffee;border:0;padding:6px;box-shadow:0 4px 0 #050a03;cursor:pointer';d.append(bt)})};
- build();const b=document.createElement('button');b.id='devbtn';b.textContent='DEV';b.onclick=tg;b.style.cssText='position:fixed;left:10px;bottom:10px;font:8px "Press Start 2P",monospace;background:#3a9f00;color:#f4ffee;border:0;padding:6px;box-shadow:0 4px 0 #050a03;opacity:.6;cursor:pointer;z-index:9';document.body.appendChild(b);
- addEventListener('keydown',e=>{if(e.code=='Backquote'){e.preventDefault();tg()}})})();
 
 // ===== CHARACTER SELECT (data-driven: every ROSTER entry becomes a grid slot) =====
 const PCOL=['#91ff50','#ffe034','#55f7ff','#ff8f2a'],CATC={FOOD:'#ffb040',HOME:'#8fd0ff',TECH:'#55f7ff',NATURE:'#6fd060',CREATURE:'#c08fff',WEIRD:'#ff8f8f',FANTASY:'#ff7ae0'},SORTS=['ROSTER','A-Z','TYPE','POWER','WEIGHT'],TOTAL=100,COLS=10,ROWS=7,CW=33,CHH=32;
