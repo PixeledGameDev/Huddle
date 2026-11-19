@@ -13,6 +13,16 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "5.35",
+    date: "2026-11-19",
+    title: "Huddle Brawlers",
+    changes: [
+      "Added Huddle Brawlers as a game that can be appended to bots by Huddle Admins.",
+      "There are currently 11 playable characters, but the game will be expanded to have ~60.",
+      "For non-admin server owners, check the bots tab and there should be a public bot with the game.",
+    ],
+  },
+  {
     version: "5.34",
     date: "2026-11-13",
     title: "More reliable desktop updates",
