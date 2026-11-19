@@ -13,6 +13,16 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "5.36",
+    date: "2026-11-19",
+    title: "Huddle Brawlers is back",
+    changes: [
+      "Huddle Brawlers is available again as a bot game. Huddle Admins can attach it to a bot, and anyone who adds that bot can run /play.",
+      "The game's developer tools and the controls text underneath it are gone, so only the game itself shows in chat. Controls are still in the game's Settings.",
+      "The game now fills the whole frame instead of leaving space below it.",
+    ],
+  },
+  {
     version: "5.35",
     date: "2026-11-19",
     title: "Huddle Brawlers",

@@ -229,7 +229,7 @@ Huddle Admins can host bots without any outside server: open **Huddle Admin → 
   message that has a **Play** button, and the game opens inside the chat. Huddle answers `/play` itself, so a game works even when the bot has no
   script. Games run in a sandbox with no access to anyone's account, and each also has its own address, `/games/<bot id>`.
   **Make bot** creates a public bot from a built-in game in one step (it is owned by the admin who made it).
-  **Deep Answer** is the game included now.
+  **Deep Answer** and **Huddle Brawlers** (a platform fighter with a growing roster) are the games included now.
 - **Python scripts.** Upload `.py` files to a bot (up to 10 files, 200 KB each). Huddle starts every script when it starts, which on Render means
   after each deploy or restart, and starts them again right after you upload, change or remove one. A script that crashes is restarted a few times,
   then left stopped; the **Log** button shows what it printed. Each script gets four environment variables: `HUDDLE_URL`, `HUDDLE_BOT_TOKEN`
